@@ -42,13 +42,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: Platform.OS === "web",
     flowType: "pkce",
   },
-  global: {
-    // Optimización de red: mantiene vivas las conexiones HTTP entre peticiones
-    // para evitar nuevos handshakes TCP/TLS en cada llamada a Supabase.
-    fetchOptions: {
-      keepalive: true,
-    },
-  },
   db: { schema: "public" },
 });
 
