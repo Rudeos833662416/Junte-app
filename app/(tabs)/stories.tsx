@@ -861,7 +861,7 @@ export default function StoriesScreen() {
               {viewers.length === 0 ? (
                 <Text className="py-8 text-center text-sm text-muted">Todavía nadie ha abierto este Estado.</Text>
               ) : viewers.map((viewer) => (
-                <View key={} className="mb-3 flex-row items-center gap-3 rounded-2xl border p-3" style={{ borderColor: colors.border }}>
+                <View key={viewer.viewer_id} className="mb-3 flex-row items-center gap-3 rounded-2xl border p-3" style={{ borderColor: colors.border }}>
                   {viewer.avatar_url ? (
                     <ExpoImage source={{ uri: viewer.avatar_url }} style={{ width: 40, height: 40 }} className="h-10 w-10 rounded-full" contentFit="cover" cachePolicy="none" />
                   ) : (
