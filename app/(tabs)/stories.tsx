@@ -6,10 +6,11 @@ import { useAppRefresh } from "@/lib/app-refresh";
 import { supabase } from "@/lib/supabase";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Alert, Animated, Easing, Image as RNImage, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { LayoutChangeEvent } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { uploadUriToStorage, verifyPublicStorageUrl } from "@/lib/media-upload";
@@ -95,7 +96,7 @@ async function prepareStoryVideo(uri: string, onProgress: (progress: number) => 
   return compressedUri;
 }
 
-function StoryVideo({ uri, onReady }: { uri: string; onReady: () => void }) {
+function StoryVideo({ uri, onReady }: { uri: string; onReady: (event: LayoutChangeEvent) => void }) {
   const player = useVideoPlayer(uri, (videoPlayer) => {
     videoPlayer.loop = true;
     videoPlayer.muted = false;
@@ -141,6 +142,19 @@ export default function StoriesScreen() {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileTransition = useRef(new Animated.Value(0)).current;
   const viewerSheetTouchStartY = useRef<number | null>(null);
+
+  // Optimización: el filtrado O(n) por render se reemplaza por una lista memoizada.
+  const friendGroups = useMemo(() => groupedStories.filter((group) => !group.isSelf), [groupedStories]);
+
+  // Optimización: la edad relativa se calcula una vez por historia (en la carga)
+  // en lugar de recalcular Date.now() en cada render/tick del visor.
+  const storyAgeById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const group of groupedStories) {
+      for (const story of group.stories) map.set(story.id, formatStoryAge(story.created_at));
+    }
+    return map;
+  }, [groupedStories]);
 
   const fetchStories = useCallback(async () => {
     if (!user) {
@@ -615,13 +629,13 @@ export default function StoriesScreen() {
             <ActivityIndicator color={colors.primary} />
             <Text className="mt-2 text-xs text-muted">Cargando estados…</Text>
           </View>
-        ) : groupedStories.filter((g) => !g.isSelf).length === 0 ? (
+        ) : friendGroups.length === 0 ? (
           <View className="rounded-2xl border border-dashed p-8 items-center justify-center" style={{ borderColor: colors.border }}>
             <Text className="text-sm font-medium text-muted text-center">No hay estados recientes de tus amigos.</Text>
           </View>
         ) : (
           <View className="gap-3">
-            {groupedStories.filter((g) => !g.isSelf).map((group, groupIdx) => {
+            {friendGroups.map((group, groupIdx) => {
               const realIndex = groupedStories.findIndex((g) => g.userId === group.userId);
               return (
                 <Pressable
@@ -747,7 +761,7 @@ export default function StoriesScreen() {
                 </View>
                 <View>
                   <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "800" }}>{activeGroup.userName}</Text>
-                  <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }}>{formatStoryAge(activeStory.created_at)}</Text>
+                  <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }}>{storyAgeById.get(activeStory.id) ?? formatStoryAge(activeStory.created_at)}</Text>
                 </View>
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
@@ -847,7 +861,7 @@ export default function StoriesScreen() {
               {viewers.length === 0 ? (
                 <Text className="py-8 text-center text-sm text-muted">Todavía nadie ha abierto este Estado.</Text>
               ) : viewers.map((viewer) => (
-                <View key={viewer.viewer_id} className="mb-3 flex-row items-center gap-3 rounded-2xl border p-3" style={{ borderColor: colors.border }}>
+                <View key={} className="mb-3 flex-row items-center gap-3 rounded-2xl border p-3" style={{ borderColor: colors.border }}>
                   {viewer.avatar_url ? (
                     <ExpoImage source={{ uri: viewer.avatar_url }} style={{ width: 40, height: 40 }} className="h-10 w-10 rounded-full" contentFit="cover" cachePolicy="none" />
                   ) : (

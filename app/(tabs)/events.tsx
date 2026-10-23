@@ -108,8 +108,12 @@ function OfficialVideo({ uri, aspectRatio = 9 / 16, fullscreen = false, isVisibl
 
 const rankColors = ["#F4C542", "#C9D1D9", "#B8794A", "#3B82F6", "#A855F7"];
 
+// Optimización: la instancia de Intl.DateTimeFormat se crea una sola vez y se
+// reutiliza en cada render (antes se creaba una nueva por fecha mostrada).
+const postDateTimeFormat = new Intl.DateTimeFormat("es-VE", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("es-VE", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
+  return postDateTimeFormat.format(new Date(value));
 }
 
 export default function EventsScreen() {
@@ -184,15 +188,48 @@ export default function EventsScreen() {
     }
     const authorMap = new Map<string, OfficialAuthor>();
     for (const profile of authorRows) authorMap.set(profile.id, profile);
-    const postsWithCounts = await Promise.all(rawPosts.map(async (post) => {
-      const [{ count: likeCount }, { count: commentCount }, { data: ownLike }] = await Promise.all([
-        supabase.from("official_post_likes").select("post_id", { count: "exact", head: true }).eq("post_id", post.id),
-        supabase.from("official_post_comments").select("id", { count: "exact", head: true }).eq("post_id", post.id),
-        supabase.from("official_post_likes").select("post_id").eq("post_id", post.id).eq("user_id", user.id).maybeSingle(),
-      ]);
+    // Optimización: en lugar de 3 consultas por publicación (150 para 50 posts),
+    // se usan 2 consultas agregadas con un RPC que agrupa likes y comentarios.
+    const postIds = rawPosts.map((post) => post.id);
+    let countsByPost = new Map<string, { likes: number; comments: number }>();
+    if (postIds.length) {
+      const countsResult = await supabase.rpc("get_official_post_counts", { p_post_ids: postIds });
+      if (!countsResult.error) {
+        countsByPost = new Map(
+          ((countsResult.data ?? []) as { post_id: string; like_count: number; comment_count: number }[]).map((row) => [
+            row.post_id,
+            { likes: Number(row.like_count ?? 0), comments: Number(row.comment_count ?? 0) },
+          ]),
+        );
+      } else {
+        // Compatibilidad con proyectos donde aún no se aplicó la migración de optimización.
+        console.warn("No se pudo usar el conteo agregado; usando compatibilidad:", countsResult.error.message);
+        const [likesResult, commentsResult] = await Promise.all([
+          supabase.from("official_post_likes").select("post_id").in("post_id", postIds),
+          supabase.from("official_post_comments").select("post_id").in("post_id", postIds),
+        ]);
+        for (const row of (likesResult.data ?? []) as { post_id: string }[]) {
+          const current = countsByPost.get(row.post_id) ?? { likes: 0, comments: 0 };
+          current.likes += 1;
+          countsByPost.set(row.post_id, current);
+        }
+        for (const row of (commentsResult.data ?? []) as { post_id: string }[]) {
+          const current = countsByPost.get(row.post_id) ?? { likes: 0, comments: 0 };
+          current.comments += 1;
+          countsByPost.set(row.post_id, current);
+        }
+      }
+    }
+    let likedSet = new Set<string>();
+    if (postIds.length) {
+      const { data: ownLikes } = await supabase.from("official_post_likes").select("post_id").in("post_id", postIds).eq("user_id", user.id);
+      likedSet = new Set(((ownLikes ?? []) as { post_id: string }[]).map((row) => row.post_id));
+    }
+    const postsWithCounts = rawPosts.map((post) => {
       const author = authorMap.get(post.created_by);
-      return { ...post, likeCount: likeCount ?? 0, commentCount: commentCount ?? 0, liked: Boolean(ownLike), authorName: author?.name?.trim() || author?.username?.trim() || "Tragos Sociales Oficial", authorAvatarUrl: author?.avatar_url ?? null };
-    }));
+      const counts = countsByPost.get(post.id);
+      return { ...post, likeCount: counts?.likes ?? 0, commentCount: counts?.comments ?? 0, liked: likedSet.has(post.id), authorName: author?.name?.trim() || author?.username?.trim() || "Tragos Sociales Oficial", authorAvatarUrl: author?.avatar_url ?? null };
+    });
     if (loadVersion !== loadVersionRef.current) return;
     setVenues((venueRows ?? []) as Venue[]);
     setPosts(postsWithCounts);
