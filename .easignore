@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+.git/
+updates/
+apks/
+*.apk
+*.aab
+*.zip
+*.log
+.manus-logs/
+android/.gradle/
+android/build/
+android/app/build/

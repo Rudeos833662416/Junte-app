@@ -1,0 +1,96 @@
+Starting Speech-to-Text conversion...
+Video file detected: /home/ubuntu/upload/Screen_Recording_20260905_161329.mp4, file size: 12.72 MB
+File size exceeds limit, converting to audio (64kbps)...
+Converting video to audio (bitrate: 64k)...
+Audio conversion completed. Saved to: /home/ubuntu/upload/Screen_Recording_20260905_161329_converted_20260905_202716.mp3
+Transcribing audio file: /home/ubuntu/upload/Screen_Recording_20260905_161329_converted_20260905_202716.mp3, file size: 1.38 MB
+Transcription may take some time depending on file size and audio length...
+Transcription completed successfully!
+
+TRANSCRIPTION RESULT:
+Total Duration: 180.3 seconds
+Language: spa
+Timestamped segments:
+[00:00.5 - 00:03.3] Bueno, vamos a comenzar con las mejoras que quiero.
+[00:03.3 - 00:09.3] Necesito que aquí el botón de evento esté solamente en este apartado, pues, ¿me entiendes?
+[00:09.3 - 00:10.9] Solamente aquí.
+[00:10.9 - 00:15.1] No quiero que esté aquí al final, al final de perfil, aquí.
+[00:15.1 - 00:17.4] No, no quiero eso.
+[00:17.4 - 00:22.6] Quiero que solamente el botón de eventos esté aquí y me envíe eventos.
+[00:22.6 - 00:27.3] Aquí, como yo soy administrador, eh...
+[00:27.3 - 00:37.3] necesito que al momento de montar yo una imagen, me deje editarla, recortarla o, o hacer cualquier otra cosa, pues,
+[00:37.3 - 00:37.8] ¿me entiendes?
+[00:37.8 - 00:45.5] Por ejemplo, yo quiero subir algo y le doy en listo y se sube, ¿ve?
+[00:45.5 - 00:50.4] Y yo no, yo necesito primero recortarla y eso.
+[00:50.4 - 00:58.2] Haz que esto sea un poco más detallado, lo de escribir la descripción sea un poco mejor, ¿entiendes?
+[00:58.2 - 00:59.7] Tómate tu tiempo y eso.
+[00:59.7 - 01:01.6] Además, eh...
+[01:01.6 - 01:07.3] estás viendo que, que aunque monte una imagen, no se ve del todo completa.
+[01:07.3 - 01:10.5] Necesito que sí se vea completa, pues.
+[01:10.5 - 01:15.4] Que el cuadrito este se adapte según el tamaño de la imagen, por favor.
+[01:15.4 - 01:25.4] Además, que quiero que aquí donde dice: #TragosSocialesOficial solo diga: Tragos Sociales y
+[01:25.4 - 01:34.5] tenga, eh, un circulito donde se muestre la foto de perfil de la cuenta del administrador que está subiendo esa publicación.
+[01:34.5 - 01:40.9] Además, aquí en administración, yo le doy en editar top cinco y no me deja.
+[01:40.9 - 01:51.0] Necesito que me deje editar el top cinco, que sea algo donde yo también pueda subir la foto, donde yo pueda editar la foto, donde yo pueda recortarla,
+[01:51.0 - 01:57.2] donde pueda escribir la dirección, la descripción del bar y me aparezca el botón de ir.
+[01:57.2 - 02:05.0] Además, necesito que al momento de dar, de dar este...
+[02:05.0 - 02:13.2] me encanta no, no se actualice así tan bruscamente, ¿qué es eso?
+[02:13.2 - 02:21.1] Además, que en el apartado de comentarios, eh, sea algo más elaborado, pues tipo Facebook, ¿me entiendes?
+[02:21.1 - 02:24.1] Que sea hasta aquí hasta la mitad, una...
+[02:24.1 - 02:32.6] donde yo pueda escribir el comentario y en ese mismo momento estar leyendo los comentarios de las demás personas, porque no me deja leer los comentarios que están escritos ahí.
+[02:32.6 - 02:36.1] Además, que el, el teclado se atraviesa.
+[02:36.1 - 02:42.3] Necesito que esto suba para que no se atraviese con el teclado, ¿me entiendes?
+[02:42.3 - 02:45.1] Además, aquí en...
+[02:45.1 - 02:47.5] .
+[02:47.5 - 02:50.8] Mira, mira cómo, cómo de repente esto se actualiza de repente.
+[02:50.8 - 02:58.4] Él está así normalito .
+Complete transcription result saved to: /home/ubuntu/upload/Screen_Recording_20260905_161329_converted_20260905_202716_transcription_20260905_202723.json
+Plain text transcription saved to: /home/ubuntu/upload/Screen_Recording_20260905_161329_converted_20260905_202716_transcription_20260905_202723.txt
+
+The video has been automatically converted to an audio file and saved at /home/ubuntu/upload/Screen_Recording_20260905_161329_converted_20260905_202716.mp3
+[2J[H[3Jmanus-speech-to-text --terminal-max-len-single=5000 /home/ubuntu/upload/Screen_Recording_20260905_161329.mp4
+Starting Speech-to-Text conversion...
+Video file detected: /home/ubuntu/upload/Screen_Recording_20260905_161329.mp4, file size: 12.72 MB
+File size exceeds limit, converting to audio (64kbps)...
+Transcribing audio file: /home/ubuntu/upload/Screen_Recording_20260905_161329_converted_20260905_202716.mp3, file size: 1.38 MB
+Transcription may take some time depending on file size and audio length...
+
+Snippet of transcribed content:
+[00:00.5 - 00:03.3] Bueno, vamos a comenzar con las mejoras que quiero.
+[00:03.3 - 00:09.3] Necesito que aquí el botón de evento esté solamente en este apartado, pues, ¿me entiendes?
+[00:09.3 - 00:10.9] Solamente aquí.
+[00:10.9 - 00:15.1] No quiero que esté aquí al final, al final de perfil, aquí.
+[00:15.1 - 00:17.4] No, no quiero eso.
+[00:17.4 - 00:22.6] Quiero que solamente el botón de eventos esté aquí y me envíe eventos.
+[00:22.6 - 00:27.3] Aquí, como yo soy administrador, eh...
+[00:27.3 - 00:37.3] necesito que al momento de montar yo una imagen, me deje editarla, recortarla o, o hacer cualquier otra cosa, pues,
+[00:37.3 - 00:37.8] ¿me entiendes?
+[00:37.8 - 00:45.5] Por ejemplo, yo quiero subir algo y le doy en listo y se sube, ¿ve?
+[00:45.5 - 00:50.4] Y yo no, yo necesito primero recortarla y eso.
+[00:50.4 - 00:58.2] Haz que esto sea un poco más detallado, lo de escribir la descripción sea un poco mejor, ¿entiendes?
+[00:58.2 - 00:59.7] Tómate tu tiempo y eso.
+[00:59.7 - 01:01.6] Además, eh...
+[01:01.6 - 01:07.3] estás viendo que, que aunque monte una imagen, no se ve del todo completa.
+[01:07.3 - 01:10.5] Necesito que sí se vea completa, pues.
+[01:10.5 - 01:15.4] Que el cuadrito este se adapte según el tamaño de la imagen, por favor.
+[01:15.4 - 01:25.4] Además, que quiero que aquí donde dice: #TragosSocialesOficial solo diga: Tragos Sociales y
+[01:25.4 - 01:34.5] tenga, eh, un circulito donde se muestre la foto de perfil de la cuenta del administrador que está subiendo esa publicación.
+[01:34.5 - 01:40.9] Además, aquí en administración, yo le doy en editar top cinco y no me deja.
+[01:40.9 - 01:51.0] Necesito que me deje editar el top cinco, que sea algo donde yo también pueda subir la foto, donde yo pueda editar la foto, donde yo pueda recortarla,
+[01:51.0 - 01:57.2] donde pueda escribir la dirección, la descripción del bar y me aparezca el botón de ir.
+[01:57.2 - 02:05.0] Además, necesito que al momento de dar, de dar este...
+[02:05.0 - 02:13.2] me encanta no, no se actualice así tan bruscamente, ¿qué es eso?
+[02:13.2 - 02:21.1] Además, que en el apartado de comentarios, eh, sea algo más elaborado, pues tipo Facebook, ¿me entiendes?
+[02:21.1 - 02:24.1] Que sea hasta aquí hasta la mitad, una...
+[02:24.1 - 02:32.6] donde yo pueda escribir el comentario y en ese mismo momento estar leyendo los comentarios de las demás personas, porque no me deja leer los comentarios que están escritos ahí.
+[02:32.6 - 02:36.1] Además, que el, el teclado se atraviesa.
+[02:36.1 - 02:42.3] Necesito que esto suba para que no se atraviese con el teclado, ¿me entiendes?
+[02:42.3 - 02:45.1] Además, aquí en...
+[02:45.1 - 02:47.5] .
+[02:47.5 - 02:50.8] Mira, mira cómo, cómo de repente esto se actualiza de repente.
+[02:50.8 - 02:58.4] Él está así normalito .
+
+The video has been automatically converted to an audio file and saved at /home/ubuntu/upload/Screen_Recording_20260905_161329_converted_20260905_202716.mp3
+
+Completed transcription, JSON saved to /home/ubuntu/upload/Screen_Recording_20260905_161329_converted_20260905_202716_transcription_20260905_202723.json
+Plain text transcription saved to /home/ubuntu/upload/Screen_Recording_20260905_161329_converted_20260905_202716_transcription_20260905_202723.txt
