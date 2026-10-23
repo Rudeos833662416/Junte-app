@@ -1540,3 +1540,35 @@ end $$;
 
 -- Recarga PostgREST para que la API reconozca parent_comment_id y la tabla de reacciones.
 notify pgrst, 'reload schema';
+
+-- ============================================================
+-- MIGRACIÓN DE OPTIMIZACIÓN DE RENDIMIENTO (feed oficial)
+-- ============================================================
+
+-- Índices para las consultas por post_id que antes se ejecutaban una por una
+-- desde la app (N+1). Ahora se usan consultas agregadas con IN (...).
+create index if not exists official_post_likes_post_idx on public.official_post_likes (post_id);
+create index if not exists official_post_comment_reactions_comment_idx on public.official_post_comment_reactions (comment_id);
+
+-- RPC que devuelve en una sola ida los conteos de likes y comentarios de
+-- varias publicaciones. Sustituye 2 x N consultas head-count de la pantalla
+-- de Eventos (antes: hasta 150 peticiones para 50 posts; ahora: 1 petición).
+create or replace function public.get_official_post_counts(p_post_ids uuid[])
+returns table (post_id uuid, like_count bigint, comment_count bigint)
+language sql
+security invoker
+stable
+as $$
+  select
+    p.id as post_id,
+    (select count(*) from public.official_post_likes l where l.post_id = p.id) as like_count,
+    (select count(*) from public.official_post_comments c where c.post_id = p.id) as comment_count
+  from public.official_posts p
+  where p.id = any (coalesce(p_post_ids, '{}'));
+$$;
+
+alter function public.get_official_post_counts(uuid[]) owner to postgres;
+revoke all on function public.get_official_post_counts(uuid[]) from public;
+grant execute on function public.get_official_post_counts(uuid[]) to authenticated;
+
+notify pgrst, 'reload schema';
