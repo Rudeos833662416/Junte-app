@@ -177,7 +177,9 @@ export default function OAuthCallback() {
             <Text className="mb-2 text-xl font-bold leading-7 text-error">
               Falló la autenticación
             </Text>
-            <Text className="text-base leading-6 text-center text-foreground">{errorMessage}</Text>
+            <Text className="text-base leading-6 text-center text-foreground">
+              {errorMessage}
+            </Text>
           </>
         )}
       </ThemedView>
