@@ -86,12 +86,12 @@ const config: ExpoConfig = {
     output: "static",
     favicon: "./assets/images/favicon.png",
   },
-  owner: "greyradafterglow",
+  owner: "rudeosgreyrad416",
   extra: {
     appSubtitle: env.appSubtitle,
     // Read by the native config plugin during Expo prebuild; never hardcode the key.
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
-    eas: { projectId: "3d49f27e-cc76-40ba-a126-0f549a1d4e08" },
+    eas: { projectId: "937e4d3e-fb8b-481d-ab99-d06ef34e7709" },
     // These are Supabase public client values; RLS protects database access.
     supabaseUrl: process.env.SUPABASE_URL ?? "https://cymhbwgxmezrwofkbdqz.supabase.co",
     supabaseAnonKey:
