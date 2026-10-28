@@ -14,7 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,11 +22,18 @@ import {
   FlatList,
   Modal,
   Pressable,
+  Share,
   Text,
   TextInput,
   View,
   type ViewToken,
 } from "react-native";
+
+const EDIT_WINDOW_MS = 10 * 60 * 1000;
+
+function canEditComment(createdAt: string) {
+  return Date.now() - new Date(createdAt).getTime() < EDIT_WINDOW_MS;
+}
 
 export default function EventsScreen() {
   const colors = useColors();
@@ -38,12 +45,24 @@ export default function EventsScreen() {
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [comment, setComment] = useState("");
   const [replyTo, setReplyTo] = useState<CommentRow | null>(null);
+  const [editingComment, setEditingComment] = useState<CommentRow | null>(null);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [fullVideo, setFullVideo] = useState<string | null>(null);
   const [visiblePostIds, setVisiblePostIds] = useState<Set<string>>(new Set());
+  const [screenFocused, setScreenFocused] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [captionDraft, setCaptionDraft] = useState("");
   const deletedPostIdsRef = useRef(new Set<string>());
+
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+      return () => {
+        setScreenFocused(false);
+        setFullVideo(null);
+      };
+    }, []),
+  );
 
   const loadComments = useCallback(
     async (postId: string) => {
@@ -61,20 +80,11 @@ export default function EventsScreen() {
         } else {
           const direct = await supabase
             .from("official_post_comments")
-            .select("id, body, created_at, user_id, parent_comment_id")
+            .select("id, body, created_at, user_id, parent_comment_id, edited_at")
             .eq("post_id", postId)
             .order("created_at", { ascending: true });
           data = direct.data;
           error = direct.error;
-        }
-        if (error && /parent_comment_id|schema cache/i.test(error.message)) {
-          const fallback = await supabase
-            .from("official_post_comments")
-            .select("id, body, created_at, user_id")
-            .eq("post_id", postId)
-            .order("created_at", { ascending: true });
-          data = (fallback.data ?? []).map((row) => ({ ...row, parent_comment_id: null }));
-          error = fallback.error;
         }
         if (error) throw error;
         const rows = (data ?? []) as {
@@ -83,35 +93,20 @@ export default function EventsScreen() {
           created_at: string;
           user_id: string;
           parent_comment_id: string | null;
+          edited_at?: string | null;
         }[];
         const ids = [...new Set(rows.map((row) => row.user_id))];
         const { data: profiles } = ids.length
           ? await supabase.from("profiles").select("id, name, avatar_url").in("id", ids)
           : { data: [] as { id: string; name: string | null; avatar_url: string | null }[] };
-        const { data: reactions } = rows.length
-          ? await supabase
-              .from("official_post_comment_reactions")
-              .select("comment_id, user_id")
-              .in(
-                "comment_id",
-                rows.map((row) => row.id),
-              )
-          : { data: [] as { comment_id: string; user_id: string }[] };
         const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-        const reactionMap = new Map<string, { count: number; reacted: boolean }>();
-        (reactions ?? []).forEach((reaction) => {
-          const current = reactionMap.get(reaction.comment_id) ?? { count: 0, reacted: false };
-          current.count += 1;
-          current.reacted = current.reacted || reaction.user_id === user?.id;
-          reactionMap.set(reaction.comment_id, current);
-        });
         setComments(
           rows.map((row) => ({
             ...row,
             name: profileMap.get(row.user_id)?.name?.trim() || "Usuario",
             avatar_url: profileMap.get(row.user_id)?.avatar_url ?? null,
-            reactionCount: reactionMap.get(row.id)?.count ?? 0,
-            reacted: reactionMap.get(row.id)?.reacted ?? false,
+            reactionCount: 0,
+            reacted: false,
           })),
         );
       } catch (err) {
@@ -121,7 +116,7 @@ export default function EventsScreen() {
         setCommentsLoading(false);
       }
     },
-    [user],
+    [],
   );
 
   const loadData = useCallback(async () => {
@@ -131,7 +126,9 @@ export default function EventsScreen() {
       const [{ data: postRows }, { data: adminRow }] = await Promise.all([
         supabase
           .from("official_posts")
-          .select("id, media_url, media_type, caption, created_at, created_by, media_width, media_height")
+          .select(
+            "id, media_url, media_type, caption, created_at, created_by, media_width, media_height",
+          )
           .is("deleted_at", null)
           .order("created_at", { ascending: false })
           .limit(50),
@@ -219,15 +216,11 @@ export default function EventsScreen() {
       .on("postgres_changes", { event: "*", schema: "public", table: "official_post_likes" }, () => {
         void loadData();
       })
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "official_post_comments" },
-        (payload) => {
-          const row = payload.new as { post_id?: string };
-          if (row.post_id && commentFor === row.post_id) void loadComments(row.post_id);
-          void loadData();
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "official_post_comments" }, (payload) => {
+        const row = (payload.new ?? payload.old) as { post_id?: string };
+        if (row.post_id && commentFor === row.post_id) void loadComments(row.post_id);
+        void loadData();
+      })
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
@@ -260,6 +253,17 @@ export default function EventsScreen() {
     if (result.error) void loadData();
   };
 
+  const sharePost = async (post: OfficialPost) => {
+    try {
+      await Share.share({
+        message: `${post.authorName}${post.caption ? `: ${post.caption}` : ""}\n${post.media_url}`,
+        url: post.media_url,
+      });
+    } catch (err) {
+      reportError(err, { action: "sharePost" });
+    }
+  };
+
   const softDelete = async (postId: string) => {
     if (!user || !isAdmin) return;
     Alert.alert("Eliminar publicación", "¿Seguro que quieres eliminarla?", [
@@ -286,6 +290,27 @@ export default function EventsScreen() {
     if (!user || !commentFor || !comment.trim()) return;
     const body = comment.trim();
     setComment("");
+
+    if (editingComment) {
+      if (!canEditComment(editingComment.created_at) && !isAdmin) {
+        Alert.alert("Tiempo agotado", "Solo puedes editar durante 10 minutos.");
+        setEditingComment(null);
+        return;
+      }
+      const { error } = await supabase
+        .from("official_post_comments")
+        .update({ body, edited_at: new Date().toISOString() })
+        .eq("id", editingComment.id);
+      if (error) {
+        setComment(body);
+        Alert.alert("No se pudo editar", error.message);
+        return;
+      }
+      setEditingComment(null);
+      void loadComments(commentFor);
+      return;
+    }
+
     const payload: {
       post_id: string;
       user_id: string;
@@ -310,6 +335,28 @@ export default function EventsScreen() {
       ),
     );
     void loadComments(commentFor);
+  };
+
+  const deleteComment = (item: CommentRow) => {
+    if (!user || !commentFor) return;
+    const isOwner = item.user_id === user.id;
+    if (!isOwner && !isAdmin) return;
+    Alert.alert("Borrar comentario", "¿Eliminar este comentario?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Borrar",
+        style: "destructive",
+        onPress: async () => {
+          const { error } = await supabase.from("official_post_comments").delete().eq("id", item.id);
+          if (error) {
+            Alert.alert("Error", error.message);
+            return;
+          }
+          void loadComments(commentFor);
+          void loadData();
+        },
+      },
+    ]);
   };
 
   const publishMedia = async () => {
@@ -424,72 +471,124 @@ export default function EventsScreen() {
         ListEmptyComponent={
           <Text className="text-muted">Sin publicaciones oficiales todavía.</Text>
         }
-        renderItem={({ item }) => (
-          <View
-            className="rounded-2xl border p-3"
-            style={{ borderColor: colors.border, backgroundColor: colors.surface }}
-          >
-            <View className="mb-2 flex-row items-center justify-between">
-              <Text className="font-semibold text-foreground">{item.authorName}</Text>
-              <Text className="text-xs text-muted">{formatDate(item.created_at)}</Text>
-            </View>
-            {item.caption ? (
-              <Text className="mb-2 text-sm text-muted">{item.caption}</Text>
-            ) : null}
-            {item.media_type === "image" ? (
-              <ExpoImage
-                source={{ uri: item.media_url }}
-                style={{ width: "100%", height: 240, borderRadius: 12 }}
-                contentFit="cover"
-              />
-            ) : (
-              <OfficialVideo
-                uri={item.media_url}
-                aspectRatio={
-                  item.media_width && item.media_height
-                    ? item.media_width / item.media_height
-                    : 9 / 16
-                }
-                isVisible={visiblePostIds.has(item.id)}
-                onOpenFullscreen={() => setFullVideo(item.media_url)}
-              />
-            )}
-            <View className="mt-3 flex-row items-center gap-4">
-              <Pressable
-                onPress={() => void toggleLike(item)}
-                className="flex-row items-center gap-1"
-              >
-                <MaterialIcons
-                  name={item.liked ? "favorite" : "favorite-border"}
-                  size={20}
-                  color={item.liked ? "#ef4444" : colors.muted}
-                />
-                <Text style={{ color: colors.foreground }}>{item.likeCount}</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setCommentFor(item.id);
-                  setReplyTo(null);
-                  void loadComments(item.id);
-                }}
-                className="flex-row items-center gap-1"
-              >
-                <MaterialIcons name="chat-bubble-outline" size={20} color={colors.muted} />
-                <Text style={{ color: colors.foreground }}>{item.commentCount}</Text>
-              </Pressable>
-              {isAdmin ? (
-                <Pressable onPress={() => void softDelete(item.id)} className="ml-auto">
-                  <MaterialIcons name="delete-outline" size={20} color="#ef4444" />
-                </Pressable>
+        renderItem={({ item }) => {
+          const ratio =
+            item.media_width && item.media_height && item.media_height > 0
+              ? item.media_width / item.media_height
+              : item.media_type === "video"
+                ? 9 / 16
+                : 4 / 5;
+          return (
+            <View
+              className="rounded-2xl border p-3"
+              style={{ borderColor: colors.border, backgroundColor: colors.surface }}
+            >
+              <View className="mb-2 flex-row items-center gap-2">
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    overflow: "hidden",
+                    backgroundColor: `${colors.primary}22`,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {item.authorAvatarUrl ? (
+                    <ExpoImage
+                      source={{ uri: item.authorAvatarUrl }}
+                      style={{ width: 40, height: 40 }}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <Text style={{ color: colors.primary, fontWeight: "700" }}>
+                      {(item.authorName[0] ?? "T").toUpperCase()}
+                    </Text>
+                  )}
+                </View>
+                <View className="flex-1">
+                  <Text className="font-semibold text-foreground">{item.authorName}</Text>
+                  <Text className="text-xs text-muted">{formatDate(item.created_at)}</Text>
+                </View>
+              </View>
+
+              {item.caption ? (
+                <Text className="mb-2 text-sm text-muted">{item.caption}</Text>
               ) : null}
+
+              {item.media_type === "image" ? (
+                <ExpoImage
+                  source={{ uri: item.media_url }}
+                  style={{ width: "100%", aspectRatio: ratio, borderRadius: 12 }}
+                  contentFit="contain"
+                />
+              ) : (
+                <OfficialVideo
+                  uri={item.media_url}
+                  aspectRatio={ratio}
+                  isVisible={screenFocused && visiblePostIds.has(item.id) && !fullVideo}
+                  onOpenFullscreen={() => setFullVideo(item.media_url)}
+                />
+              )}
+
+              <View className="mt-3 flex-row items-center gap-4">
+                <Pressable
+                  onPress={() => void toggleLike(item)}
+                  className="flex-row items-center gap-1"
+                  hitSlop={8}
+                >
+                  <MaterialIcons
+                    name={item.liked ? "favorite" : "favorite-border"}
+                    size={20}
+                    color={item.liked ? "#ef4444" : colors.muted}
+                  />
+                  <Text style={{ color: colors.foreground }}>{item.likeCount}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setCommentFor(item.id);
+                    setReplyTo(null);
+                    setEditingComment(null);
+                    void loadComments(item.id);
+                  }}
+                  className="flex-row items-center gap-1"
+                  hitSlop={8}
+                >
+                  <MaterialIcons name="chat-bubble-outline" size={20} color={colors.muted} />
+                  <Text style={{ color: colors.foreground }}>{item.commentCount}</Text>
+                </Pressable>
+                <Pressable onPress={() => void sharePost(item)} hitSlop={8}>
+                  <MaterialIcons name="share" size={20} color={colors.muted} />
+                </Pressable>
+                {isAdmin ? (
+                  <Pressable onPress={() => void softDelete(item.id)} className="ml-auto" hitSlop={8}>
+                    <MaterialIcons name="delete-outline" size={20} color="#ef4444" />
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
-          </View>
-        )}
+          );
+        }}
       />
 
-      <Modal visible={Boolean(commentFor)} animationType="slide" onRequestClose={() => setCommentFor(null)}>
+      <Modal
+        visible={Boolean(commentFor)}
+        animationType="slide"
+        onRequestClose={() => {
+          setCommentFor(null);
+          setEditingComment(null);
+          setReplyTo(null);
+        }}
+      >
         <View style={{ flex: 1, backgroundColor: colors.background, padding: 16, paddingTop: 48 }}>
-          <Pressable onPress={() => setCommentFor(null)}>
+          <Pressable
+            onPress={() => {
+              setCommentFor(null);
+              setEditingComment(null);
+              setReplyTo(null);
+            }}
+          >
             <Text style={{ color: colors.primary, fontWeight: "700" }}>Cerrar</Text>
           </Pressable>
           {commentsLoading ? (
@@ -500,17 +599,76 @@ export default function EventsScreen() {
               keyExtractor={(item) => item.id}
               style={{ marginTop: 12, flex: 1 }}
               ListEmptyComponent={<Text className="text-muted">Sé el primero en comentar</Text>}
-              renderItem={({ item }) => (
-                <View style={{ marginBottom: 12, marginLeft: item.parent_comment_id ? 16 : 0 }}>
-                  <Text style={{ color: colors.foreground, fontWeight: "700" }}>{item.name}</Text>
-                  <Text style={{ color: colors.muted }}>{item.body}</Text>
-                  <Pressable onPress={() => setReplyTo(item)} style={{ marginTop: 4 }}>
-                    <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>
-                      Responder
-                    </Text>
-                  </Pressable>
-                </View>
-              )}
+              renderItem={({ item }) => {
+                const isOwner = item.user_id === user?.id;
+                const showEdit = isOwner && canEditComment(item.created_at);
+                const showDelete = isOwner || isAdmin;
+                return (
+                  <View
+                    style={{
+                      marginBottom: 14,
+                      marginLeft: item.parent_comment_id ? 18 : 0,
+                      flexDirection: "row",
+                      gap: 10,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        overflow: "hidden",
+                        backgroundColor: `${colors.primary}22`,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {item.avatar_url ? (
+                        <ExpoImage
+                          source={{ uri: item.avatar_url }}
+                          style={{ width: 36, height: 36 }}
+                          contentFit="cover"
+                        />
+                      ) : (
+                        <Text style={{ color: colors.primary, fontWeight: "700" }}>
+                          {(item.name[0] ?? "U").toUpperCase()}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.foreground, fontWeight: "700" }}>{item.name}</Text>
+                      <Text style={{ color: colors.muted }}>{item.body}</Text>
+                      <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
+                        <Pressable onPress={() => setReplyTo(item)}>
+                          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>
+                            Responder
+                          </Text>
+                        </Pressable>
+                        {showEdit ? (
+                          <Pressable
+                            onPress={() => {
+                              setEditingComment(item);
+                              setComment(item.body);
+                              setReplyTo(null);
+                            }}
+                          >
+                            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>
+                              Editar
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                        {showDelete ? (
+                          <Pressable onPress={() => deleteComment(item)}>
+                            <Text style={{ color: "#ef4444", fontSize: 12, fontWeight: "600" }}>
+                              Borrar
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    </View>
+                  </View>
+                );
+              }}
             />
           )}
           {replyTo ? (
@@ -521,11 +679,31 @@ export default function EventsScreen() {
               </Text>
             </Text>
           ) : null}
+          {editingComment ? (
+            <Text className="mb-1 text-xs text-muted">
+              Editando comentario{" "}
+              <Text
+                style={{ color: colors.primary }}
+                onPress={() => {
+                  setEditingComment(null);
+                  setComment("");
+                }}
+              >
+                (cancelar)
+              </Text>
+            </Text>
+          ) : null}
           <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
             <TextInput
               value={comment}
               onChangeText={setComment}
-              placeholder={replyTo ? "Escribe una respuesta" : "Escribe un comentario"}
+              placeholder={
+                editingComment
+                  ? "Edita tu comentario"
+                  : replyTo
+                    ? "Escribe una respuesta"
+                    : "Escribe un comentario"
+              }
               placeholderTextColor={colors.muted}
               style={{
                 flex: 1,
@@ -546,7 +724,9 @@ export default function EventsScreen() {
                 paddingVertical: 10,
               }}
             >
-              <Text style={{ color: colors.background, fontWeight: "700" }}>Enviar</Text>
+              <Text style={{ color: colors.background, fontWeight: "700" }}>
+                {editingComment ? "Guardar" : "Enviar"}
+              </Text>
             </Pressable>
           </View>
         </View>
