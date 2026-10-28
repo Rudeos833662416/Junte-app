@@ -1,6 +1,10 @@
 import { supabase } from "@/lib/supabase";
 import { uploadUriToStorage } from "@/lib/media-upload";
 
+/** Nombre real del bucket en Supabase Storage. */
+export const OFFICIAL_FEED_BUCKET = "official-feed";
+export const VENUE_ASSETS_BUCKET = "venue-assets";
+
 export async function publishOfficialPost(params: {
   userId: string;
   uri: string;
@@ -11,8 +15,8 @@ export async function publishOfficialPost(params: {
 }) {
   const path = `official/${params.userId}/${Date.now()}.${params.mediaType === "video" ? "mp4" : "jpg"}`;
   const mime = params.mediaType === "video" ? "video/mp4" : "image/jpeg";
-  await uploadUriToStorage("official-posts", path, params.uri, mime);
-  const { data } = supabase.storage.from("official-posts").getPublicUrl(path);
+  await uploadUriToStorage(OFFICIAL_FEED_BUCKET, path, params.uri, mime);
+  const { data } = supabase.storage.from(OFFICIAL_FEED_BUCKET).getPublicUrl(path);
   const publicUrl = data.publicUrl;
   if (!publicUrl) throw new Error("No se obtuvo URL pública");
   const { error } = await supabase.from("official_posts").insert({
@@ -39,4 +43,13 @@ export async function updateVenueAdmin(params: {
   if (params.description !== undefined) payload.description = params.description;
   const { error } = await supabase.from("venues").update(payload).eq("id", params.venueId);
   if (error) throw error;
+}
+
+export async function uploadVenuePhoto(venueId: number, uri: string) {
+  const path = `venues/${venueId}/${Date.now()}.jpg`;
+  await uploadUriToStorage(VENUE_ASSETS_BUCKET, path, uri, "image/jpeg");
+  const { data } = supabase.storage.from(VENUE_ASSETS_BUCKET).getPublicUrl(path);
+  if (!data.publicUrl) throw new Error("Upload falló");
+  await updateVenueAdmin({ venueId, admin_photo_url: data.publicUrl });
+  return data.publicUrl;
 }
