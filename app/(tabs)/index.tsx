@@ -193,6 +193,7 @@ export default function HomeScreen() {
       setActiveCheckin({
         id: result.id,
         venueId: result.venue_id,
+        venueName: result.created_at ? result.venue_id : result.venue_id,
         venueName: result.venue_name,
         createdAt: result.created_at,
       });
@@ -365,19 +366,36 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          <Pressable
-            onPress={() => router.push("/(tabs)/map")}
-            style={({ pressed }) => ({
-              alignItems: "center",
-              borderRadius: 12,
-              borderColor: colors.border,
-              borderWidth: 1,
-              paddingVertical: 12,
-              opacity: pressed ? 0.7 : 1,
-            })}
-          >
-            <Text className="font-semibold text-foreground">Ver amigos en el mapa</Text>
-          </Pressable>
+          <View className="gap-3">
+            <Pressable
+              onPress={() => router.push("/(tabs)/map")}
+              style={({ pressed }) => ({
+                alignItems: "center",
+                borderRadius: 12,
+                borderColor: colors.border,
+                borderWidth: 1,
+                paddingVertical: 12,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Text className="font-semibold text-foreground">Ver amigos en el mapa</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push("/messages")}
+              style={({ pressed }) => ({
+                alignItems: "center",
+                borderRadius: 12,
+                borderColor: colors.primary,
+                borderWidth: 1,
+                paddingVertical: 12,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Text className="font-semibold" style={{ color: colors.primary }}>
+                Mensajes
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </ScreenContainer>
