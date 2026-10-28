@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { createClient, type SupportedStorage } from "@supabase/supabase-js";
+import type { Database } from "@/lib/database.types";
 
 const extra = Constants.expoConfig?.extra as
   | { supabaseUrl?: string; supabaseAnonKey?: string }
@@ -34,7 +35,7 @@ const storage: SupportedStorage =
 export const SUPABASE_AUTH_REDIRECT = "socialsip://auth/callback";
 const exchangedAuthCodes = new Set<string>();
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage,
     autoRefreshToken: true,
