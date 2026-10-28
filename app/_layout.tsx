@@ -29,6 +29,7 @@ import {
   quickBrindarMessage,
   invokeNotificationAction,
 } from "@/lib/push-notifications";
+import { PermissionsOnboarding } from "@/components/permissions-onboarding";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -233,11 +234,14 @@ function AuthGate() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="login" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="oauth/callback" />
-      <Stack.Screen name="auth/callback" />
-    </Stack>
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="login" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="oauth/callback" />
+        <Stack.Screen name="auth/callback" />
+      </Stack>
+      {user ? <PermissionsOnboarding /> : null}
+    </>
   );
 }
