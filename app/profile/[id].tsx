@@ -1,6 +1,7 @@
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SecureMediaViewer } from "@/components/secure-media-viewer";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
@@ -33,6 +34,7 @@ export default function PublicProfileScreen() {
   const [isSending, setIsSending] = useState(false);
   const [requestMessage, setRequestMessage] = useState("");
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const hasLoadedProfileOnce = useRef(false);
 
   const loadProfile = useCallback(async () => {
@@ -136,11 +138,26 @@ export default function PublicProfileScreen() {
           <Text className="font-semibold" style={{ color: colors.primary }}>‹ Volver</Text>
         </Pressable>
         <View className="mt-2 overflow-hidden rounded-3xl border" style={{ backgroundColor: colors.surface, borderColor: colors.border }}>
-          {profile.cover_url ? <ExpoImage source={{ uri: profile.cover_url }} style={{ width: "100%", height: 160 }} className="h-40 w-full" contentFit="cover" cachePolicy="none" transition={180} onError={(event) => console.warn("No se pudo renderizar la portada pública:", event.error)} /> : <View className="h-40" style={{ backgroundColor: `${colors.primary}20` }} />}
+          {profile.cover_url ? (
+            <Pressable onPress={() => setViewerUri(profile.cover_url)}>
+              <ExpoImage source={{ uri: profile.cover_url }} style={{ width: "100%", height: 160 }} className="h-40 w-full" contentFit="cover" cachePolicy="none" transition={180} onError={(event) => console.warn("No se pudo renderizar la portada pública:", event.error)} />
+            </Pressable>
+          ) : (
+            <View className="h-40" style={{ backgroundColor: `${colors.primary}20` }} />
+          )}
           <View className="items-center px-5 pb-6">
-            <View className="-mt-11 h-24 w-24 items-center justify-center overflow-hidden rounded-full border-4" style={{ borderColor: colors.surface, backgroundColor: colors.primary }}>
-              {profile.avatar_url ? <ExpoImage source={{ uri: profile.avatar_url }} style={{ width: "100%", height: "100%" }} className="h-full w-full" contentFit="cover" cachePolicy="none" transition={180} onError={(event) => console.warn("No se pudo renderizar el avatar público:", event.error)} /> : <Text className="text-3xl font-bold" style={{ color: colors.background }}>{name[0]?.toUpperCase() ?? "?"}</Text>}
-            </View>
+            <Pressable
+              onPress={() => profile.avatar_url && setViewerUri(profile.avatar_url)}
+              style={{ marginTop: -44 }}
+            >
+              <View className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border-4" style={{ borderColor: colors.surface, backgroundColor: colors.primary }}>
+                {profile.avatar_url ? (
+                  <ExpoImage source={{ uri: profile.avatar_url }} style={{ width: "100%", height: "100%" }} className="h-full w-full" contentFit="cover" cachePolicy="none" transition={180} onError={(event) => console.warn("No se pudo renderizar el avatar público:", event.error)} />
+                ) : (
+                  <Text className="text-3xl font-bold" style={{ color: colors.background }}>{name[0]?.toUpperCase() ?? "?"}</Text>
+                )}
+              </View>
+            </Pressable>
             <Text className="mt-3 text-2xl font-bold text-foreground">{name}</Text>
             <Text className="mt-1 text-sm text-muted">Perfil de Tragos Sociales</Text>
             {profile.bio ? <Text className="mt-3 max-w-[300px] text-center text-sm leading-5 text-foreground">{profile.bio}</Text> : null}
@@ -158,13 +175,13 @@ export default function PublicProfileScreen() {
                   />
                 ) : null}
                 <Pressable
-                disabled={isSending || isAccepted || isPending}
-                onPress={() => void sendFriendRequest()}
-                style={({ pressed }) => ({ marginTop: 18, minHeight: 48, minWidth: 220, alignItems: "center", justifyContent: "center", borderRadius: 15, backgroundColor: isAccepted || isPending ? colors.surface : colors.primary, borderWidth: isAccepted || isPending ? 1 : 0, borderColor: colors.border, opacity: isSending ? 0.55 : pressed ? 0.82 : 1 })}
-              >
-                <Text className="font-bold" style={{ color: isAccepted || isPending ? colors.foreground : colors.background }}>
-                  {isAccepted ? "Ya son amigos" : isPending ? "Solicitud pendiente" : isSending ? "Enviando…" : "Enviar solicitud"}
-                </Text>
+                  disabled={isSending || isAccepted || isPending}
+                  onPress={() => void sendFriendRequest()}
+                  style={({ pressed }) => ({ marginTop: 18, minHeight: 48, minWidth: 220, alignItems: "center", justifyContent: "center", borderRadius: 15, backgroundColor: isAccepted || isPending ? colors.surface : colors.primary, borderWidth: isAccepted || isPending ? 1 : 0, borderColor: colors.border, opacity: isSending ? 0.55 : pressed ? 0.82 : 1 })}
+                >
+                  <Text className="font-bold" style={{ color: isAccepted || isPending ? colors.foreground : colors.background }}>
+                    {isAccepted ? "Ya son amigos" : isPending ? "Solicitud pendiente" : isSending ? "Enviando…" : "Enviar solicitud"}
+                  </Text>
                 </Pressable>
                 {isAccepted ? (
                   <View style={{ position: "relative", alignSelf: "center" }}>
@@ -185,6 +202,7 @@ export default function PublicProfileScreen() {
           </View>
         </View>
       </ScrollView>
+      <SecureMediaViewer uri={viewerUri} onClose={() => setViewerUri(null)} secure />
     </ScreenContainer>
   );
 }
