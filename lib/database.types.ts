@@ -108,6 +108,12 @@ export type Database = {
         }
         Relationships: []
       }
+      close_friends: {
+        Row: { owner_id: string; friend_id: string; created_at: string }
+        Insert: { owner_id: string; friend_id: string; created_at?: string }
+        Update: { owner_id?: string; friend_id?: string; created_at?: string }
+        Relationships: []
+      }
       direct_messages: {
         Row: {
           id: string
@@ -171,34 +177,82 @@ export type Database = {
         }
         Relationships: []
       }
-      push_tokens: {
+      official_posts: {
         Row: {
-          id: number
-          user_id: string
-          expo_push_token: string
-          platform: string | null
+          id: string
+          created_by: string
+          media_url: string
+          media_type: string
+          caption: string | null
           created_at: string
-          updated_at: string
-          fcm_token: string | null
+          media_width: number | null
+          media_height: number | null
+          deleted_at: string | null
         }
         Insert: {
-          id?: number
-          user_id: string
-          expo_push_token: string
-          platform?: string | null
+          id?: string
+          created_by: string
+          media_url: string
+          media_type?: string
+          caption?: string | null
           created_at?: string
-          updated_at?: string
-          fcm_token?: string | null
+          media_width?: number | null
+          media_height?: number | null
+          deleted_at?: string | null
         }
         Update: {
-          id?: number
-          user_id?: string
-          expo_push_token?: string
-          platform?: string | null
+          id?: string
+          created_by?: string
+          media_url?: string
+          media_type?: string
+          caption?: string | null
           created_at?: string
-          updated_at?: string
-          fcm_token?: string | null
+          media_width?: number | null
+          media_height?: number | null
+          deleted_at?: string | null
         }
+        Relationships: []
+      }
+      official_post_comments: {
+        Row: {
+          id: string
+          post_id: string
+          user_id: string
+          body: string
+          created_at: string
+          parent_comment_id: string | null
+          edited_at: string | null
+        }
+        Insert: {
+          id?: string
+          post_id: string
+          user_id: string
+          body: string
+          created_at?: string
+          parent_comment_id?: string | null
+          edited_at?: string | null
+        }
+        Update: {
+          id?: string
+          post_id?: string
+          user_id?: string
+          body?: string
+          created_at?: string
+          parent_comment_id?: string | null
+          edited_at?: string | null
+        }
+        Relationships: []
+      }
+      official_post_likes: {
+        Row: { post_id: string; user_id: string; created_at: string }
+        Insert: { post_id: string; user_id: string; created_at?: string }
+        Update: { post_id?: string; user_id?: string; created_at?: string }
+        Relationships: []
+      }
+      official_post_comment_reactions: {
+        Row: { comment_id: string; user_id: string; reaction: string; created_at?: string }
+        Insert: { comment_id: string; user_id: string; reaction?: string; created_at?: string }
+        Update: { comment_id?: string; user_id?: string; reaction?: string; created_at?: string }
         Relationships: []
       }
       profiles: {
@@ -258,6 +312,159 @@ export type Database = {
         }
         Relationships: []
       }
+      profile_locations: {
+        Row: { user_id: string; latitude: number; longitude: number; updated_at: string }
+        Insert: { user_id: string; latitude: number; longitude: number; updated_at?: string }
+        Update: { user_id?: string; latitude?: number; longitude?: number; updated_at?: string }
+        Relationships: []
+      }
+      push_tokens: {
+        Row: {
+          id: number
+          user_id: string
+          expo_push_token: string
+          platform: string | null
+          created_at: string
+          updated_at: string
+          fcm_token: string | null
+        }
+        Insert: {
+          id?: number
+          user_id: string
+          expo_push_token: string
+          platform?: string | null
+          created_at?: string
+          updated_at?: string
+          fcm_token?: string | null
+        }
+        Update: {
+          id?: number
+          user_id?: string
+          expo_push_token?: string
+          platform?: string | null
+          created_at?: string
+          updated_at?: string
+          fcm_token?: string | null
+        }
+        Relationships: []
+      }
+      stories: {
+        Row: {
+          id: number
+          user_id: string
+          media_url: string
+          media_type: string
+          audio_url: string | null
+          audio_name: string | null
+          caption: string | null
+          visibility: string
+          created_at: string
+          expires_at: string
+          music_track_id: string | null
+          music_title: string | null
+          music_source: string | null
+          music_license_url: string | null
+          privacy: string
+        }
+        Insert: {
+          id?: number
+          user_id: string
+          media_url: string
+          media_type?: string
+          audio_url?: string | null
+          audio_name?: string | null
+          caption?: string | null
+          visibility?: string
+          created_at?: string
+          expires_at?: string
+          music_track_id?: string | null
+          music_title?: string | null
+          music_source?: string | null
+          music_license_url?: string | null
+          privacy?: string
+        }
+        Update: {
+          id?: number
+          user_id?: string
+          media_url?: string
+          media_type?: string
+          audio_url?: string | null
+          audio_name?: string | null
+          caption?: string | null
+          visibility?: string
+          created_at?: string
+          expires_at?: string
+          music_track_id?: string | null
+          music_title?: string | null
+          music_source?: string | null
+          music_license_url?: string | null
+          privacy?: string
+        }
+        Relationships: []
+      }
+      story_reactions: {
+        Row: { id: string; story_id: number; user_id: string; emoji: string; created_at: string }
+        Insert: { id?: string; story_id: number; user_id: string; emoji: string; created_at?: string }
+        Update: { id?: string; story_id?: number; user_id?: string; emoji?: string; created_at?: string }
+        Relationships: []
+      }
+      story_views: {
+        Row: { id: string; story_id: number; viewer_id: string; viewed_at: string }
+        Insert: { id?: string; story_id: number; viewer_id: string; viewed_at?: string }
+        Update: { id?: string; story_id?: number; viewer_id?: string; viewed_at?: string }
+        Relationships: []
+      }
+      venues: {
+        Row: {
+          id: number
+          name: string
+          address: string | null
+          city: string | null
+          latitude: number | null
+          longitude: number | null
+          created_at: string
+          country: string | null
+          source: string | null
+          source_id: string | null
+          updated_at: string
+          admin_rank: number | null
+          admin_photo_url: string | null
+          description: string | null
+        }
+        Insert: {
+          id?: number
+          name: string
+          address?: string | null
+          city?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          created_at?: string
+          country?: string | null
+          source?: string | null
+          source_id?: string | null
+          updated_at?: string
+          admin_rank?: number | null
+          admin_photo_url?: string | null
+          description?: string | null
+        }
+        Update: {
+          id?: number
+          name?: string
+          address?: string | null
+          city?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          created_at?: string
+          country?: string | null
+          source?: string | null
+          source_id?: string | null
+          updated_at?: string
+          admin_rank?: number | null
+          admin_photo_url?: string | null
+          description?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       public_profiles: {
@@ -298,11 +505,16 @@ export type Database = {
       purge_expired_stories: { Args: Record<string, never>; Returns: undefined }
       get_official_post_authors: { Args: { p_post_ids: string[] }; Returns: Json }
       get_official_post_comments_for_viewer: { Args: { p_post_id: string }; Returns: Json }
+      get_official_post_counts: { Args: { p_post_ids: string[] }; Returns: Json }
       admin_soft_delete_official_post: { Args: { p_post_id: string }; Returns: Json }
-      claim_notification_action_token: { Args: { p_token_hash: string; p_lease_id: string }; Returns: Json }
+      claim_notification_action_token: {
+        Args: { p_token_hash: string; p_lease_id: string }
+        Returns: Json
+      }
     }
     Enums: Record<string, never>
   }
 }
 
-export type Tables<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Row"]
+export type Tables<T extends keyof Database["public"]["Tables"]> =
+  Database["public"]["Tables"][T]["Row"]
