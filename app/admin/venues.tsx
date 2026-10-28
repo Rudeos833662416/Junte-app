@@ -14,8 +14,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
-import { updateVenueAdmin } from "@/lib/events-admin";
-import { uploadUriToStorage } from "@/lib/media-upload";
+import { updateVenueAdmin, uploadVenuePhoto } from "@/lib/events-admin";
 import { reportError } from "@/lib/report";
 import { rankColors, type Venue } from "@/lib/events-shared";
 
@@ -107,12 +106,7 @@ export default function AdminVenuesScreen() {
     if (result.canceled || !result.assets[0]) return;
     setSaving(true);
     try {
-      const asset = result.assets[0];
-      const path = `venues/${venueId}/${Date.now()}.jpg`;
-      await uploadUriToStorage("official-posts", path, asset.uri, "image/jpeg");
-      const { data } = supabase.storage.from("official-posts").getPublicUrl(path);
-      if (!data.publicUrl) throw new Error("Upload falló");
-      await updateVenueAdmin({ venueId, admin_photo_url: data.publicUrl });
+      await uploadVenuePhoto(venueId, result.assets[0].uri);
       void load();
     } catch (err) {
       reportError(err, { action: "venuePhoto" });
