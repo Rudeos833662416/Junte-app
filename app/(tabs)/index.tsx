@@ -193,7 +193,6 @@ export default function HomeScreen() {
       setActiveCheckin({
         id: result.id,
         venueId: result.venue_id,
-        venueName: result.created_at ? result.venue_id : result.venue_id,
         venueName: result.venue_name,
         createdAt: result.created_at,
       });
