@@ -2,6 +2,9 @@ import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { supabase } from "@/lib/supabase";
 
+/** Canal Android alineado con notify-activity (producción). */
+export const PUSH_CHANNEL_ID = "friend-activity-v4";
+
 const REACTION_ACTIONS = [
   { identifier: "REACTION_BEER", buttonTitle: "🍺" },
   { identifier: "REACTION_FIRE", buttonTitle: "🔥" },
@@ -13,31 +16,39 @@ const FRIEND_REQUEST_ACTIONS = [
   { identifier: "ACCEPT_FRIEND", buttonTitle: "Aceptar" },
   { identifier: "REJECT_FRIEND", buttonTitle: "Rechazar", options: { isDestructive: true } },
 ];
+
 const CHAT_ACTIONS = [
-  { identifier: "CHAT_REPLY", buttonTitle: "Responder", textInput: { submitButtonTitle: "Enviar", placeholder: "Escribe una respuesta…" } },
+  {
+    identifier: "CHAT_REPLY",
+    buttonTitle: "Responder",
+    textInput: { submitButtonTitle: "Enviar", placeholder: "Escribe una respuesta…" },
+  },
 ];
+
 const BRINDAR_ACTIONS = [
   { identifier: "BRINDAR_HEALTH", buttonTitle: "Salud 🍻" },
   { identifier: "BRINDAR_ON_WAY", buttonTitle: "Voy en camino 🚗" },
 ];
 
-export async function registerPushNotifications(userId: string) {
-  if (Platform.OS === "web") return;
-  try {
-    const Notifications = await import("expo-notifications");
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("friend-activity", {
-      name: "Actividad de amigos",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 120, 250],
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      sound: "default",
-    });
-  }
-  const existing = await Notifications.getPermissionsAsync();
-  const permission = existing.granted ? existing : await Notifications.requestPermissionsAsync();
-  if (!permission.granted) return;
+async function ensureAndroidChannel(Notifications: typeof import("expo-notifications")) {
+  if (Platform.OS !== "android") return;
+  await Notifications.setNotificationChannelAsync(PUSH_CHANNEL_ID, {
+    name: "Actividad de amigos",
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 120, 250],
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    sound: "default",
+  });
+  await Notifications.setNotificationChannelAsync("friend-activity", {
+    name: "Actividad de amigos (legado)",
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 120, 250],
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    sound: "default",
+  });
+}
 
+async function registerCategories(Notifications: typeof import("expo-notifications")) {
   await Notifications.setNotificationCategoryAsync("FRIEND_ACTIVITY", [
     ...REACTION_ACTIONS.map((action) => ({
       identifier: action.identifier,
@@ -45,39 +56,83 @@ export async function registerPushNotifications(userId: string) {
       options: { opensAppToForeground: true },
     })),
   ]);
-  await Notifications.setNotificationCategoryAsync("FRIEND_REQUEST", FRIEND_REQUEST_ACTIONS.map((action) => ({
-    identifier: action.identifier,
-    buttonTitle: action.buttonTitle,
-    options: { opensAppToForeground: true, ...action.options },
-  })));
-  await Notifications.setNotificationCategoryAsync("CHAT_MESSAGE", CHAT_ACTIONS.map((action) => ({
+  await Notifications.setNotificationCategoryAsync(
+    "FRIEND_REQUEST",
+    FRIEND_REQUEST_ACTIONS.map((action) => ({
+      identifier: action.identifier,
+      buttonTitle: action.buttonTitle,
+      options: { opensAppToForeground: true, ...action.options },
+    })),
+  );
+  const chatCategory = CHAT_ACTIONS.map((action) => ({
     identifier: action.identifier,
     buttonTitle: action.buttonTitle,
     textInput: action.textInput,
     options: { opensAppToForeground: false },
-  })));
-  await Notifications.setNotificationCategoryAsync("BRINDAR_ACTIVITY", BRINDAR_ACTIONS.map((action) => ({
-    identifier: action.identifier,
-    buttonTitle: action.buttonTitle,
-    options: { opensAppToForeground: false },
-  })));
+  }));
+  await Notifications.setNotificationCategoryAsync("CHAT_MESSAGE", chatCategory);
+  await Notifications.setNotificationCategoryAsync("CHAT_MESSAGE_V2", chatCategory);
+  await Notifications.setNotificationCategoryAsync(
+    "BRINDAR_ACTIVITY",
+    BRINDAR_ACTIONS.map((action) => ({
+      identifier: action.identifier,
+      buttonTitle: action.buttonTitle,
+      options: { opensAppToForeground: false },
+    })),
+  );
+  await Notifications.setNotificationCategoryAsync("OFFICIAL_POST", []);
+  await Notifications.setNotificationCategoryAsync("STORY_ACTIVITY", []);
+}
+
+/**
+ * Registra el dispositivo en public.push_tokens (única tabla canónica).
+ * Intenta guardar también fcm_token nativo cuando Expo lo expone.
+ */
+export async function registerPushNotifications(userId: string) {
+  if (Platform.OS === "web") return;
+  try {
+    const Notifications = await import("expo-notifications");
+    await ensureAndroidChannel(Notifications);
+
+    const existing = await Notifications.getPermissionsAsync();
+    const permission = existing.granted ? existing : await Notifications.requestPermissionsAsync();
+    if (!permission.granted) return;
+
+    await registerCategories(Notifications);
 
     const projectId =
-      Constants.easConfig?.projectId ??
-      Constants.expoConfig?.extra?.eas?.projectId;
+      Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
     if (!projectId) {
       console.warn("Push notifications require an EAS projectId in the native build.");
       return;
     }
 
     const tokenResult = await Notifications.getExpoPushTokenAsync({ projectId });
-    const token = tokenResult.data;
-    if (!token) return;
+    const expoPushToken = tokenResult.data;
+    if (!expoPushToken) return;
 
-    const { error: tokenError } = await supabase.from("push_tokens").upsert(
-      { user_id: userId, expo_push_token: token, platform: Platform.OS, updated_at: new Date().toISOString() },
-      { onConflict: "expo_push_token" },
-    );
+    let fcmToken: string | null = null;
+    try {
+      const deviceToken = await Notifications.getDevicePushTokenAsync();
+      if (deviceToken?.data && typeof deviceToken.data === "string") {
+        fcmToken = deviceToken.data;
+      }
+    } catch {
+      // FCM nativo no disponible; Expo token basta.
+    }
+
+    const platform = Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : "unknown";
+    const payload = {
+      user_id: userId,
+      expo_push_token: expoPushToken,
+      platform,
+      fcm_token: fcmToken,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: tokenError } = await supabase.from("push_tokens").upsert(payload, {
+      onConflict: "expo_push_token",
+    });
     if (tokenError) throw tokenError;
   } catch (error) {
     console.warn("Push registration failed:", error instanceof Error ? error.message : error);
@@ -93,7 +148,11 @@ export async function saveNotificationReaction(activityId: string, reaction: str
   if (error) console.warn("Could not save notification reaction:", error.message);
 }
 
-export async function respondToFriendRequest(friendshipId: string, status: "accepted" | "blocked", userId: string) {
+export async function respondToFriendRequest(
+  friendshipId: string,
+  status: "accepted" | "blocked",
+  userId: string,
+) {
   const id = Number(friendshipId);
   if (!Number.isFinite(id)) return;
   const { error } = await supabase
@@ -106,7 +165,11 @@ export async function respondToFriendRequest(friendshipId: string, status: "acce
 }
 
 export async function sendDirectMessage(senderId: string, recipientId: string, body: string) {
-  const { error } = await supabase.from("direct_messages").insert({ sender_id: senderId, recipient_id: recipientId, body });
+  const { error } = await supabase.from("direct_messages").insert({
+    sender_id: senderId,
+    recipient_id: recipientId,
+    body,
+  });
   if (error) console.warn("Could not send notification reply:", error.message);
 }
 
