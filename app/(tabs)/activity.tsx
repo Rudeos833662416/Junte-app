@@ -12,10 +12,21 @@ import * as Haptics from "expo-haptics";
 type ActivityReaction = "🍺" | "🔥" | "🍻" | "🚀" | "❤️";
 const ACTIVITY_REACTIONS: ActivityReaction[] = ["🍺", "🔥", "🍻", "🚀", "❤️"];
 
+type ActivityType =
+  | "check_in"
+  | "check_out"
+  | "friend_request"
+  | "reaction_checkin"
+  | "reaction_story"
+  | "direct_message"
+  | "official_post"
+  | "story_new"
+  | "comment_reply";
+
 type ActivityRow = {
   id: string;
   actor_id: string;
-  type: "check_in" | "check_out" | "friend_request" | "reaction_checkin" | "reaction_story" | "direct_message";
+  type: ActivityType;
   message: string;
   created_at: string;
   venue_id: number | null;
@@ -32,6 +43,16 @@ function initials(name: string) {
 
 function formatActivityDate(value: string) {
   return new Date(value).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function activityIcon(type: ActivityType): { name: string; tone: "primary" | "success" | "muted" } {
+  if (type === "check_out") return { name: "checkmark.circle.fill", tone: "success" };
+  if (type === "friend_request") return { name: "person.badge.plus", tone: "primary" };
+  if (type === "direct_message") return { name: "message.fill", tone: "primary" };
+  if (type === "official_post") return { name: "megaphone.fill", tone: "primary" };
+  if (type === "story_new" || type === "reaction_story") return { name: "photo.fill", tone: "primary" };
+  if (type === "comment_reply") return { name: "text.bubble.fill", tone: "primary" };
+  return { name: "cup.and.saucer.fill", tone: "primary" };
 }
 
 export default function ActivityScreen() {
@@ -138,7 +159,10 @@ export default function ActivityScreen() {
         {isLoading ? <View className="flex-1 items-center justify-center"><ActivityIndicator color={colors.primary} /></View> : activities.length === 0 ? (
           <View className="flex-1 items-center justify-center"><IconSymbol name="bell.fill" size={38} color={colors.muted} /><Text className="mt-4 mb-2 text-lg font-semibold text-foreground">Sin actividad</Text><Text className="text-center text-sm text-muted">Aquí aparecerán los check-ins y check-outs reales de tus amigos.</Text></View>
         ) : (
-          <FlatList data={activities} keyExtractor={(item) => item.id} contentContainerStyle={{ paddingBottom: 20 }} renderItem={({ item }) => (
+          <FlatList data={activities} keyExtractor={(item) => item.id} contentContainerStyle={{ paddingBottom: 20 }} renderItem={({ item }) => {
+            const icon = activityIcon(item.type);
+            const iconColor = icon.tone === "success" ? colors.success : colors.primary;
+            return (
             <Swipeable
               overshootLeft={false}
               renderLeftActions={() => <View className="mb-3 mr-2 w-20 items-center justify-center rounded-2xl" style={{ backgroundColor: `${colors.error}22` }}><IconSymbol name="trash.fill" size={22} color={colors.error} /></View>}
@@ -148,7 +172,7 @@ export default function ActivityScreen() {
                 <View className="flex-row gap-4">
                   <View className="h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: `${(item.read_at ? colors.success : colors.error)}22` }}><Text className="text-lg font-bold" style={{ color: item.read_at ? colors.success : colors.error }}>{item.avatar}</Text></View>
                   <View className="flex-1"><View className="flex-row items-center gap-2"><View className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.read_at ? colors.success : colors.error }} /><Text className="font-semibold text-foreground">{item.userName}</Text></View><Text className="mt-1 text-sm leading-5 text-muted">{item.message}</Text><Text className="mt-1 text-xs text-muted">{formatActivityDate(item.created_at)}</Text></View>
-                  <IconSymbol name={item.type === "check_out" ? "checkmark.circle.fill" : "cup.and.saucer.fill"} size={22} color={item.type === "check_out" ? colors.success : colors.primary} />
+                  <IconSymbol name={icon.name as any} size={22} color={iconColor} />
                 </View>
               {item.type === "check_in" ? (
                 <View className="mt-4 flex-row items-center justify-between rounded-xl border px-3 py-2" style={{ backgroundColor: `${colors.midnight}66`, borderColor: colors.border }}>
@@ -178,7 +202,8 @@ export default function ActivityScreen() {
               ) : null}
               </Pressable>
             </Swipeable>
-          )} />
+            );
+          }} />
         )}
       </View>
     </ScreenContainer>
