@@ -31,6 +31,8 @@ export default function HomeScreen() {
   const [activeCheckin, setActiveCheckin] = useState<ActiveCheckin | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkinVisibility, setCheckinVisibility] = useState<CheckinVisibility>("friends");
+  const [friendOptions, setFriendOptions] = useState<{ id: string; name: string }[]>([]);
+  const [excludedFriendIds, setExcludedFriendIds] = useState<string[]>([]);
   const hasLoadedHomeOnce = useRef(false);
 
   const fetchData = useCallback(async () => {
@@ -75,12 +77,48 @@ export default function HomeScreen() {
     if (!user) return;
     const channel = supabase
       .channel(`tragos-sociales-home-${user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "checkins", filter: `user_id=eq.${user.id}` }, () => void fetchData())
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "checkins", filter: `user_id=eq.${user.id}` },
+        () => void fetchData(),
+      )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
   }, [fetchData, revision, user]);
+
+  useEffect(() => {
+    if (!user) {
+      setFriendOptions([]);
+      return;
+    }
+    void (async () => {
+      const { data: friendships } = await supabase
+        .from("friendships")
+        .select("user_id, friend_id")
+        .eq("status", "accepted")
+        .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
+      const ids = [
+        ...new Set(
+          ((friendships ?? []) as { user_id: string; friend_id: string }[]).map((row) =>
+            row.user_id === user.id ? row.friend_id : row.user_id,
+          ),
+        ),
+      ];
+      if (!ids.length) {
+        setFriendOptions([]);
+        return;
+      }
+      const { data: profiles } = await supabase.from("public_profiles").select("id, name").in("id", ids);
+      setFriendOptions(
+        (profiles ?? []).map((profile) => ({
+          id: profile.id,
+          name: profile.name?.trim() || "Amigo",
+        })),
+      );
+    })();
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -93,7 +131,13 @@ export default function HomeScreen() {
       .limit(30)
       .then(({ data }) => {
         if (cancelled) return;
-        const urls = [...new Set((data ?? []).map((row) => row.media_url).filter((url): url is string => Boolean(url)))];
+        const urls = [
+          ...new Set(
+            (data ?? [])
+              .map((row) => row.media_url)
+              .filter((url): url is string => Boolean(url)),
+          ),
+        ];
         void Promise.all(urls.map((url) => RNImage.prefetch(url).catch(() => false)));
       });
     return () => {
@@ -140,7 +184,7 @@ export default function HomeScreen() {
         p_lat: coordinate.latitude,
         p_lng: coordinate.longitude,
         p_visibility: checkinVisibility,
-        p_excluded_user_ids: [],
+        p_excluded_user_ids: checkinVisibility === "friends_except" ? excludedFriendIds : [],
         p_allowed_user_ids: [],
       });
       if (error) throw error;
@@ -223,42 +267,96 @@ export default function HomeScreen() {
             </Pressable>
 
             {!isCheckedIn ? (
-              <View className="mt-4 w-full flex-row flex-wrap justify-center gap-2">
-                {(
-                  [
-                    { id: "friends" as const, label: "Amigos" },
-                    { id: "everyone" as const, label: "Todos" },
-                    { id: "friends_except" as const, label: "Amigos*" },
-                  ] as const
-                ).map((option) => {
-                  const selected = checkinVisibility === option.id;
-                  return (
-                    <Pressable
-                      key={option.id}
-                      onPress={() => setCheckinVisibility(option.id)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Visibilidad: ${option.label}`}
-                      style={{
-                        borderRadius: 999,
-                        borderWidth: 1,
-                        borderColor: selected ? colors.primary : colors.border,
-                        backgroundColor: selected ? `${colors.primary}22` : colors.surface,
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                      }}
-                    >
-                      <Text
+              <View className="mt-4 w-full items-center gap-3">
+                <View className="w-full flex-row flex-wrap justify-center gap-2">
+                  {(
+                    [
+                      { id: "friends" as const, label: "Amigos" },
+                      { id: "everyone" as const, label: "Todos" },
+                      { id: "friends_except" as const, label: "Excepto…" },
+                    ] as const
+                  ).map((option) => {
+                    const selected = checkinVisibility === option.id;
+                    return (
+                      <Pressable
+                        key={option.id}
+                        onPress={() => setCheckinVisibility(option.id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Visibilidad: ${option.label}`}
                         style={{
-                          color: selected ? colors.primary : colors.muted,
-                          fontSize: 12,
-                          fontWeight: "700",
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: selected ? colors.primary : colors.border,
+                          backgroundColor: selected ? `${colors.primary}22` : colors.surface,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
                         }}
                       >
-                        {option.label}
+                        <Text
+                          style={{
+                            color: selected ? colors.primary : colors.muted,
+                            fontSize: 12,
+                            fontWeight: "700",
+                          }}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {checkinVisibility === "friends_except" ? (
+                  <View
+                    className="w-full rounded-2xl border p-3"
+                    style={{ borderColor: colors.border, backgroundColor: colors.surface }}
+                  >
+                    <Text className="mb-2 text-center text-xs font-semibold text-muted">
+                      Ocultar brindis a estos amigos
+                    </Text>
+                    {friendOptions.length === 0 ? (
+                      <Text className="text-center text-xs text-muted">
+                        Aún no tienes amigos para excluir.
                       </Text>
-                    </Pressable>
-                  );
-                })}
+                    ) : (
+                      <View className="flex-row flex-wrap justify-center gap-2">
+                        {friendOptions.map((friend) => {
+                          const selected = excludedFriendIds.includes(friend.id);
+                          return (
+                            <Pressable
+                              key={friend.id}
+                              onPress={() =>
+                                setExcludedFriendIds((current) =>
+                                  selected
+                                    ? current.filter((id) => id !== friend.id)
+                                    : [...current, friend.id],
+                                )
+                              }
+                              style={{
+                                borderRadius: 999,
+                                borderWidth: 1,
+                                borderColor: selected ? colors.primary : colors.border,
+                                backgroundColor: selected
+                                  ? `${colors.primary}22`
+                                  : colors.background,
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: selected ? colors.primary : colors.muted,
+                                  fontSize: 12,
+                                }}
+                              >
+                                {friend.name}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                ) : null}
               </View>
             ) : null}
 
