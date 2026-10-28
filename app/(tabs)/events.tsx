@@ -1,4 +1,5 @@
 import { ScreenContainer } from "@/components/screen-container";
+import { SecureMediaViewer } from "@/components/secure-media-viewer";
 import { OfficialVideo } from "@/components/official-video";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
@@ -48,6 +49,7 @@ export default function EventsScreen() {
   const [editingComment, setEditingComment] = useState<CommentRow | null>(null);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [fullVideo, setFullVideo] = useState<string | null>(null);
+  const [fullImage, setFullImage] = useState<string | null>(null);
   const [visiblePostIds, setVisiblePostIds] = useState<Set<string>>(new Set());
   const [screenFocused, setScreenFocused] = useState(true);
   const [publishing, setPublishing] = useState(false);
@@ -60,64 +62,60 @@ export default function EventsScreen() {
       return () => {
         setScreenFocused(false);
         setFullVideo(null);
+        setFullImage(null);
       };
     }, []),
   );
 
-  const loadComments = useCallback(
-    async (postId: string) => {
-      setCommentsLoading(true);
-      try {
-        const rpc = await supabase.rpc("get_official_post_comments_for_viewer", {
-          p_post_id: postId,
-        });
-        let data: unknown = null;
-        let error: { message: string } | null = null;
-        if (!rpc.error && rpc.data) {
-          data = Array.isArray(rpc.data)
-            ? rpc.data
-            : (rpc.data as { comments?: unknown }).comments ?? rpc.data;
-        } else {
-          const direct = await supabase
-            .from("official_post_comments")
-            .select("id, body, created_at, user_id, parent_comment_id, edited_at")
-            .eq("post_id", postId)
-            .order("created_at", { ascending: true });
-          data = direct.data;
-          error = direct.error;
-        }
-        if (error) throw error;
-        const rows = (data ?? []) as {
-          id: string;
-          body: string;
-          created_at: string;
-          user_id: string;
-          parent_comment_id: string | null;
-          edited_at?: string | null;
-        }[];
-        const ids = [...new Set(rows.map((row) => row.user_id))];
-        const { data: profiles } = ids.length
-          ? await supabase.from("profiles").select("id, name, avatar_url").in("id", ids)
-          : { data: [] as { id: string; name: string | null; avatar_url: string | null }[] };
-        const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-        setComments(
-          rows.map((row) => ({
-            ...row,
-            name: profileMap.get(row.user_id)?.name?.trim() || "Usuario",
-            avatar_url: profileMap.get(row.user_id)?.avatar_url ?? null,
-            reactionCount: 0,
-            reacted: false,
-          })),
-        );
-      } catch (err) {
-        reportError(err, { screen: "events", action: "loadComments" });
-        setComments([]);
-      } finally {
-        setCommentsLoading(false);
+  const loadComments = useCallback(async (postId: string) => {
+    setCommentsLoading(true);
+    try {
+      const rpc = await supabase.rpc("get_official_post_comments_for_viewer", { p_post_id: postId });
+      let data: unknown = null;
+      let error: { message: string } | null = null;
+      if (!rpc.error && rpc.data) {
+        data = Array.isArray(rpc.data)
+          ? rpc.data
+          : (rpc.data as { comments?: unknown }).comments ?? rpc.data;
+      } else {
+        const direct = await supabase
+          .from("official_post_comments")
+          .select("id, body, created_at, user_id, parent_comment_id, edited_at")
+          .eq("post_id", postId)
+          .order("created_at", { ascending: true });
+        data = direct.data;
+        error = direct.error;
       }
-    },
-    [],
-  );
+      if (error) throw error;
+      const rows = (data ?? []) as {
+        id: string;
+        body: string;
+        created_at: string;
+        user_id: string;
+        parent_comment_id: string | null;
+        edited_at?: string | null;
+      }[];
+      const ids = [...new Set(rows.map((row) => row.user_id))];
+      const { data: profiles } = ids.length
+        ? await supabase.from("profiles").select("id, name, avatar_url").in("id", ids)
+        : { data: [] as { id: string; name: string | null; avatar_url: string | null }[] };
+      const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+      setComments(
+        rows.map((row) => ({
+          ...row,
+          name: profileMap.get(row.user_id)?.name?.trim() || "Usuario",
+          avatar_url: profileMap.get(row.user_id)?.avatar_url ?? null,
+          reactionCount: 0,
+          reacted: false,
+        })),
+      );
+    } catch (err) {
+      reportError(err, { screen: "events", action: "loadComments" });
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -126,9 +124,7 @@ export default function EventsScreen() {
       const [{ data: postRows }, { data: adminRow }] = await Promise.all([
         supabase
           .from("official_posts")
-          .select(
-            "id, media_url, media_type, caption, created_at, created_by, media_width, media_height",
-          )
+          .select("id, media_url, media_type, caption, created_at, created_by, media_width, media_height")
           .is("deleted_at", null)
           .order("created_at", { ascending: false })
           .limit(50),
@@ -142,9 +138,7 @@ export default function EventsScreen() {
       const authorIds = [...new Set(rawPosts.map((post) => post.created_by))];
       let authorRows: OfficialAuthor[] = [];
       if (authorIds.length) {
-        const authorResult = await supabase.rpc("get_official_post_authors", {
-          p_post_ids: authorIds,
-        });
+        const authorResult = await supabase.rpc("get_official_post_authors", { p_post_ids: authorIds });
         if (!authorResult.error) authorRows = (authorResult.data ?? []) as OfficialAuthor[];
       }
       const authorMap = new Map(authorRows.map((row) => [row.id, row]));
@@ -152,19 +146,12 @@ export default function EventsScreen() {
       const postIds = rawPosts.map((post) => post.id);
       let countsByPost = new Map<string, { likes: number; comments: number }>();
       if (postIds.length) {
-        const countsResult = await supabase.rpc("get_official_post_counts", {
-          p_post_ids: postIds,
-        });
+        const countsResult = await supabase.rpc("get_official_post_counts", { p_post_ids: postIds });
         if (!countsResult.error) {
           countsByPost = new Map(
-            ((countsResult.data ?? []) as {
-              post_id: string;
-              like_count: number;
-              comment_count: number;
-            }[]).map((row) => [
-              row.post_id,
-              { likes: Number(row.like_count ?? 0), comments: Number(row.comment_count ?? 0) },
-            ]),
+            ((countsResult.data ?? []) as { post_id: string; like_count: number; comment_count: number }[]).map(
+              (row) => [row.post_id, { likes: Number(row.like_count ?? 0), comments: Number(row.comment_count ?? 0) }],
+            ),
           );
         }
       }
@@ -188,8 +175,7 @@ export default function EventsScreen() {
             likeCount: counts?.likes ?? 0,
             commentCount: counts?.comments ?? 0,
             liked: likedSet.has(post.id),
-            authorName:
-              author?.name?.trim() || author?.username?.trim() || "Tragos Sociales Oficial",
+            authorName: author?.name?.trim() || author?.username?.trim() || "Tragos Sociales Oficial",
             authorAvatarUrl: author?.avatar_url ?? null,
           };
         }),
@@ -241,15 +227,8 @@ export default function EventsScreen() {
       ),
     );
     const result = post.liked
-      ? await supabase
-          .from("official_post_likes")
-          .delete()
-          .eq("post_id", post.id)
-          .eq("user_id", user.id)
-      : await supabase.from("official_post_likes").upsert({
-          post_id: post.id,
-          user_id: user.id,
-        });
+      ? await supabase.from("official_post_likes").delete().eq("post_id", post.id).eq("user_id", user.id)
+      : await supabase.from("official_post_likes").upsert({ post_id: post.id, user_id: user.id });
     if (result.error) void loadData();
   };
 
@@ -272,9 +251,7 @@ export default function EventsScreen() {
         text: "Eliminar",
         style: "destructive",
         onPress: async () => {
-          const { error } = await supabase.rpc("admin_soft_delete_official_post", {
-            p_post_id: postId,
-          });
+          const { error } = await supabase.rpc("admin_soft_delete_official_post", { p_post_id: postId });
           if (error) {
             Alert.alert("No se pudo eliminar", error.message);
             return;
@@ -290,7 +267,6 @@ export default function EventsScreen() {
     if (!user || !commentFor || !comment.trim()) return;
     const body = comment.trim();
     setComment("");
-
     if (editingComment) {
       if (!canEditComment(editingComment.created_at) && !isAdmin) {
         Alert.alert("Tiempo agotado", "Solo puedes editar durante 10 minutos.");
@@ -310,13 +286,7 @@ export default function EventsScreen() {
       void loadComments(commentFor);
       return;
     }
-
-    const payload: {
-      post_id: string;
-      user_id: string;
-      body: string;
-      parent_comment_id?: string;
-    } = {
+    const payload: { post_id: string; user_id: string; body: string; parent_comment_id?: string } = {
       post_id: commentFor,
       user_id: user.id,
       body,
@@ -330,9 +300,7 @@ export default function EventsScreen() {
     }
     setReplyTo(null);
     setPosts((current) =>
-      current.map((post) =>
-        post.id === commentFor ? { ...post, commentCount: post.commentCount + 1 } : post,
-      ),
+      current.map((post) => (post.id === commentFor ? { ...post, commentCount: post.commentCount + 1 } : post)),
     );
     void loadComments(commentFor);
   };
@@ -389,11 +357,9 @@ export default function EventsScreen() {
     }
   };
 
-  const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      setVisiblePostIds(new Set(viewableItems.map((item) => String(item.item?.id ?? ""))));
-    },
-  ).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    setVisiblePostIds(new Set(viewableItems.map((item) => String(item.item?.id ?? ""))));
+  }).current;
 
   if (loading) {
     return (
@@ -421,9 +387,7 @@ export default function EventsScreen() {
                 paddingVertical: 6,
               }}
             >
-              <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: "700" }}>
-                Locales
-              </Text>
+              <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: "700" }}>Locales</Text>
             </Pressable>
             <Pressable
               onPress={() => void publishMedia()}
@@ -468,9 +432,7 @@ export default function EventsScreen() {
         contentContainerStyle={{ gap: 14, paddingBottom: 28 }}
         viewabilityConfig={{ itemVisiblePercentThreshold: 55 }}
         onViewableItemsChanged={onViewableItemsChanged}
-        ListEmptyComponent={
-          <Text className="text-muted">Sin publicaciones oficiales todavía.</Text>
-        }
+        ListEmptyComponent={<Text className="text-muted">Sin publicaciones oficiales todavía.</Text>}
         renderItem={({ item }) => {
           const ratio =
             item.media_width && item.media_height && item.media_height > 0
@@ -496,11 +458,7 @@ export default function EventsScreen() {
                   }}
                 >
                   {item.authorAvatarUrl ? (
-                    <ExpoImage
-                      source={{ uri: item.authorAvatarUrl }}
-                      style={{ width: 40, height: 40 }}
-                      contentFit="cover"
-                    />
+                    <ExpoImage source={{ uri: item.authorAvatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
                   ) : (
                     <Text style={{ color: colors.primary, fontWeight: "700" }}>
                       {(item.authorName[0] ?? "T").toUpperCase()}
@@ -513,16 +471,16 @@ export default function EventsScreen() {
                 </View>
               </View>
 
-              {item.caption ? (
-                <Text className="mb-2 text-sm text-muted">{item.caption}</Text>
-              ) : null}
+              {item.caption ? <Text className="mb-2 text-sm text-muted">{item.caption}</Text> : null}
 
               {item.media_type === "image" ? (
-                <ExpoImage
-                  source={{ uri: item.media_url }}
-                  style={{ width: "100%", aspectRatio: ratio, borderRadius: 12 }}
-                  contentFit="contain"
-                />
+                <Pressable onPress={() => setFullImage(item.media_url)}>
+                  <ExpoImage
+                    source={{ uri: item.media_url }}
+                    style={{ width: "100%", aspectRatio: ratio, borderRadius: 12 }}
+                    contentFit="contain"
+                  />
+                </Pressable>
               ) : (
                 <OfficialVideo
                   uri={item.media_url}
@@ -533,11 +491,7 @@ export default function EventsScreen() {
               )}
 
               <View className="mt-3 flex-row items-center gap-4">
-                <Pressable
-                  onPress={() => void toggleLike(item)}
-                  className="flex-row items-center gap-1"
-                  hitSlop={8}
-                >
+                <Pressable onPress={() => void toggleLike(item)} className="flex-row items-center gap-1" hitSlop={8}>
                   <MaterialIcons
                     name={item.liked ? "favorite" : "favorite-border"}
                     size={20}
@@ -624,11 +578,7 @@ export default function EventsScreen() {
                       }}
                     >
                       {item.avatar_url ? (
-                        <ExpoImage
-                          source={{ uri: item.avatar_url }}
-                          style={{ width: 36, height: 36 }}
-                          contentFit="cover"
-                        />
+                        <ExpoImage source={{ uri: item.avatar_url }} style={{ width: 36, height: 36 }} contentFit="cover" />
                       ) : (
                         <Text style={{ color: colors.primary, fontWeight: "700" }}>
                           {(item.name[0] ?? "U").toUpperCase()}
@@ -640,9 +590,7 @@ export default function EventsScreen() {
                       <Text style={{ color: colors.muted }}>{item.body}</Text>
                       <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
                         <Pressable onPress={() => setReplyTo(item)}>
-                          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>
-                            Responder
-                          </Text>
+                          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>Responder</Text>
                         </Pressable>
                         {showEdit ? (
                           <Pressable
@@ -652,16 +600,12 @@ export default function EventsScreen() {
                               setReplyTo(null);
                             }}
                           >
-                            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>
-                              Editar
-                            </Text>
+                            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>Editar</Text>
                           </Pressable>
                         ) : null}
                         {showDelete ? (
                           <Pressable onPress={() => deleteComment(item)}>
-                            <Text style={{ color: "#ef4444", fontSize: 12, fontWeight: "600" }}>
-                              Borrar
-                            </Text>
+                            <Text style={{ color: "#ef4444", fontSize: 12, fontWeight: "600" }}>Borrar</Text>
                           </Pressable>
                         ) : null}
                       </View>
@@ -731,6 +675,8 @@ export default function EventsScreen() {
           </View>
         </View>
       </Modal>
+
+      <SecureMediaViewer uri={fullImage} onClose={() => setFullImage(null)} secure />
 
       <Modal visible={Boolean(fullVideo)} animationType="fade" onRequestClose={() => setFullVideo(null)}>
         <View style={{ flex: 1, backgroundColor: "#000", justifyContent: "center" }}>
