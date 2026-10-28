@@ -4,6 +4,11 @@
   "private": true,
   "main": "expo-router/entry",
   "packageManager": "pnpm@9.12.0",
+  "pnpm": {
+    "overrides": {
+      "@supabase/supabase-js": "2.112.3"
+    }
+  },
   "scripts": {
     "dev": "concurrently -k \"pnpm dev:server\" \"pnpm dev:metro\"",
     "dev:server": "cross-env NODE_ENV=development tsx watch server/_core/index.ts",
@@ -25,17 +30,19 @@
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.9.2",
     "@react-navigation/native": "^7.1.8",
-    "@supabase/supabase-js": "^2.112.3",
+    "@supabase/supabase-js": "2.112.3",
     "@tanstack/react-query": "^5.90.12",
     "@trpc/client": "11.7.2",
     "@trpc/react-query": "11.7.2",
     "@trpc/server": "11.7.2",
     "axios": "^1.13.2",
+    "babel-preset-expo": "~54.0.0",
     "clsx": "^2.1.1",
     "cookie": "^1.1.1",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.44.7",
     "expo": "~54.0.37",
+    "expo-asset": "~12.0.14",
     "expo-audio": "~1.1.1",
     "expo-build-properties": "^1.0.10",
     "expo-camera": "~17.0.10",
