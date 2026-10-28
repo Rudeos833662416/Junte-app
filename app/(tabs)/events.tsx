@@ -8,9 +8,13 @@ import {
   type CommentRow,
   formatDate,
 } from "@/lib/events-shared";
+import { publishOfficialPost } from "@/lib/events-admin";
+import { reportError } from "@/lib/report";
 import { supabase } from "@/lib/supabase";
 import { Image as ExpoImage } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,15 +37,13 @@ export default function EventsScreen() {
   const [commentFor, setCommentFor] = useState<string | null>(null);
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [comment, setComment] = useState("");
+  const [replyTo, setReplyTo] = useState<CommentRow | null>(null);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [fullVideo, setFullVideo] = useState<string | null>(null);
   const [visiblePostIds, setVisiblePostIds] = useState<Set<string>>(new Set());
+  const [publishing, setPublishing] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState("");
   const deletedPostIdsRef = useRef(new Set<string>());
-  const commentForRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    commentForRef.current = commentFor;
-  }, [commentFor]);
 
   const loadComments = useCallback(
     async (postId: string) => {
@@ -113,7 +115,7 @@ export default function EventsScreen() {
           })),
         );
       } catch (err) {
-        console.error("No se pudieron cargar los comentarios:", err);
+        reportError(err, { screen: "events", action: "loadComments" });
         setComments([]);
       } finally {
         setCommentsLoading(false);
@@ -167,21 +169,6 @@ export default function EventsScreen() {
               { likes: Number(row.like_count ?? 0), comments: Number(row.comment_count ?? 0) },
             ]),
           );
-        } else {
-          const [likesResult, commentsResult] = await Promise.all([
-            supabase.from("official_post_likes").select("post_id").in("post_id", postIds),
-            supabase.from("official_post_comments").select("post_id").in("post_id", postIds),
-          ]);
-          for (const row of (likesResult.data ?? []) as { post_id: string }[]) {
-            const current = countsByPost.get(row.post_id) ?? { likes: 0, comments: 0 };
-            current.likes += 1;
-            countsByPost.set(row.post_id, current);
-          }
-          for (const row of (commentsResult.data ?? []) as { post_id: string }[]) {
-            const current = countsByPost.get(row.post_id) ?? { likes: 0, comments: 0 };
-            current.comments += 1;
-            countsByPost.set(row.post_id, current);
-          }
         }
       }
 
@@ -212,7 +199,7 @@ export default function EventsScreen() {
       );
       setIsAdmin(Boolean(adminRow?.is_admin));
     } catch (err) {
-      console.error(err);
+      reportError(err, { screen: "events", action: "loadData" });
     } finally {
       setLoading(false);
     }
@@ -221,6 +208,31 @@ export default function EventsScreen() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`events-live-${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "official_posts" }, () => {
+        void loadData();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "official_post_likes" }, () => {
+        void loadData();
+      })
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "official_post_comments" },
+        (payload) => {
+          const row = payload.new as { post_id?: string };
+          if (row.post_id && commentFor === row.post_id) void loadComments(row.post_id);
+          void loadData();
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user, loadData, loadComments, commentFor]);
 
   const toggleLike = async (post: OfficialPost) => {
     if (!user) return;
@@ -274,22 +286,60 @@ export default function EventsScreen() {
     if (!user || !commentFor || !comment.trim()) return;
     const body = comment.trim();
     setComment("");
-    const { error } = await supabase.from("official_post_comments").insert({
+    const payload: {
+      post_id: string;
+      user_id: string;
+      body: string;
+      parent_comment_id?: string;
+    } = {
       post_id: commentFor,
       user_id: user.id,
       body,
-    });
+    };
+    if (replyTo) payload.parent_comment_id = replyTo.id;
+    const { error } = await supabase.from("official_post_comments").insert(payload);
     if (error) {
       setComment(body);
       Alert.alert("No se pudo comentar", error.message);
       return;
     }
+    setReplyTo(null);
     setPosts((current) =>
       current.map((post) =>
         post.id === commentFor ? { ...post, commentCount: post.commentCount + 1 } : post,
       ),
     );
     void loadComments(commentFor);
+  };
+
+  const publishMedia = async () => {
+    if (!user || !isAdmin) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images", "videos"],
+      quality: 0.85,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    setPublishing(true);
+    try {
+      const isVideo = (asset.type ?? "").includes("video") || Boolean(asset.duration);
+      await publishOfficialPost({
+        userId: user.id,
+        uri: asset.uri,
+        mediaType: isVideo ? "video" : "image",
+        caption: captionDraft,
+        width: asset.width,
+        height: asset.height,
+      });
+      setCaptionDraft("");
+      void loadData();
+      Alert.alert("Publicado", "La publicación oficial ya está en el feed.");
+    } catch (err) {
+      reportError(err, { action: "publishOfficialPost" });
+      Alert.alert("Error", err instanceof Error ? err.message : "No se pudo publicar");
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const onViewableItemsChanged = useRef(
@@ -310,7 +360,61 @@ export default function EventsScreen() {
 
   return (
     <ScreenContainer className="p-4">
-      <Text className="mb-3 text-3xl font-bold text-foreground">Eventos</Text>
+      <View className="mb-3 flex-row items-center justify-between">
+        <Text className="text-3xl font-bold text-foreground">Eventos</Text>
+        {isAdmin ? (
+          <View className="flex-row gap-2">
+            <Pressable
+              onPress={() => router.push("/admin/venues")}
+              style={{
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: colors.border,
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+              }}
+            >
+              <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: "700" }}>
+                Locales
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void publishMedia()}
+              disabled={publishing}
+              style={{
+                borderRadius: 999,
+                backgroundColor: colors.primary,
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                opacity: publishing ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ color: colors.background, fontSize: 12, fontWeight: "700" }}>
+                {publishing ? "…" : "Publicar"}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+
+      {isAdmin ? (
+        <TextInput
+          value={captionDraft}
+          onChangeText={setCaptionDraft}
+          placeholder="Pie de foto opcional antes de Publicar"
+          placeholderTextColor={colors.muted}
+          style={{
+            marginBottom: 10,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 12,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            color: colors.foreground,
+          }}
+        />
+      ) : null}
+
       <FlatList
         data={posts}
         keyExtractor={(item) => item.id}
@@ -365,6 +469,7 @@ export default function EventsScreen() {
               <Pressable
                 onPress={() => {
                   setCommentFor(item.id);
+                  setReplyTo(null);
                   void loadComments(item.id);
                 }}
                 className="flex-row items-center gap-1"
@@ -396,18 +501,31 @@ export default function EventsScreen() {
               style={{ marginTop: 12, flex: 1 }}
               ListEmptyComponent={<Text className="text-muted">Sé el primero en comentar</Text>}
               renderItem={({ item }) => (
-                <View style={{ marginBottom: 12 }}>
+                <View style={{ marginBottom: 12, marginLeft: item.parent_comment_id ? 16 : 0 }}>
                   <Text style={{ color: colors.foreground, fontWeight: "700" }}>{item.name}</Text>
                   <Text style={{ color: colors.muted }}>{item.body}</Text>
+                  <Pressable onPress={() => setReplyTo(item)} style={{ marginTop: 4 }}>
+                    <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>
+                      Responder
+                    </Text>
+                  </Pressable>
                 </View>
               )}
             />
           )}
+          {replyTo ? (
+            <Text className="mb-1 text-xs text-muted">
+              Respondiendo a {replyTo.name}{" "}
+              <Text style={{ color: colors.primary }} onPress={() => setReplyTo(null)}>
+                (cancelar)
+              </Text>
+            </Text>
+          ) : null}
           <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
             <TextInput
               value={comment}
               onChangeText={setComment}
-              placeholder="Escribe un comentario"
+              placeholder={replyTo ? "Escribe una respuesta" : "Escribe un comentario"}
               placeholderTextColor={colors.muted}
               style={{
                 flex: 1,
