@@ -20,7 +20,15 @@ import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
-import { reactionFromNotificationAction, registerPushNotifications, saveNotificationReaction, respondToFriendRequest, sendDirectMessage, quickBrindarMessage } from "@/lib/push-notifications";
+import {
+  reactionFromNotificationAction,
+  registerPushNotifications,
+  saveNotificationReaction,
+  respondToFriendRequest,
+  sendDirectMessage,
+  quickBrindarMessage,
+  invokeNotificationAction,
+} from "@/lib/push-notifications";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -36,7 +44,6 @@ export default function RootLayout() {
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
 
-  // Initialize Manus runtime for cookie injection from parent container
   useEffect(() => {
     initManusRuntime();
   }, []);
@@ -52,15 +59,12 @@ export default function RootLayout() {
     return () => unsubscribe();
   }, [handleSafeAreaUpdate]);
 
-  // Create clients once and reuse them
   const [queryClient] = useState(
     () =>
       new QueryClient({
         defaultOptions: {
           queries: {
-            // Disable automatic refetching on window focus for mobile
             refetchOnWindowFocus: false,
-            // Retry failed requests once
             retry: 1,
           },
         },
@@ -68,7 +72,6 @@ export default function RootLayout() {
   );
   const [trpcClient] = useState(() => createTRPCClient());
 
-  // Ensure minimum 8px padding for top and bottom on mobile
   const providerInitialMetrics = useMemo(() => {
     const metrics = initialWindowMetrics ?? { insets: initialInsets, frame: initialFrame };
     return {
@@ -147,14 +150,66 @@ function AuthGate() {
     void import("expo-notifications").then((Notifications) => {
       if (disposed) return;
       const handleNotificationResponse = (response: import("expo-notifications").NotificationResponse) => {
-        const data = response.notification.request.content.data as { activityId?: string; friendshipId?: string; senderId?: string; chatId?: string };
+        const data = response.notification.request.content.data as {
+          activityId?: string;
+          friendshipId?: string;
+          senderId?: string;
+          chatId?: string;
+          actionToken?: string;
+        };
+        const actionToken = data.actionToken;
         const reaction = reactionFromNotificationAction(response.actionIdentifier);
         if (data.activityId && reaction) void saveNotificationReaction(data.activityId, reaction, user.id);
-        if (data.friendshipId && response.actionIdentifier === "ACCEPT_FRIEND") void respondToFriendRequest(data.friendshipId, "accepted", user.id);
-        if (data.friendshipId && response.actionIdentifier === "REJECT_FRIEND") void respondToFriendRequest(data.friendshipId, "blocked", user.id);
-        if (data.senderId && response.actionIdentifier === "CHAT_REPLY" && response.userText?.trim()) void sendDirectMessage(user.id, data.senderId, response.userText.trim());
+
+        if (response.actionIdentifier === "ACCEPT_FRIEND") {
+          void (async () => {
+            const edge = await invokeNotificationAction({ actionToken, action: "friend_accept" });
+            if (!edge.ok && data.friendshipId) {
+              await respondToFriendRequest(data.friendshipId, "accepted", user.id);
+            }
+          })();
+        }
+        if (response.actionIdentifier === "REJECT_FRIEND") {
+          void (async () => {
+            const edge = await invokeNotificationAction({ actionToken, action: "friend_reject" });
+            if (!edge.ok && data.friendshipId) {
+              await respondToFriendRequest(data.friendshipId, "blocked", user.id);
+            }
+          })();
+        }
+
+        if (response.actionIdentifier === "CHAT_REPLY" && response.userText?.trim() && data.senderId) {
+          const body = response.userText.trim();
+          void (async () => {
+            const clientMessageId =
+              typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : undefined;
+            const edge = await invokeNotificationAction({
+              actionToken,
+              action: "reply",
+              body,
+              clientMessageId,
+            });
+            if (!edge.ok) {
+              await sendDirectMessage(user.id, data.senderId!, body, clientMessageId);
+            }
+          })();
+        }
+
         const quickMessage = quickBrindarMessage(response.actionIdentifier);
-        if (data.senderId && quickMessage) void sendDirectMessage(user.id, data.senderId, quickMessage);
+        if (data.senderId && quickMessage) {
+          void (async () => {
+            const edge = await invokeNotificationAction({
+              actionToken,
+              action: "brindar_reply",
+              body: quickMessage,
+            });
+            if (!edge.ok) {
+              await sendDirectMessage(user.id, data.senderId!, quickMessage);
+            }
+          })();
+        }
       };
       responseSubscription = Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
       void Notifications.getLastNotificationResponseAsync().then((response) => {
