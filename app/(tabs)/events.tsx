@@ -27,8 +27,15 @@ import {
   Text,
   TextInput,
   View,
+  LayoutAnimation,
+  Platform,
+  UIManager,
   type ViewToken,
 } from "react-native";
+
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const EDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -117,9 +124,10 @@ export default function EventsScreen() {
     }
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (opts?: { silent?: boolean }) => {
     if (!user) return;
-    setLoading(true);
+    const silent = Boolean(opts?.silent);
+    if (!silent) setLoading(true);
     try {
       const [{ data: postRows }, { data: adminRow }] = await Promise.all([
         supabase
@@ -139,7 +147,23 @@ export default function EventsScreen() {
       let authorRows: OfficialAuthor[] = [];
       if (authorIds.length) {
         const authorResult = await supabase.rpc("get_official_post_authors", { p_post_ids: authorIds });
-        if (!authorResult.error) authorRows = (authorResult.data ?? []) as OfficialAuthor[];
+        if (!authorResult.error && authorResult.data) {
+          authorRows = (authorResult.data ?? []) as OfficialAuthor[];
+        }
+        if (!authorRows.length) {
+          const { data: profileRows } = await supabase
+            .from("profiles")
+            .select("id, name, avatar_url")
+            .in("id", authorIds);
+          authorRows = ((profileRows ?? []) as { id: string; name: string | null; avatar_url: string | null }[]).map(
+            (row) => ({
+              id: row.id,
+              name: row.name,
+              username: null,
+              avatar_url: row.avatar_url,
+            }),
+          );
+        }
       }
       const authorMap = new Map(authorRows.map((row) => [row.id, row]));
 
@@ -175,7 +199,7 @@ export default function EventsScreen() {
             likeCount: counts?.likes ?? 0,
             commentCount: counts?.comments ?? 0,
             liked: likedSet.has(post.id),
-            authorName: author?.name?.trim() || author?.username?.trim() || "Tragos Sociales Oficial",
+            authorName: author?.name?.trim() || author?.username?.trim() || "Usuario",
             authorAvatarUrl: author?.avatar_url ?? null,
           };
         }),
@@ -184,7 +208,7 @@ export default function EventsScreen() {
     } catch (err) {
       reportError(err, { screen: "events", action: "loadData" });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [user]);
 
@@ -197,15 +221,15 @@ export default function EventsScreen() {
     const channel = supabase
       .channel(`events-live-${user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "official_posts" }, () => {
-        void loadData();
+        void loadData({ silent: true });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "official_post_likes" }, () => {
-        void loadData();
+        void loadData({ silent: true });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "official_post_comments" }, (payload) => {
         const row = (payload.new ?? payload.old) as { post_id?: string };
         if (row.post_id && commentFor === row.post_id) void loadComments(row.post_id);
-        void loadData();
+        void loadData({ silent: true });
       })
       .subscribe();
     return () => {
@@ -215,21 +239,35 @@ export default function EventsScreen() {
 
   const toggleLike = async (post: OfficialPost) => {
     if (!user) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    const nextLiked = !post.liked;
     setPosts((current) =>
       current.map((item) =>
         item.id === post.id
           ? {
               ...item,
-              liked: !item.liked,
-              likeCount: Math.max(0, item.likeCount + (item.liked ? -1 : 1)),
+              liked: nextLiked,
+              likeCount: Math.max(0, item.likeCount + (nextLiked ? 1 : -1)),
             }
           : item,
       ),
     );
-    const result = post.liked
-      ? await supabase.from("official_post_likes").delete().eq("post_id", post.id).eq("user_id", user.id)
-      : await supabase.from("official_post_likes").upsert({ post_id: post.id, user_id: user.id });
-    if (result.error) void loadData();
+    const result = nextLiked
+      ? await supabase.from("official_post_likes").upsert({ post_id: post.id, user_id: user.id })
+      : await supabase.from("official_post_likes").delete().eq("post_id", post.id).eq("user_id", user.id);
+    if (result.error) {
+      setPosts((current) =>
+        current.map((item) =>
+          item.id === post.id
+            ? {
+                ...item,
+                liked: post.liked,
+                likeCount: post.likeCount,
+              }
+            : item,
+        ),
+      );
+    }
   };
 
   const sharePost = async (post: OfficialPost) => {
@@ -321,7 +359,7 @@ export default function EventsScreen() {
             return;
           }
           void loadComments(commentFor);
-          void loadData();
+          void loadData({ silent: true });
         },
       },
     ]);
@@ -461,7 +499,7 @@ export default function EventsScreen() {
                     <ExpoImage source={{ uri: item.authorAvatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
                   ) : (
                     <Text style={{ color: colors.primary, fontWeight: "700" }}>
-                      {(item.authorName[0] ?? "T").toUpperCase()}
+                      {(item.authorName[0] ?? "U").toUpperCase()}
                     </Text>
                   )}
                 </View>
@@ -536,15 +574,7 @@ export default function EventsScreen() {
         }}
       >
         <View style={{ flex: 1, backgroundColor: colors.background, padding: 16, paddingTop: 48 }}>
-          <Pressable
-            onPress={() => {
-              setCommentFor(null);
-              setEditingComment(null);
-              setReplyTo(null);
-            }}
-          >
-            <Text style={{ color: colors.primary, fontWeight: "700" }}>Cerrar</Text>
-          </Pressable>
+          <View style={{ height: 8 }} />
           {commentsLoading ? (
             <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
           ) : (
@@ -680,12 +710,6 @@ export default function EventsScreen() {
 
       <Modal visible={Boolean(fullVideo)} animationType="fade" onRequestClose={() => setFullVideo(null)}>
         <View style={{ flex: 1, backgroundColor: "#000", justifyContent: "center" }}>
-          <Pressable
-            onPress={() => setFullVideo(null)}
-            style={{ position: "absolute", top: 48, right: 20, zIndex: 2 }}
-          >
-            <Text style={{ color: "#fff", fontWeight: "700" }}>Cerrar</Text>
-          </Pressable>
           {fullVideo ? (
             <OfficialVideo
               uri={fullVideo}
