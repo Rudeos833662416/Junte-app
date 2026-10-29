@@ -13,6 +13,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { Image as ExpoImage } from "expo-image";
 import { uploadUriToStorage, verifyPublicStorageUrl } from "@/lib/media-upload";
+import { router } from "expo-router";
 
 type UploadKind = "avatar" | "cover";
 type UploadState = { kind: UploadKind; progress: number; message: string };
@@ -445,6 +446,30 @@ export default function ProfileScreen() {
 
               <Text className="mt-1 text-sm text-muted">{email}</Text>
             </View>
+          </View>
+
+          <View className="mb-4 rounded-2xl border p-4" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
+            <Text className="mb-2 text-base font-bold text-foreground">Historias</Text>
+            <Text className="mb-3 text-xs text-muted">
+              Publica o gestiona tus historias y la música que acompañan.
+            </Text>
+            <Pressable
+              onPress={() => router.push("/(tabs)/stories")}
+              accessibilityRole="button"
+              accessibilityLabel="Gestionar historias y música"
+              style={({ pressed }) => ({
+                height: 46,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 14,
+                backgroundColor: colors.primary,
+                opacity: pressed ? 0.85 : 1,
+              })}
+            >
+              <Text style={{ color: colors.background, fontWeight: "700" }}>
+                Gestionar Historias y Música
+              </Text>
+            </Pressable>
           </View>
 
           <View className="mb-4 rounded-2xl border p-4" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
