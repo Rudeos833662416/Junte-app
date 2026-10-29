@@ -139,7 +139,15 @@ export default function PublicProfileScreen() {
         </Pressable>
         <View className="mt-2 overflow-hidden rounded-3xl border" style={{ backgroundColor: colors.surface, borderColor: colors.border }}>
           {profile.cover_url ? (
-            <Pressable onPress={() => setViewerUri(profile.cover_url)}>
+            <Pressable
+              onPress={() => {
+                if (isSelf) {
+                  router.replace("/(tabs)/profile");
+                  return;
+                }
+                setViewerUri(profile.cover_url);
+              }}
+            >
               <ExpoImage source={{ uri: profile.cover_url }} style={{ width: "100%", height: 160 }} className="h-40 w-full" contentFit="cover" cachePolicy="none" transition={180} onError={(event) => console.warn("No se pudo renderizar la portada pública:", event.error)} />
             </Pressable>
           ) : (
@@ -147,7 +155,13 @@ export default function PublicProfileScreen() {
           )}
           <View className="items-center px-5 pb-6">
             <Pressable
-              onPress={() => profile.avatar_url && setViewerUri(profile.avatar_url)}
+              onPress={() => {
+                if (isSelf) {
+                  router.replace("/(tabs)/profile");
+                  return;
+                }
+                if (profile.avatar_url) setViewerUri(profile.avatar_url);
+              }}
               style={{ marginTop: -44 }}
             >
               <View className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border-4" style={{ borderColor: colors.surface, backgroundColor: colors.primary }}>
