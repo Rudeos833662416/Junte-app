@@ -8,7 +8,7 @@ import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import Constants from "expo-constants";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Image as RNImage, Platform, Pressable, ScrollView, Text, View } from "react-native";
 
 type Coordinates = { latitude: number; longitude: number };
@@ -34,7 +34,15 @@ export default function HomeScreen() {
   const [friendOptions, setFriendOptions] = useState<{ id: string; name: string }[]>([]);
   const [excludedFriendIds, setExcludedFriendIds] = useState<string[]>([]);
   const [visibilityMenuOpen, setVisibilityMenuOpen] = useState(false);
+  const [exceptPickerOpen, setExceptPickerOpen] = useState(false);
   const hasLoadedHomeOnce = useRef(false);
+
+  const visibilityLabel = useMemo(() => {
+    if (checkinVisibility === "everyone") return "Todos";
+    if (checkinVisibility === "friends") return "Amigos";
+    const n = excludedFriendIds.length;
+    return n > 0 ? `Todos excepto (${n})` : "Todos excepto…";
+  }, [checkinVisibility, excludedFriendIds.length]);
 
   const fetchData = useCallback(async () => {
     if (!user) {
@@ -177,8 +185,20 @@ export default function HomeScreen() {
   const handleCheckIn = async () => {
     if (!user) return;
 
+    if (checkinVisibility === "friends_except" && excludedFriendIds.length === 0) {
+      Alert.alert(
+        "Elige a quién ocultar",
+        "Selecciona al menos un amigo en «Todos excepto…» o elige otra audiencia.",
+      );
+      setVisibilityMenuOpen(true);
+      setExceptPickerOpen(true);
+      return;
+    }
+
     try {
       setIsSubmitting(true);
+      setVisibilityMenuOpen(false);
+      setExceptPickerOpen(false);
       const coordinate = await resolveCurrentCoordinates();
       if (Platform.OS !== "web") await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const { data, error } = await supabase.rpc("start_my_checkin", {
@@ -232,6 +252,23 @@ export default function HomeScreen() {
     }
   };
 
+  const selectVisibility = (id: CheckinVisibility) => {
+    setCheckinVisibility(id);
+    if (id === "friends_except") {
+      setExceptPickerOpen(true);
+      setVisibilityMenuOpen(false);
+      return;
+    }
+    setExceptPickerOpen(false);
+    setVisibilityMenuOpen(false);
+  };
+
+  const confirmExceptSelection = () => {
+    setCheckinVisibility("friends_except");
+    setExceptPickerOpen(false);
+    setVisibilityMenuOpen(false);
+  };
+
   const isCheckedIn = Boolean(activeCheckin);
 
   return (
@@ -250,111 +287,116 @@ export default function HomeScreen() {
           </View>
 
           <View className="items-center">
-            <View style={{ position: "relative", width: 220, height: 220, alignItems: "center", justifyContent: "center" }}>
-              {!isCheckedIn ? (
-                <Pressable
-                  onPress={() => setVisibilityMenuOpen((open) => !open)}
-                  hitSlop={12}
-                  accessibilityLabel="Filtro de audiencia del brindis"
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    right: 0,
-                    zIndex: 20,
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}
-                >
-                  <Text style={{ fontSize: 16 }}>✎</Text>
-                </Pressable>
-              ) : null}
+            {!isCheckedIn ? (
+              <View style={{ width: "100%", alignItems: "center", marginBottom: 12, zIndex: 40 }}>
+                <View style={{ position: "relative", alignItems: "center" }}>
+                  <Pressable
+                    onPress={() => {
+                      setVisibilityMenuOpen((open) => !open);
+                      if (visibilityMenuOpen) setExceptPickerOpen(false);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Audiencia del brindis: ${visibilityLabel}. Toca para cambiar.`}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surface,
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                    }}
+                  >
+                    <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "700" }}>
+                      {visibilityLabel}
+                    </Text>
+                    <Text style={{ fontSize: 14, color: colors.muted }}>✎</Text>
+                  </Pressable>
 
-              {visibilityMenuOpen && !isCheckedIn ? (
-                <View
-                  style={{
-                    position: "absolute",
-                    top: 44,
-                    right: 0,
-                    zIndex: 30,
-                    minWidth: 168,
-                    borderRadius: 14,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    backgroundColor: colors.surface,
-                    paddingVertical: 6,
-                    shadowColor: "#000",
-                    shadowOpacity: 0.2,
-                    shadowRadius: 8,
-                    elevation: 6,
-                  }}
-                >
-                  {(
-                    [
-                      { id: "everyone" as const, label: "Todos" },
-                      { id: "friends" as const, label: "Solo amigos" },
-                      { id: "friends_except" as const, label: "Todos excepto…" },
-                    ] as const
-                  ).map((option) => {
-                    const selected = checkinVisibility === option.id;
-                    return (
-                      <Pressable
-                        key={option.id}
-                        onPress={() => {
-                          setCheckinVisibility(option.id);
-                          if (option.id !== "friends_except") setVisibilityMenuOpen(false);
-                        }}
-                        style={{
-                          paddingHorizontal: 14,
-                          paddingVertical: 10,
-                          backgroundColor: selected ? `${colors.primary}18` : "transparent",
-                        }}
-                      >
-                        <Text
-                          style={{
-                            color: selected ? colors.primary : colors.foreground,
-                            fontWeight: selected ? "700" : "500",
-                            fontSize: 14,
-                          }}
-                        >
-                          {option.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                  {visibilityMenuOpen ? (
+                    <View
+                      style={{
+                        position: "absolute",
+                        top: 44,
+                        minWidth: 200,
+                        borderRadius: 14,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                        paddingVertical: 6,
+                        shadowColor: "#000",
+                        shadowOpacity: 0.2,
+                        shadowRadius: 8,
+                        elevation: 8,
+                        zIndex: 50,
+                      }}
+                    >
+                      {(
+                        [
+                          { id: "everyone" as const, label: "Todos" },
+                          { id: "friends" as const, label: "Amigos" },
+                          { id: "friends_except" as const, label: "Todos excepto…" },
+                        ] as const
+                      ).map((option) => {
+                        const selected = checkinVisibility === option.id && !exceptPickerOpen;
+                        const selectedExcept =
+                          option.id === "friends_except" && checkinVisibility === "friends_except";
+                        const isSelected =
+                          option.id === "friends_except" ? selectedExcept : selected;
+                        return (
+                          <Pressable
+                            key={option.id}
+                            onPress={() => selectVisibility(option.id)}
+                            style={{
+                              paddingHorizontal: 14,
+                              paddingVertical: 12,
+                              backgroundColor: isSelected ? `${colors.primary}18` : "transparent",
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: isSelected ? colors.primary : colors.foreground,
+                                fontWeight: isSelected ? "700" : "500",
+                                fontSize: 14,
+                              }}
+                            >
+                              {option.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ) : null}
                 </View>
-              ) : null}
+              </View>
+            ) : null}
 
-              <Pressable
-                onPress={isCheckedIn ? handleCheckOut : handleCheckIn}
-                disabled={isSubmitting}
-                style={({ pressed }) => ({
-                  width: 196,
-                  height: 196,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: 98,
-                  backgroundColor: isCheckedIn ? colors.success : colors.primary,
-                  transform: [{ scale: pressed && !isSubmitting ? 0.95 : 1 }],
-                  opacity: isSubmitting ? 0.7 : 1,
-                })}
-              >
-                <BebeConmigoCan width={126} height={178} accessibilityLabel="Lata Bebe Conmigo" />
-              </Pressable>
-            </View>
+            <Pressable
+              onPress={isCheckedIn ? handleCheckOut : handleCheckIn}
+              disabled={isSubmitting}
+              style={({ pressed }) => ({
+                width: 196,
+                height: 196,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 98,
+                backgroundColor: isCheckedIn ? colors.success : colors.primary,
+                transform: [{ scale: pressed && !isSubmitting ? 0.95 : 1 }],
+                opacity: isSubmitting ? 0.7 : 1,
+              })}
+            >
+              <BebeConmigoCan width={126} height={178} accessibilityLabel="Lata Bebe Conmigo" />
+            </Pressable>
 
-            {!isCheckedIn && checkinVisibility === "friends_except" ? (
+            {!isCheckedIn && exceptPickerOpen ? (
               <View
-                className="mt-3 w-full rounded-2xl border p-3"
+                className="mt-4 w-full rounded-2xl border p-3"
                 style={{ borderColor: colors.border, backgroundColor: colors.surface }}
               >
                 <Text className="mb-2 text-center text-xs font-semibold text-muted">
-                  Ocultar brindis a estos amigos
+                  Elige a quién ocultar el brindis
                 </Text>
                 {friendOptions.length === 0 ? (
                   <Text className="text-center text-xs text-muted">Aún no tienes amigos para excluir.</Text>
@@ -367,7 +409,9 @@ export default function HomeScreen() {
                           key={friend.id}
                           onPress={() =>
                             setExcludedFriendIds((current) =>
-                              selected ? current.filter((id) => id !== friend.id) : [...current, friend.id],
+                              selected
+                                ? current.filter((id) => id !== friend.id)
+                                : [...current, friend.id],
                             )
                           }
                           style={{
@@ -387,19 +431,24 @@ export default function HomeScreen() {
                     })}
                   </View>
                 )}
+                <Pressable
+                  onPress={confirmExceptSelection}
+                  style={{
+                    marginTop: 12,
+                    borderRadius: 12,
+                    backgroundColor: colors.primary,
+                    paddingVertical: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: colors.background, fontWeight: "700" }}>
+                    Listo{excludedFriendIds.length ? ` (${excludedFriendIds.length})` : ""}
+                  </Text>
+                </Pressable>
               </View>
             ) : null}
 
-            <Text className="mt-4 text-xs text-muted">
-              {isCheckedIn
-                ? ""
-                : checkinVisibility === "everyone"
-                  ? "Visible para todos"
-                  : checkinVisibility === "friends"
-                    ? "Solo amigos"
-                    : "Todos excepto seleccionados"}
-            </Text>
-            <Text className="mt-2 text-lg font-semibold text-foreground">
+            <Text className="mt-6 text-lg font-semibold text-foreground">
               {isCheckedIn ? "Terminar brindis" : "Brindar"}
             </Text>
           </View>
