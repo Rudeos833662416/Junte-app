@@ -1,5 +1,5 @@
 import { ScreenContainer } from "@/components/screen-container";
-import { BebeConmigoCan } from "@/components/bebe-conmigo-can";
+import { DrinkCircle } from "@/components/drink-circle";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { useAppRefresh } from "@/lib/app-refresh";
@@ -373,22 +373,16 @@ export default function HomeScreen() {
               </View>
             ) : null}
 
-            <Pressable
-              onPress={isCheckedIn ? handleCheckOut : handleCheckIn}
+            <DrinkCircle
+              active={isCheckedIn}
               disabled={isSubmitting}
-              style={({ pressed }) => ({
-                width: 196,
-                height: 196,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 98,
-                backgroundColor: isCheckedIn ? colors.success : colors.primary,
-                transform: [{ scale: pressed && !isSubmitting ? 0.95 : 1 }],
-                opacity: isSubmitting ? 0.7 : 1,
-              })}
-            >
-              <BebeConmigoCan width={126} height={178} accessibilityLabel="Lata Bebe Conmigo" />
-            </Pressable>
+              onToggle={() => {
+                if (isCheckedIn) void handleCheckOut();
+                else void handleCheckIn();
+              }}
+              activeColor={colors.success}
+              idleColor={colors.primary}
+            />
 
             {!isCheckedIn && exceptPickerOpen ? (
               <View
@@ -447,10 +441,6 @@ export default function HomeScreen() {
                 </Pressable>
               </View>
             ) : null}
-
-            <Text className="mt-6 text-lg font-semibold text-foreground">
-              {isCheckedIn ? "Terminar brindis" : "Brindar"}
-            </Text>
           </View>
 
           <View className="gap-3">
