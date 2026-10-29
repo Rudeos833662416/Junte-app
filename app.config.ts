@@ -28,7 +28,7 @@ const schemeFromBundleId = "socialsip";
 const env = {
   // App branding - update these values directly (do not use env vars)
   appName: "Tragos Sociales",
-  appSlug: "socialsip",
+  appSlug: "junte-app",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
   logoUrl: "/manus-storage/icon_d4ee1ac1.png",
@@ -50,11 +50,13 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Tragos Sociales necesita acceso a tu ubicación para mostrar dónde están tus amigos.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Tragos Sociales necesita acceso a tu ubicación mientras usas el mapa y el descubrimiento cercano."
-      }
+    infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
+      NSLocationWhenInUseUsageDescription:
+        "Tragos Sociales necesita acceso a tu ubicación para mostrar dónde están tus amigos.",
+      NSLocationAlwaysAndWhenInUseUsageDescription:
+        "Tragos Sociales necesita acceso a tu ubicación mientras usas el mapa y el descubrimiento cercano.",
+    },
   },
   android: {
     adaptiveIcon: {
@@ -86,12 +88,12 @@ const config: ExpoConfig = {
     output: "static",
     favicon: "./assets/images/favicon.png",
   },
-  owner: "rudeosgreyrad416",
+  owner: "jesus_junteapp",
   extra: {
     appSubtitle: env.appSubtitle,
     // Read by the native config plugin during Expo prebuild; never hardcode the key.
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
-    eas: { projectId: "937e4d3e-fb8b-481d-ab99-d06ef34e7709" },
+    eas: { projectId: "a595b360-16d9-40e4-9df4-7a3630257f39" },
     // These are Supabase public client values; RLS protects database access.
     supabaseUrl: process.env.SUPABASE_URL ?? "https://cymhbwgxmezrwofkbdqz.supabase.co",
     supabaseAnonKey:
