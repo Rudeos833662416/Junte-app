@@ -1,6 +1,5 @@
 import { Alert, ActivityIndicator, ScrollView, Text, TextInput, View, Pressable, Switch, Platform } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
-import { SecureMediaViewer } from "@/components/secure-media-viewer";
 import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
 import { useAppRefresh } from "@/lib/app-refresh";
@@ -62,7 +61,6 @@ export default function ProfileScreen() {
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
-  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [profileName, setProfileName] = useState("");
@@ -378,11 +376,8 @@ export default function ProfileScreen() {
           >
             <Pressable
               disabled={Boolean(uploadState)}
-              onPress={() => {
-                if (coverUrl) setViewerUri(coverUrl);
-                else void uploadProfileImage("cover");
-              }}
-              onLongPress={() => void uploadProfileImage("cover")}
+              onPress={() => void uploadProfileImage("cover")}
+              accessibilityLabel="Cambiar foto de portada"
               style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
             >
               <View className="relative h-44 w-full bg-midnight">
@@ -407,11 +402,8 @@ export default function ProfileScreen() {
             <View className="items-center px-5 pb-5">
               <Pressable
                 disabled={Boolean(uploadState)}
-                onPress={() => {
-                  if (avatarUrl) setViewerUri(avatarUrl);
-                  else void uploadProfileImage("avatar");
-                }}
-                onLongPress={() => void uploadProfileImage("avatar")}
+                onPress={() => void uploadProfileImage("avatar")}
+                accessibilityLabel="Cambiar foto de perfil"
                 style={{ marginTop: -40 }}
               >
                 <View
@@ -434,45 +426,49 @@ export default function ProfileScreen() {
                     value={nameDraft}
                     onChangeText={setNameDraft}
                     maxLength={20}
-                    className="flex-1 rounded-xl border px-3 py-2 text-foreground"
-                    style={{ borderColor: colors.border }}
+                    className="flex-1 rounded-xl border px-3 py-2 text-center text-lg font-bold text-foreground"
+                    style={{ borderColor: colors.border, backgroundColor: colors.background }}
+                    placeholder="Tu nombre"
                     placeholderTextColor={colors.muted}
+                    autoFocus
                   />
                   <Pressable onPress={() => void handleSaveName()} disabled={isSavingName}>
-                    <IconSymbol name="checkmark.circle.fill" size={22} color={colors.success} />
+                    <Text style={{ color: colors.primary, fontWeight: "700" }}>{isSavingName ? "…" : "OK"}</Text>
                   </Pressable>
                   <Pressable onPress={handleCancelNameEdit}>
-                    <IconSymbol name="xmark.circle.fill" size={22} color={colors.error} />
+                    <Text style={{ color: colors.muted }}>✕</Text>
                   </Pressable>
                 </View>
               ) : (
                 <Pressable onPress={handleStartNameEdit} className="mt-3 flex-row items-center gap-2">
-                  <Text className="text-2xl font-bold text-foreground">{profileName || "Tu nombre"}</Text>
+                  <Text className="text-2xl font-bold text-foreground">{profileName || email || "Tu perfil"}</Text>
                   <IconSymbol name="pencil" size={16} color={colors.muted} />
                 </Pressable>
               )}
 
-              {email ? <Text className="mt-1 text-sm text-muted">{email}</Text> : null}
               {uploadNotice ? <Text className="mt-2 text-xs" style={{ color: colors.success }}>{uploadNotice}</Text> : null}
+              {uploadState ? (
+                <Text className="mt-2 text-xs text-muted">{uploadState.message} ({uploadState.progress}%)</Text>
+              ) : null}
 
               {isEditingBio ? (
-                <View className="mt-3 w-full gap-2">
+                <View className="mt-3 w-full">
                   <TextInput
                     value={bioDraft}
                     onChangeText={setBioDraft}
                     maxLength={280}
                     multiline
-                    className="rounded-xl border px-3 py-2 text-foreground"
-                    style={{ borderColor: colors.border, minHeight: 72 }}
-                    placeholder="Biografía"
+                    className="rounded-xl border px-3 py-2 text-sm text-foreground"
+                    style={{ borderColor: colors.border, backgroundColor: colors.background, minHeight: 72 }}
+                    placeholder="Cuéntale a la gente quién eres…"
                     placeholderTextColor={colors.muted}
                   />
-                  <View className="flex-row gap-2">
+                  <View className="mt-2 flex-row justify-end gap-2">
                     <Pressable onPress={() => void handleSaveBio()} className="rounded-lg px-3 py-2" style={{ backgroundColor: colors.primary }}>
-                      <Text style={{ color: colors.background, fontWeight: "700" }}>Guardar bio</Text>
+                      <Text style={{ color: colors.background, fontWeight: "700" }}>{isSavingBio ? "…" : "Guardar"}</Text>
                     </Pressable>
                     <Pressable onPress={handleCancelBioEdit} className="rounded-lg border px-3 py-2" style={{ borderColor: colors.border }}>
-                      <Text className="text-foreground">Cancelar</Text>
+                      <Text style={{ color: colors.muted }}>Cancelar</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -481,21 +477,23 @@ export default function ProfileScreen() {
                   <Text className="text-center text-sm text-muted">{bio || "Añade una biografía"}</Text>
                 </Pressable>
               )}
+
+              <Text className="mt-1 text-sm text-muted">{email}</Text>
             </View>
           </View>
 
           <View className="mb-4 rounded-2xl border p-4" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
             <Text className="mb-3 text-base font-bold text-foreground">Privacidad</Text>
             <View className="mb-3 flex-row items-center justify-between">
-              <Text className="text-foreground">Perfil público</Text>
+              <Text className="flex-1 text-sm text-foreground">Perfil público</Text>
               <Switch value={isPublicProfile} onValueChange={() => void updatePrivacySetting("is_public", !isPublicProfile)} />
             </View>
             <View className="mb-3 flex-row items-center justify-between">
-              <Text className="text-foreground">Descubrimiento cercano</Text>
+              <Text className="flex-1 text-sm text-foreground">Visible cerca</Text>
               <Switch value={discoverableNearby} onValueChange={() => void updatePrivacySetting("discoverable_nearby", !discoverableNearby)} />
             </View>
             <View className="flex-row items-center justify-between">
-              <Text className="text-foreground">Compartir ubicación</Text>
+              <Text className="flex-1 text-sm text-foreground">Compartir ubicación</Text>
               <Switch value={locationSharing} onValueChange={() => void updatePrivacySetting("location_sharing", !locationSharing)} />
             </View>
           </View>
@@ -506,9 +504,10 @@ export default function ProfileScreen() {
               <ActivityIndicator color={colors.primary} />
             ) : (
               <>
-                <Text className="text-sm text-muted">{checkinCount} brindis · {visitedVenueCount} locales</Text>
+                <Text className="text-sm text-muted">Check-ins: {checkinCount}</Text>
+                <Text className="text-sm text-muted">Locales visitados: {visitedVenueCount}</Text>
                 {recentCheckins.map((item) => (
-                  <Text key={item.id} className="mt-1 text-sm text-foreground">
+                  <Text key={item.id} className="mt-1 text-xs text-muted">
                     {item.venueName}
                   </Text>
                 ))}
@@ -519,13 +518,12 @@ export default function ProfileScreen() {
           <Pressable
             onPress={handleLogout}
             className="mb-6 items-center rounded-2xl border py-3"
-            style={{ borderColor: colors.error }}
+            style={{ borderColor: "#ef4444" }}
           >
-            <Text style={{ color: colors.error, fontWeight: "700" }}>Cerrar sesión</Text>
+            <Text style={{ color: "#ef4444", fontWeight: "700" }}>Cerrar sesión</Text>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
-      <SecureMediaViewer uri={viewerUri} onClose={() => setViewerUri(null)} secure />
     </ScreenContainer>
   );
 }
