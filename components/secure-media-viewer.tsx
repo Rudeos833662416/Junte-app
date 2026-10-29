@@ -2,14 +2,11 @@ import { useEffect } from "react";
 import {
   Modal,
   Platform,
-  Pressable,
   ScrollView,
-  Text,
   View,
   useWindowDimensions,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 type Props = {
   uri: string | null;
@@ -19,8 +16,8 @@ type Props = {
 };
 
 /**
- * Fullscreen image viewer. Uses expo-screen-capture when available.
- * Zoom: pinch via maximumZoomScale on iOS ScrollView; Android simple fit.
+ * Fullscreen image viewer. Cierre: gesto atrás del sistema (onRequestClose).
+ * Zoom: pinch vía maximumZoomScale en iOS ScrollView.
  */
 export function SecureMediaViewer({ uri, onClose, secure = true }: Props) {
   const { width, height } = useWindowDimensions();
@@ -53,25 +50,6 @@ export function SecureMediaViewer({ uri, onClose, secure = true }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: "#000" }}>
-        <Pressable
-          onPress={onClose}
-          hitSlop={12}
-          style={{
-            position: "absolute",
-            top: 52,
-            right: 20,
-            zIndex: 10,
-            width: 40,
-            height: 40,
-            borderRadius: 20,
-            backgroundColor: "rgba(0,0,0,0.55)",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <MaterialIcons name="close" size={22} color="#fff" />
-        </Pressable>
-
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{
@@ -93,18 +71,6 @@ export function SecureMediaViewer({ uri, onClose, secure = true }: Props) {
             />
           ) : null}
         </ScrollView>
-
-        <Text
-          style={{
-            position: "absolute",
-            bottom: 28,
-            alignSelf: "center",
-            color: "rgba(255,255,255,0.55)",
-            fontSize: 12,
-          }}
-        >
-          Toca × para cerrar
-        </Text>
       </View>
     </Modal>
   );
