@@ -1,6 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
+  Animated,
   Modal,
+  PanResponder,
   Platform,
   ScrollView,
   View,
@@ -16,22 +18,27 @@ type Props = {
 };
 
 /**
- * Fullscreen image viewer. Cierre: gesto atrás del sistema (onRequestClose).
- * Zoom: pinch vía maximumZoomScale en iOS ScrollView.
+ * Visor fullscreen. Cierre: atrás del sistema o swipe hacia abajo.
+ * Sin botones X ni textos orientativos. Protección de capturas opcional.
  */
 export function SecureMediaViewer({ uri, onClose, secure = true }: Props) {
   const { width, height } = useWindowDimensions();
   const visible = Boolean(uri);
+  const translateY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!visible || !secure || Platform.OS === "web") return;
+    if (!visible) {
+      translateY.setValue(0);
+      return;
+    }
+    if (!secure || Platform.OS === "web") return;
     let active = true;
     void (async () => {
       try {
         const ScreenCapture = await import("expo-screen-capture");
         if (active) await ScreenCapture.preventScreenCaptureAsync();
       } catch {
-        // dependency optional until installed
+        // optional until native module is present
       }
     })();
     return () => {
@@ -45,11 +52,46 @@ export function SecureMediaViewer({ uri, onClose, secure = true }: Props) {
         }
       })();
     };
-  }, [visible, secure]);
+  }, [visible, secure, translateY]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_evt, gesture) =>
+        Math.abs(gesture.dy) > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+      onPanResponderMove: (_evt, gesture) => {
+        if (gesture.dy > 0) translateY.setValue(gesture.dy);
+      },
+      onPanResponderRelease: (_evt, gesture) => {
+        if (gesture.dy > 120 || gesture.vy > 1.1) {
+          Animated.timing(translateY, {
+            toValue: height,
+            duration: 180,
+            useNativeDriver: true,
+          }).start(() => {
+            translateY.setValue(0);
+            onClose();
+          });
+        } else {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 6,
+          }).start();
+        }
+      },
+    }),
+  ).current;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: "#000" }}>
+      <Animated.View
+        style={{
+          flex: 1,
+          backgroundColor: "#000",
+          transform: [{ translateY }],
+        }}
+        {...panResponder.panHandlers}
+      >
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{
@@ -62,6 +104,7 @@ export function SecureMediaViewer({ uri, onClose, secure = true }: Props) {
           minimumZoomScale={1}
           centerContent
           bouncesZoom
+          scrollEnabled={false}
         >
           {uri ? (
             <ExpoImage
@@ -71,7 +114,7 @@ export function SecureMediaViewer({ uri, onClose, secure = true }: Props) {
             />
           ) : null}
         </ScrollView>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
