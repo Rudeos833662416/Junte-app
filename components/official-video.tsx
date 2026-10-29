@@ -12,6 +12,8 @@ type Props = {
   onOpenFullscreen: () => void;
 };
 
+const HIDE_MS = 2800;
+
 function formatTime(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const m = Math.floor(seconds / 60);
@@ -34,19 +36,44 @@ function OfficialVideo({
 
   const [muted, setMuted] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [fsControlsVisible, setFsControlsVisible] = useState(true);
+  /** Controles flotantes / centrales: ocultos por defecto. */
+  const [controlsVisible, setControlsVisible] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [barWidth, setBarWidth] = useState(0);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const clearHideTimer = () => {
+  const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
     }
-  };
+  }, []);
+
+  const scheduleHide = useCallback(() => {
+    clearHideTimer();
+    hideTimerRef.current = setTimeout(() => setControlsVisible(false), HIDE_MS);
+  }, [clearHideTimer]);
+
+  const revealControls = useCallback(() => {
+    setControlsVisible(true);
+    scheduleHide();
+  }, [scheduleHide]);
+
+  const hideControls = useCallback(() => {
+    clearHideTimer();
+    setControlsVisible(false);
+  }, [clearHideTimer]);
+
+  /** Tap en el video: muestra controles o los oculta si ya estaban visibles. */
+  const handleSurfacePress = useCallback(() => {
+    if (controlsVisible) {
+      hideControls();
+      return;
+    }
+    revealControls();
+  }, [controlsVisible, hideControls, revealControls]);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,6 +100,8 @@ function OfficialVideo({
         player.pause();
         player.muted = true;
         setIsPlaying(false);
+        setControlsVisible(false);
+        clearHideTimer();
         return;
       }
       player.muted = muted;
@@ -81,7 +110,13 @@ function OfficialVideo({
     } catch {
       // released
     }
-  }, [isVisible, fullscreen, player, muted]);
+  }, [isVisible, fullscreen, player, muted, clearHideTimer]);
+
+  useEffect(() => {
+    // Al entrar/salir de fullscreen, controles ocultos de nuevo
+    setControlsVisible(false);
+    clearHideTimer();
+  }, [fullscreen, clearHideTimer]);
 
   useEffect(() => {
     if (!fullscreen || !isVisible) {
@@ -115,13 +150,7 @@ function OfficialVideo({
         // ignore
       }
     };
-  }, [player]);
-
-  const showFsControls = useCallback(() => {
-    setFsControlsVisible(true);
-    clearHideTimer();
-    hideTimerRef.current = setTimeout(() => setFsControlsVisible(false), 3500);
-  }, []);
+  }, [player, clearHideTimer]);
 
   const togglePlay = useCallback(() => {
     try {
@@ -135,8 +164,8 @@ function OfficialVideo({
     } catch {
       // ignore
     }
-    if (fullscreen) showFsControls();
-  }, [isPlaying, player, fullscreen, showFsControls]);
+    revealControls();
+  }, [isPlaying, player, revealControls]);
 
   const seekBy = useCallback(
     (seconds: number) => {
@@ -149,9 +178,9 @@ function OfficialVideo({
       } catch {
         // ignore
       }
-      if (fullscreen) showFsControls();
+      revealControls();
     },
-    [player, fullscreen, showFsControls],
+    [player, revealControls],
   );
 
   const seekToRatio = useCallback(
@@ -165,24 +194,23 @@ function OfficialVideo({
       } catch {
         // ignore
       }
-      showFsControls();
+      revealControls();
     },
-    [player, showFsControls],
+    [player, revealControls],
   );
 
   const toggleMute = useCallback(() => {
     setMuted((prev) => !prev);
-    if (fullscreen) showFsControls();
-  }, [fullscreen, showFsControls]);
+    revealControls();
+  }, [revealControls]);
 
   const cornerBtn = {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center" as const,
     justifyContent: "center" as const,
-    backgroundColor: "rgba(0,0,0,0.78)",
-    zIndex: 6,
+    backgroundColor: "rgba(0,0,0,0.55)",
   };
 
   const progress = duration > 0 ? Math.min(1, position / duration) : 0;
@@ -207,79 +235,113 @@ function OfficialVideo({
         allowsFullscreen={false}
       />
 
-      {!fullscreen ? (
+      {/* Capa táctil: aparece / oculta controles */}
+      <Pressable
+        onPress={handleSurfacePress}
+        style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, zIndex: 2 }}
+        accessibilityLabel={controlsVisible ? "Ocultar controles" : "Mostrar controles"}
+      />
+
+      {/* Inline: mute + fullscreen solo al tocar, esquina inferior */}
+      {!fullscreen && controlsVisible ? (
         <>
-          <Pressable onPress={toggleMute} hitSlop={18} style={{ position: "absolute", left: 10, bottom: 10, ...cornerBtn }}>
-            <MaterialIcons name={muted ? "volume-off" : "volume-up"} size={22} color="#FFFFFF" />
+          <Pressable
+            onPress={toggleMute}
+            hitSlop={14}
+            style={{ position: "absolute", left: 10, bottom: 10, zIndex: 6, ...cornerBtn }}
+            accessibilityLabel={muted ? "Activar sonido" : "Silenciar"}
+          >
+            <MaterialIcons name={muted ? "volume-off" : "volume-up"} size={20} color="#FFFFFF" />
           </Pressable>
-          <Pressable onPress={onOpenFullscreen} hitSlop={18} style={{ position: "absolute", right: 10, bottom: 10, ...cornerBtn }}>
-            <MaterialIcons name="fullscreen" size={22} color="#FFFFFF" />
+          <Pressable
+            onPress={() => {
+              hideControls();
+              onOpenFullscreen();
+            }}
+            hitSlop={14}
+            style={{ position: "absolute", right: 10, bottom: 10, zIndex: 6, ...cornerBtn }}
+            accessibilityLabel="Pantalla completa"
+          >
+            <MaterialIcons name="fullscreen" size={20} color="#FFFFFF" />
           </Pressable>
         </>
       ) : null}
 
-      {fullscreen ? (
+      {/* Fullscreen: controles centrales + barra solo al tocar */}
+      {fullscreen && controlsVisible ? (
         <>
           <Pressable
-            onPress={() => {
-              if (!fsControlsVisible) showFsControls();
-              else togglePlay();
+            onPress={togglePlay}
+            hitSlop={16}
+            style={{
+              position: "absolute",
+              alignSelf: "center",
+              top: "42%",
+              marginTop: -28,
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "rgba(0,0,0,0.55)",
+              zIndex: 6,
             }}
-            style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, zIndex: 2 }}
-          />
+            accessibilityLabel={isPlaying ? "Pausar" : "Reproducir"}
+          >
+            <MaterialIcons name={isPlaying ? "pause" : "play-arrow"} size={32} color="#FFFFFF" />
+          </Pressable>
 
-          {fsControlsVisible ? (
-            <>
-              <Pressable
-                onPress={togglePlay}
-                hitSlop={20}
+          <Pressable
+            onPress={() => seekBy(-10)}
+            hitSlop={14}
+            style={{ position: "absolute", left: 36, top: "42%", marginTop: -20, zIndex: 6, ...cornerBtn }}
+            accessibilityLabel="Retroceder 10 segundos"
+          >
+            <MaterialIcons name="replay-10" size={22} color="#FFFFFF" />
+          </Pressable>
+          <Pressable
+            onPress={() => seekBy(10)}
+            hitSlop={14}
+            style={{ position: "absolute", right: 36, top: "42%", marginTop: -20, zIndex: 6, ...cornerBtn }}
+            accessibilityLabel="Adelantar 10 segundos"
+          >
+            <MaterialIcons name="forward-10" size={22} color="#FFFFFF" />
+          </Pressable>
+
+          <Pressable
+            onPress={toggleMute}
+            hitSlop={14}
+            style={{ position: "absolute", left: 12, bottom: 48, zIndex: 6, ...cornerBtn }}
+            accessibilityLabel={muted ? "Activar sonido" : "Silenciar"}
+          >
+            <MaterialIcons name={muted ? "volume-off" : "volume-up"} size={20} color="#FFFFFF" />
+          </Pressable>
+
+          <View style={{ position: "absolute", left: 12, right: 12, bottom: 12, zIndex: 7 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+              <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 11 }}>{formatTime(position)}</Text>
+              <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 11 }}>{formatTime(duration)}</Text>
+            </View>
+            <Pressable
+              onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+              onPress={(e) => {
+                if (barWidth <= 0) return;
+                seekToRatio(e.nativeEvent.locationX / barWidth);
+              }}
+              style={{ height: 24, justifyContent: "center" }}
+            >
+              <View
                 style={{
-                  position: "absolute",
-                  alignSelf: "center",
-                  top: "38%",
-                  width: 60,
-                  height: 60,
-                  borderRadius: 30,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: "rgba(0,0,0,0.72)",
-                  zIndex: 6,
+                  height: 3,
+                  borderRadius: 2,
+                  backgroundColor: "rgba(255,255,255,0.22)",
+                  overflow: "hidden",
                 }}
               >
-                <MaterialIcons name={isPlaying ? "pause" : "play-arrow"} size={34} color="#FFFFFF" />
-              </Pressable>
-
-              <Pressable onPress={() => seekBy(-10)} hitSlop={16} style={{ position: "absolute", left: 28, top: "40%", ...cornerBtn }}>
-                <MaterialIcons name="replay-10" size={24} color="#FFFFFF" />
-              </Pressable>
-              <Pressable onPress={() => seekBy(10)} hitSlop={16} style={{ position: "absolute", right: 28, top: "40%", ...cornerBtn }}>
-                <MaterialIcons name="forward-10" size={24} color="#FFFFFF" />
-              </Pressable>
-
-              <Pressable onPress={toggleMute} hitSlop={18} style={{ position: "absolute", left: 14, bottom: 52, ...cornerBtn }}>
-                <MaterialIcons name={muted ? "volume-off" : "volume-up"} size={22} color="#FFFFFF" />
-              </Pressable>
-
-              <View style={{ position: "absolute", left: 14, right: 14, bottom: 16, zIndex: 7 }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
-                  <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 11 }}>{formatTime(position)}</Text>
-                  <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 11 }}>{formatTime(duration)}</Text>
-                </View>
-                <Pressable
-                  onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
-                  onPress={(e) => {
-                    if (barWidth <= 0) return;
-                    seekToRatio(e.nativeEvent.locationX / barWidth);
-                  }}
-                  style={{ height: 28, justifyContent: "center" }}
-                >
-                  <View style={{ height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.25)", overflow: "hidden" }}>
-                    <View style={{ width: `${progress * 100}%`, height: "100%", backgroundColor: "#fff" }} />
-                  </View>
-                </Pressable>
+                <View style={{ width: `${progress * 100}%`, height: "100%", backgroundColor: "#fff" }} />
               </View>
-            </>
-          ) : null}
+            </Pressable>
+          </View>
         </>
       ) : null}
     </View>
