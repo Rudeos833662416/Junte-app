@@ -2,6 +2,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View 
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SecureMediaViewer } from "@/components/secure-media-viewer";
+import { ThoughtBubble } from "@/components/thought-bubble";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
@@ -53,7 +54,12 @@ export default function PublicProfileScreen() {
           .or(`and(user_id.eq.${user.id},friend_id.eq.${id}),and(user_id.eq.${id},friend_id.eq.${user.id})`)
           .limit(1);
         setFriendship((friendshipRows?.[0] as Friendship | undefined) ?? null);
-        const { count } = await supabase.from("direct_messages").select("id", { count: "exact", head: true }).eq("sender_id", id).eq("recipient_id", user.id).is("read_at", null);
+        const { count } = await supabase
+          .from("direct_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("sender_id", id)
+          .eq("recipient_id", user.id)
+          .is("read_at", null);
         setUnreadMessages(count ?? 0);
       }
     } catch (error) {
@@ -64,28 +70,46 @@ export default function PublicProfileScreen() {
     }
   }, [id, user]);
 
-  useFocusEffect(useCallback(() => {
-    void loadProfile();
-    return undefined;
-  }, [loadProfile]));
+  useFocusEffect(
+    useCallback(() => {
+      void loadProfile();
+      return undefined;
+    }, [loadProfile]),
+  );
 
   useEffect(() => {
     if (!user || !id || user.id === id) return;
     const channel = supabase.channel(`profile-unread-${user.id}-${id}`);
-    channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages", filter: `recipient_id=eq.${user.id}` }, (payload) => {
-      if ((payload.new as { sender_id?: string }).sender_id === id) setUnreadMessages((count) => count + 1);
-    });
-    channel.on("postgres_changes", { event: "*", schema: "public", table: "profiles", filter: `id=eq.${id}` }, () => void loadProfile());
+    channel.on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "direct_messages", filter: `recipient_id=eq.${user.id}` },
+      (payload) => {
+        if ((payload.new as { sender_id?: string }).sender_id === id) setUnreadMessages((count) => count + 1);
+      },
+    );
+    channel.on("postgres_changes", { event: "*", schema: "public", table: "profiles", filter: `id=eq.${id}` }, () =>
+      void loadProfile(),
+    );
     channel.on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, () => void loadProfile());
     channel.subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [id, user]);
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [id, user, loadProfile]);
 
-  const markAsRead = useCallback(async (friendId: string) => {
-    if (!user) return;
-    const { error } = await supabase.from("direct_messages").update({ read_at: new Date().toISOString() }).eq("sender_id", friendId).eq("recipient_id", user.id).is("read_at", null);
-    if (!error) setUnreadMessages(0);
-  }, [user]);
+  const markAsRead = useCallback(
+    async (friendId: string) => {
+      if (!user) return;
+      const { error } = await supabase
+        .from("direct_messages")
+        .update({ read_at: new Date().toISOString() })
+        .eq("sender_id", friendId)
+        .eq("recipient_id", user.id)
+        .is("read_at", null);
+      if (!error) setUnreadMessages(0);
+    },
+    [user],
+  );
 
   const sendFriendRequest = async () => {
     if (!user || !profile || user.id === profile.id || isSending) return;
@@ -93,14 +117,22 @@ export default function PublicProfileScreen() {
       setIsSending(true);
       const { data, error } = await supabase
         .from("friendships")
-        .insert({ user_id: user.id, friend_id: profile.id, status: "pending", request_message: requestMessage.trim() || null })
+        .insert({
+          user_id: user.id,
+          friend_id: profile.id,
+          status: "pending",
+          request_message: requestMessage.trim() || null,
+        })
         .select("user_id, friend_id, status")
         .single();
       if (error) throw error;
       setFriendship(data as Friendship);
       Alert.alert("Solicitud enviada", `Tu solicitud para conectar con ${displayName(profile)} quedó pendiente.`);
     } catch (error) {
-      Alert.alert("No se pudo enviar", error instanceof Error ? error.message : "Es posible que ya exista una solicitud.");
+      Alert.alert(
+        "No se pudo enviar",
+        error instanceof Error ? error.message : "Es posible que ya exista una solicitud.",
+      );
     } finally {
       setIsSending(false);
     }
@@ -119,7 +151,16 @@ export default function PublicProfileScreen() {
     return (
       <ScreenContainer className="items-center justify-center p-6">
         <Text className="text-xl font-bold text-foreground">Perfil no disponible</Text>
-        <Pressable onPress={() => router.back()} style={({ pressed }) => ({ marginTop: 18, padding: 14, borderRadius: 14, backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 })}>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => ({
+            marginTop: 18,
+            padding: 14,
+            borderRadius: 14,
+            backgroundColor: colors.primary,
+            opacity: pressed ? 0.8 : 1,
+          })}
+        >
           <Text className="font-bold text-background">Volver</Text>
         </Pressable>
       </ScreenContainer>
@@ -134,10 +175,18 @@ export default function PublicProfileScreen() {
   return (
     <ScreenContainer className="p-5">
       <ScrollView contentContainerStyle={{ paddingBottom: 36 }} showsVerticalScrollIndicator={false}>
-        <Pressable onPress={() => router.back()} style={({ pressed }) => ({ alignSelf: "flex-start", paddingVertical: 8, opacity: pressed ? 0.55 : 1 })}>
-          <Text className="font-semibold" style={{ color: colors.primary }}>‹ Volver</Text>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => ({ alignSelf: "flex-start", paddingVertical: 8, opacity: pressed ? 0.55 : 1 })}
+        >
+          <Text className="font-semibold" style={{ color: colors.primary }}>
+            ‹ Volver
+          </Text>
         </Pressable>
-        <View className="mt-2 overflow-hidden rounded-3xl border" style={{ backgroundColor: colors.surface, borderColor: colors.border }}>
+        <View
+          className="mt-2 overflow-hidden rounded-3xl border"
+          style={{ backgroundColor: colors.surface, borderColor: colors.border }}
+        >
           {profile.cover_url ? (
             <Pressable
               onPress={() => {
@@ -148,7 +197,12 @@ export default function PublicProfileScreen() {
                 setViewerUri(profile.cover_url);
               }}
             >
-              <ExpoImage source={{ uri: profile.cover_url }} style={{ width: "100%", height: 160 }} className="h-40 w-full" contentFit="cover" cachePolicy="none" transition={180} onError={(event) => console.warn("No se pudo renderizar la portada pública:", event.error)} />
+              <ExpoImage
+                source={{ uri: profile.cover_url }}
+                style={{ width: "100%", height: 160 }}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
             </Pressable>
           ) : (
             <View className="h-40" style={{ backgroundColor: `${colors.primary}20` }} />
@@ -164,17 +218,27 @@ export default function PublicProfileScreen() {
               }}
               style={{ marginTop: -44 }}
             >
-              <View className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border-4" style={{ borderColor: colors.surface, backgroundColor: colors.primary }}>
+              <View
+                className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border-4"
+                style={{ borderColor: colors.surface, backgroundColor: colors.primary }}
+              >
                 {profile.avatar_url ? (
-                  <ExpoImage source={{ uri: profile.avatar_url }} style={{ width: "100%", height: "100%" }} className="h-full w-full" contentFit="cover" cachePolicy="none" transition={180} onError={(event) => console.warn("No se pudo renderizar el avatar público:", event.error)} />
+                  <ExpoImage
+                    source={{ uri: profile.avatar_url }}
+                    style={{ width: "100%", height: "100%" }}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
                 ) : (
-                  <Text className="text-3xl font-bold" style={{ color: colors.background }}>{name[0]?.toUpperCase() ?? "?"}</Text>
+                  <Text className="text-3xl font-bold" style={{ color: colors.background }}>
+                    {name[0]?.toUpperCase() ?? "?"}
+                  </Text>
                 )}
               </View>
             </Pressable>
             <Text className="mt-3 text-2xl font-bold text-foreground">{name}</Text>
             <Text className="mt-1 text-sm text-muted">Perfil de Tragos Sociales</Text>
-            {profile.bio ? <Text className="mt-3 max-w-[300px] text-center text-sm leading-5 text-foreground">{profile.bio}</Text> : null}
+            {profile.bio ? <ThoughtBubble text={profile.bio} editable={false} /> : null}
             {!isSelf ? (
               <>
                 {!isAccepted && !isPending ? (
@@ -191,28 +255,96 @@ export default function PublicProfileScreen() {
                 <Pressable
                   disabled={isSending || isAccepted || isPending}
                   onPress={() => void sendFriendRequest()}
-                  style={({ pressed }) => ({ marginTop: 18, minHeight: 48, minWidth: 220, alignItems: "center", justifyContent: "center", borderRadius: 15, backgroundColor: isAccepted || isPending ? colors.surface : colors.primary, borderWidth: isAccepted || isPending ? 1 : 0, borderColor: colors.border, opacity: isSending ? 0.55 : pressed ? 0.82 : 1 })}
+                  style={({ pressed }) => ({
+                    marginTop: 18,
+                    minHeight: 48,
+                    minWidth: 220,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderRadius: 15,
+                    backgroundColor: isAccepted || isPending ? colors.surface : colors.primary,
+                    borderWidth: isAccepted || isPending ? 1 : 0,
+                    borderColor: colors.border,
+                    opacity: isSending ? 0.55 : pressed ? 0.82 : 1,
+                  })}
                 >
-                  <Text className="font-bold" style={{ color: isAccepted || isPending ? colors.foreground : colors.background }}>
-                    {isAccepted ? "Ya son amigos" : isPending ? "Solicitud pendiente" : isSending ? "Enviando…" : "Enviar solicitud"}
+                  <Text
+                    className="font-bold"
+                    style={{ color: isAccepted || isPending ? colors.foreground : colors.background }}
+                  >
+                    {isAccepted
+                      ? "Ya son amigos"
+                      : isPending
+                        ? "Solicitud pendiente"
+                        : isSending
+                          ? "Enviando…"
+                          : "Enviar solicitud"}
                   </Text>
                 </Pressable>
                 {isAccepted ? (
                   <View style={{ position: "relative", alignSelf: "center" }}>
-                    <Pressable onPress={() => { void markAsRead(profile.id); router.push(`/chat/${profile.id}`); }} style={({ pressed }) => ({ marginTop: 10, minHeight: 48, minWidth: 220, alignItems: "center", justifyContent: "center", borderRadius: 15, borderWidth: 1, borderColor: colors.primary, backgroundColor: `${colors.primary}12`, opacity: pressed ? 0.75 : 1 })}>
-                      <View className="flex-row items-center gap-2"><IconSymbol name="message.fill" size={18} color={colors.primary} /><Text className="font-bold" style={{ color: colors.primary }}>Chat</Text></View>
+                    <Pressable
+                      onPress={() => {
+                        void markAsRead(profile.id);
+                        router.push(`/chat/${profile.id}`);
+                      }}
+                      style={({ pressed }) => ({
+                        marginTop: 10,
+                        minHeight: 48,
+                        minWidth: 220,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: 15,
+                        borderWidth: 1,
+                        borderColor: colors.primary,
+                        backgroundColor: `${colors.primary}12`,
+                        opacity: pressed ? 0.75 : 1,
+                      })}
+                    >
+                      <View className="flex-row items-center gap-2">
+                        <IconSymbol name="message.fill" size={18} color={colors.primary} />
+                        <Text className="font-bold" style={{ color: colors.primary }}>
+                          Chat
+                        </Text>
+                      </View>
                     </Pressable>
-                    {unreadMessages > 0 ? <View style={{ position: "absolute", right: -5, top: 3, minWidth: 22, height: 22, paddingHorizontal: 5, borderRadius: 11, backgroundColor: colors.success, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.surface }}><Text style={{ color: colors.background, fontSize: 11, fontWeight: "800" }}>{unreadMessages > 99 ? "99+" : unreadMessages}</Text></View> : null}
+                    {unreadMessages > 0 ? (
+                      <View
+                        style={{
+                          position: "absolute",
+                          right: -5,
+                          top: 3,
+                          minWidth: 22,
+                          height: 22,
+                          paddingHorizontal: 5,
+                          borderRadius: 11,
+                          backgroundColor: colors.success,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          borderWidth: 2,
+                          borderColor: colors.surface,
+                        }}
+                      >
+                        <Text style={{ color: colors.background, fontSize: 11, fontWeight: "800" }}>
+                          {unreadMessages > 99 ? "99+" : unreadMessages}
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
                 ) : null}
               </>
             ) : null}
           </View>
         </View>
-        <View className="mt-5 rounded-2xl border p-4" style={{ backgroundColor: colors.surface, borderColor: colors.border }}>
+        <View
+          className="mt-5 rounded-2xl border p-4"
+          style={{ backgroundColor: colors.surface, borderColor: colors.border }}
+        >
           <View className="flex-row items-center gap-3">
             <IconSymbol name="person.fill" size={20} color={colors.primary} />
-            <Text className="flex-1 text-sm leading-5 text-muted">Conecta cara a cara escaneando un código QR. Solo tú decides cuándo aceptar solicitudes.</Text>
+            <Text className="flex-1 text-sm leading-5 text-muted">
+              Conecta cara a cara escaneando un código QR. Solo tú decides cuándo aceptar solicitudes.
+            </Text>
           </View>
         </View>
       </ScrollView>
