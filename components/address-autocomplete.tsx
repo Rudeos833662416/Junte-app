@@ -28,14 +28,14 @@ function googleKey() {
 }
 
 /**
- * Autocompletado con Google Places (GOOGLE_MAPS_API_KEY en EAS).
- * Sin key: solo texto libre + coordenadas manuales.
+ * Autocompletado con Google Places + texto libre.
+ * El usuario siempre puede escribir la dirección a mano.
  */
 export function AddressAutocomplete({
   value,
   onChangeText,
   onPlaceSelected,
-  placeholder = "Buscar dirección…",
+  placeholder = "Escribe o busca dirección…",
 }: {
   value: string;
   onChangeText: (text: string) => void;
@@ -55,7 +55,7 @@ export function AddressAutocomplete({
       if (timer.current) clearTimeout(timer.current);
       if (!key) {
         setPredictions([]);
-        setHint("Sin GOOGLE_MAPS_API_KEY: escribe dirección y coordenadas a mano.");
+        setHint("Sin GOOGLE_MAPS_API_KEY: escribe la dirección a mano.");
         return;
       }
       if (text.trim().length < 3) {
@@ -157,7 +157,10 @@ export function AddressAutocomplete({
         />
         {loading ? <ActivityIndicator color={colors.primary} /> : null}
       </View>
-      {hint ? <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>{hint}</Text> : null}
+      <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>
+        Puedes escribir la dirección a mano; si eliges una sugerencia se rellenan las coordenadas.
+      </Text>
+      {hint ? <Text style={{ color: colors.muted, fontSize: 11, marginTop: 2 }}>{hint}</Text> : null}
       {predictions.length > 0 ? (
         <View
           style={{
