@@ -33,16 +33,61 @@ export async function publishOfficialPost(params: {
 
 export async function updateVenueAdmin(params: {
   venueId: number;
+  name?: string | null;
+  address?: string | null;
+  city?: string | null;
+  description?: string | null;
+  website_url?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   admin_rank?: number | null;
   admin_photo_url?: string | null;
-  description?: string | null;
 }) {
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (params.name !== undefined) payload.name = params.name;
+  if (params.address !== undefined) payload.address = params.address;
+  if (params.city !== undefined) payload.city = params.city;
+  if (params.description !== undefined) payload.description = params.description;
+  if (params.website_url !== undefined) payload.website_url = params.website_url;
+  if (params.latitude !== undefined) payload.latitude = params.latitude;
+  if (params.longitude !== undefined) payload.longitude = params.longitude;
   if (params.admin_rank !== undefined) payload.admin_rank = params.admin_rank;
   if (params.admin_photo_url !== undefined) payload.admin_photo_url = params.admin_photo_url;
-  if (params.description !== undefined) payload.description = params.description;
   const { error } = await supabase.from("venues").update(payload).eq("id", params.venueId);
   if (error) throw error;
+}
+
+export async function deleteVenueAdmin(venueId: number) {
+  const { error } = await supabase.from("venues").delete().eq("id", venueId);
+  if (error) throw error;
+}
+
+export async function createVenueAdmin(params: {
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  description?: string | null;
+  website_url?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  admin_rank?: number | null;
+}) {
+  const { data, error } = await supabase
+    .from("venues")
+    .insert({
+      name: params.name,
+      address: params.address ?? null,
+      city: params.city ?? null,
+      description: params.description ?? null,
+      website_url: params.website_url ?? null,
+      latitude: params.latitude ?? null,
+      longitude: params.longitude ?? null,
+      admin_rank: params.admin_rank ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data as { id: number };
 }
 
 export async function uploadVenuePhoto(venueId: number, uri: string) {
