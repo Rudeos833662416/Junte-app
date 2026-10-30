@@ -1,1 +1,1 @@
-RESTORED_FROM_PATCHED_FILE_SEE_ARTIFACTS
+export { default } from "@/components/events-screen";
