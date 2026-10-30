@@ -617,17 +617,13 @@ export function EventsScreen() {
         />
       ) : null}
 
-      <View
-        pointerEvents="box-none"
+      <FlatList
+        data={posts}
+        ListHeaderComponent={() => (
+<View
         style={{
-          position: "absolute",
-          top: 56,
-          left: 0,
-          right: 0,
-          zIndex: 20,
-          paddingHorizontal: 16,
+          marginBottom: 4,
           paddingBottom: 8,
-          backgroundColor: "transparent",
         }}
       >
         <Text className="mb-2 text-xs font-black uppercase tracking-widest" style={{ color: colors.muted }}>
@@ -746,11 +742,10 @@ export function EventsScreen() {
         </ScrollView>
       </View>
 
-      <FlatList
-        data={posts}
+              )}
         keyExtractor={(item) => item.id}
         style={{ flex: 1 }}
-        contentContainerStyle={{ gap: 14, paddingBottom: 28, paddingTop: featuredVenues.length ? 220 : 12 }}
+        contentContainerStyle={{ gap: 14, paddingBottom: 28, paddingTop: 8 }}
         viewabilityConfig={{ itemVisiblePercentThreshold: 55 }}
         onViewableItemsChanged={onViewableItemsChanged}
         ListEmptyComponent={<Text className="text-muted">Sin publicaciones oficiales todavía.</Text>}
