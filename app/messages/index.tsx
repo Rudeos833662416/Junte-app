@@ -163,15 +163,75 @@ export default function MessagesInboxScreen() {
                       borderRadius: 11,
                       backgroundColor: colors.primary,
                       alignItems: "center",
-                      justifyContent: "center",
-                      paddingHorizontal: 6,
+            <Pressable
+              onPress={() => router.push(`/messages/${item.otherId}`)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 14,
+                paddingVertical: 12,
+                paddingHorizontal: 4,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              }}
+            >
+              <View
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 26,
+                  overflow: "hidden",
+                  backgroundColor: `${colors.primary}18`,
+                  borderWidth: 1.5,
+                  borderColor: item.unread > 0 ? colors.primary : colors.border,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {item.avatarUrl ? (
+                  <ExpoImage
+                    source={{ uri: item.avatarUrl }}
+                    style={{ width: 52, height: 52 }}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                ) : (
+                  <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 18 }}>
+                    {(item.name || "?").slice(0, 1).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <Text
+                    style={{
+                      color: colors.foreground,
+                      fontWeight: item.unread > 0 ? "700" : "600",
+                      fontSize: 16,
+                      flex: 1,
                     }}
+                    numberOfLines={1}
                   >
-                    <Text style={{ color: colors.background, fontSize: 11, fontWeight: "700" }}>
-                      {item.unread > 99 ? "99+" : item.unread}
-                    </Text>
-                  </View>
-                ) : null}
+                    {item.name}
+                  </Text>
+                  {item.unread > 0 ? (
+                    <View
+                      style={{
+                        backgroundColor: colors.primary,
+                        borderRadius: 10,
+                        minWidth: 22,
+                        height: 22,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        paddingHorizontal: 6,
+                      }}
+                    >
+                      <Text style={{ color: colors.background, fontSize: 11, fontWeight: "800" }}>
+                        {item.unread > 99 ? "99+" : item.unread}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
               </View>
             </Pressable>
           )}
