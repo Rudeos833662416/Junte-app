@@ -92,7 +92,11 @@ const config: ExpoConfig = {
   extra: {
     appSubtitle: env.appSubtitle,
     // Read by the native config plugin during Expo prebuild; never hardcode the key.
-    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
+    googleMapsApiKey:
+      process.env.GOOGLE_MAPS_API_KEY?.trim() ||
+      process.env.Places?.trim() ||
+      process.env.GOOGLE_PLACES_API_KEY?.trim() ||
+      "",
     eas: { projectId: "a595b360-16d9-40e4-9df4-7a3630257f39" },
     // These are Supabase public client values; RLS protects database access.
     supabaseUrl: process.env.SUPABASE_URL ?? "https://cymhbwgxmezrwofkbdqz.supabase.co",

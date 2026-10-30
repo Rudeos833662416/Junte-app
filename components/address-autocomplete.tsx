@@ -17,7 +17,14 @@ export type PlaceResult = {
 
 function googleKey() {
   const extra = (Constants.expoConfig?.extra ?? {}) as { googleMapsApiKey?: string };
-  return (extra.googleMapsApiKey || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "").trim();
+  return (
+    extra.googleMapsApiKey ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.Places ||
+    process.env.GOOGLE_PLACES_API_KEY ||
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+    ""
+  ).trim();
 }
 
 /**

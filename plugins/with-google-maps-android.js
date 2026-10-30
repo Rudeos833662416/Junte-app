@@ -7,7 +7,7 @@ const { withAndroidManifest } = require("@expo/config-plugins");
  */
 module.exports = function withGoogleMapsAndroid(config) {
   return withAndroidManifest(config, (manifestConfig) => {
-    const fromEnv = process.env.GOOGLE_MAPS_API_KEY?.trim();
+    const fromEnv = process.env.GOOGLE_MAPS_API_KEY?.trim() || process.env.Places?.trim() || process.env.GOOGLE_PLACES_API_KEY?.trim();
     const fromExtra =
       typeof config.extra?.googleMapsApiKey === "string"
         ? config.extra.googleMapsApiKey.trim()
