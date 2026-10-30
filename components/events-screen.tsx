@@ -1,1 +1,5 @@
-RESTORED_FROM_LOCAL_SEE_NEXT
+import { ScreenContainer } from "@/components/screen-container";
+// TEMPORARY minimal restore - full file next
+export function EventsScreen() {
+  return null;
+}
