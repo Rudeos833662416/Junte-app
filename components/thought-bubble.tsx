@@ -2,6 +2,7 @@ import { Modal, Pressable, Text, TextInput, View, StyleSheet } from "react-nativ
 import { useEffect, useState } from "react";
 import { useColors } from "@/hooks/use-colors";
 
+/** Límite al guardar (DB); la UI no recorta el texto en pantalla. */
 export const THOUGHT_MAX = 200;
 
 type ThoughtBubbleProps = {
@@ -9,14 +10,13 @@ type ThoughtBubbleProps = {
   editable?: boolean;
   onSave?: (next: string) => Promise<void> | void;
   placeholder?: string;
-  /** Burbuja flotante sobre el avatar (esquina superior derecha). */
+  /** Sobre el borde superior derecho del avatar. */
   floating?: boolean;
 };
 
 /**
- * Nubecita estilo pensamiento/cómic.
- * Propietario: editable (modal 200 chars).
- * Visitante: solo lectura.
+ * Nube de pensamiento sobre el avatar.
+ * Sin numberOfLines ni ellipsis: el texto hace wrap completo.
  */
 export function ThoughtBubble({
   text,
@@ -70,26 +70,22 @@ export function ThoughtBubble({
           {
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            maxWidth: floating ? 168 : 280,
           },
-          floating ? styles.floating : null,
+          floating ? styles.floating : styles.inline,
         ]}
       >
         <Text
-          numberOfLines={floating ? 4 : 6}
           style={{
             color: display ? colors.foreground : colors.muted,
-            fontSize: floating ? 12 : 14,
-            lineHeight: floating ? 16 : 20,
+            fontSize: 13,
+            lineHeight: 18,
             fontWeight: display ? "600" : "500",
           }}
         >
           {display || placeholder}
         </Text>
-        <View style={[styles.tailOuter, { backgroundColor: colors.border }]} />
-        <View style={[styles.tailInner, { backgroundColor: colors.surface }]} />
-        <View style={[styles.dotLarge, { backgroundColor: colors.surface, borderColor: colors.border }]} />
-        <View style={[styles.dotSmall, { backgroundColor: colors.surface, borderColor: colors.border }]} />
+        <View style={[styles.pointer, { borderTopColor: colors.surface }]} />
+        <View style={[styles.pointerBorder, { borderTopColor: colors.border }]} />
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -102,7 +98,7 @@ export function ThoughtBubble({
               Tu pensamiento
             </Text>
             <Text style={{ color: colors.muted, fontSize: 12, marginBottom: 10 }}>
-              Visible en tu perfil para quienes puedan verlo.
+              Visible en tu perfil. Máximo {THOUGHT_MAX} caracteres al guardar.
             </Text>
             <TextInput
               value={draft}
@@ -172,56 +168,48 @@ export function ThoughtBubble({
 const styles = StyleSheet.create({
   bubble: {
     borderWidth: 1,
-    borderRadius: 18,
-    borderTopRightRadius: 6,
-    paddingHorizontal: 12,
+    borderRadius: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    marginTop: 8,
   },
   floating: {
-    position: "absolute",
-    top: -8,
-    right: -12,
-    zIndex: 5,
+    maxWidth: 220,
+    minWidth: 96,
     elevation: 6,
     shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
-  tailOuter: {
+  inline: {
+    marginTop: 8,
+    alignSelf: "center",
+    maxWidth: "92%",
+  },
+  pointer: {
     position: "absolute",
-    left: 18,
     bottom: -7,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    left: 22,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderTopWidth: 8,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
   },
-  tailInner: {
+  pointerBorder: {
     position: "absolute",
-    left: 20,
-    bottom: -5,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  dotLarge: {
-    position: "absolute",
-    left: 10,
-    bottom: -16,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    borderWidth: 1,
-  },
-  dotSmall: {
-    position: "absolute",
-    left: 4,
-    bottom: -24,
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    borderWidth: 1,
+    bottom: -9,
+    left: 21,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 9,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    zIndex: -1,
   },
   modalBackdrop: {
     flex: 1,

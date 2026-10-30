@@ -367,7 +367,17 @@ export default function ProfileScreen() {
                 </View>
               </Pressable>
 
-              <View style={{ position: "absolute", top: 72, right: 24, zIndex: 8, maxWidth: 170 }}>
+              <View
+                pointerEvents="box-none"
+                style={{
+                  position: "absolute",
+                  top: 28,
+                  left: "50%",
+                  marginLeft: 28,
+                  zIndex: 8,
+                  maxWidth: 200,
+                }}
+              >
                 <ThoughtBubble
                 text={bio}
                 editable
@@ -456,6 +466,33 @@ export default function ProfileScreen() {
               })}
             >
               <Text style={{ color: colors.background, fontWeight: "700" }}>Gestionar Historias y Música</Text>
+            </Pressable>
+          </View>
+
+          <View
+            className="mb-4 rounded-2xl border p-4"
+            style={{ borderColor: colors.border, backgroundColor: colors.surface }}
+          >
+            <Text className="mb-2 text-base font-bold text-foreground">Chat</Text>
+            <Text className="mb-3 text-xs text-muted">
+              Conversaciones y mensajes directos con tus contactos.
+            </Text>
+            <Pressable
+              onPress={() => router.push("/messages")}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir mensajes"
+              style={{
+                backgroundColor: colors.primary,
+                borderRadius: 12,
+                paddingVertical: 12,
+                flexDirection: "row",
+                justifyContent: "center",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <IconSymbol name="message.fill" size={18} color={colors.background} />
+              <Text style={{ color: colors.background, fontWeight: "700" }}>Mensajes</Text>
             </Pressable>
           </View>
 
