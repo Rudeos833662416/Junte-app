@@ -1,0 +1,44 @@
+                    onPress={() => startEdit(item)}
+                      style={{
+                        borderRadius: 10,
+                        backgroundColor: `${colors.primary}22`,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 12 }}>Editar</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => void pickPhoto(item.id)}
+                      style={{
+                        borderRadius: 10,
+                        backgroundColor: `${colors.primary}22`,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 12 }}>
+                        Foto / recortar
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => confirmDelete(item)}
+                      style={{
+                        borderRadius: 10,
+                        backgroundColor: "#ef444422",
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <Text style={{ color: "#ef4444", fontWeight: "600", fontSize: 12 }}>Eliminar</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            </View>
+          );
+        }}
+      />
+    </ScreenContainer>
+  );
+}
