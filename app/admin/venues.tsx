@@ -25,6 +25,7 @@ import {
 } from "@/lib/events-admin";
 import { reportError } from "@/lib/report";
 import { rankColors, type Venue } from "@/lib/events-shared";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 
 type FormState = {
   name: string;
@@ -329,13 +330,20 @@ export default function AdminVenuesScreen() {
         multiline
         style={{ ...inputStyle, minHeight: 72, textAlignVertical: "top" }}
       />
-      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Dirección</Text>
-      <TextInput
+      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Dirección (autocompletar)</Text>
+      <AddressAutocomplete
         value={form.address}
-        onChangeText={(v) => setField("address", v)}
-        placeholder="Calle, número, zona"
-        placeholderTextColor={colors.muted}
-        style={inputStyle}
+        onChangeText={(text) => setField("address", text)}
+        onPlaceSelected={(place) => {
+          setForm((current) => ({
+            ...current,
+            address: place.address,
+            city: place.city || current.city,
+            latitude: String(place.latitude),
+            longitude: String(place.longitude),
+          }));
+        }}
+        placeholder="Buscar dirección o nombre del local"
       />
       <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Ciudad</Text>
       <TextInput

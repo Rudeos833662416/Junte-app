@@ -44,8 +44,8 @@ export default function PublicProfileScreen() {
       if (!hasLoadedProfileOnce.current) setIsLoading(true);
       const { data: visibleProfiles, error } = await supabase.rpc("get_visible_profiles", { p_ids: [id] });
       if (error) throw error;
-      const data = ((visibleProfiles ?? []) as PublicProfile[])[0] ?? null;
-      setProfile(data);
+      const row = ((visibleProfiles ?? []) as (PublicProfile & { bio?: string | null })[])[0] ?? null;
+      setProfile(row ? { ...row, bio: row.bio ?? null } : null);
 
       if (user && user.id !== id) {
         const { data: friendshipRows } = await supabase
@@ -238,7 +238,11 @@ export default function PublicProfileScreen() {
             </Pressable>
             <Text className="mt-3 text-2xl font-bold text-foreground">{name}</Text>
             <Text className="mt-1 text-sm text-muted">Perfil de Tragos Sociales</Text>
-            {profile.bio ? <ThoughtBubble text={profile.bio} editable={false} /> : null}
+            <View style={{ position: "relative", alignItems: "center", marginTop: 4 }}>
+              {profile.bio ? (
+                <ThoughtBubble text={profile.bio} editable={false} floating />
+              ) : null}
+            </View>
             {!isSelf ? (
               <>
                 {!isAccepted && !isPending ? (

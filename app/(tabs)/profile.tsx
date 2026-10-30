@@ -367,6 +367,28 @@ export default function ProfileScreen() {
                 </View>
               </Pressable>
 
+              <View style={{ position: "absolute", top: 72, right: 24, zIndex: 8, maxWidth: 170 }}>
+                <ThoughtBubble
+                text={bio}
+                editable
+                floating
+                placeholder="¿En qué estás pensando?"
+                onSave={async (next) => {
+                  if (!user) return;
+                  const cleaned = next.trim().replace(/\s+/g, " ").slice(0, THOUGHT_MAX);
+                  const { error } = await supabase
+                    .from("profiles")
+                    .update({ bio: cleaned || null })
+                    .eq("id", user.id);
+                  if (error) {
+                    Alert.alert("No se pudo guardar", error.message);
+                    throw error;
+                  }
+                  setBio(cleaned);
+                }}
+              />
+              </View>
+
               {isEditingName ? (
                 <View className="mt-3 w-full flex-row items-center gap-2">
                   <TextInput
@@ -406,24 +428,7 @@ export default function ProfileScreen() {
                 </Text>
               ) : null}
 
-              <ThoughtBubble
-                text={bio}
-                editable
-                placeholder="¿En qué estás pensando?"
-                onSave={async (next) => {
-                  if (!user) return;
-                  const cleaned = next.trim().replace(/\s+/g, " ").slice(0, THOUGHT_MAX);
-                  const { error } = await supabase
-                    .from("profiles")
-                    .update({ bio: cleaned || null })
-                    .eq("id", user.id);
-                  if (error) {
-                    Alert.alert("No se pudo guardar", error.message);
-                    throw error;
-                  }
-                  setBio(cleaned);
-                }}
-              />
+              
 
               <Text className="mt-1 text-sm text-muted">{email}</Text>
             </View>

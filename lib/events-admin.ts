@@ -83,6 +83,7 @@ export async function createVenueAdmin(params: {
       latitude: params.latitude ?? null,
       longitude: params.longitude ?? null,
       admin_rank: params.admin_rank ?? null,
+      source: "admin",
     })
     .select("id")
     .single();

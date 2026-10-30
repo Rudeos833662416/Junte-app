@@ -82,21 +82,24 @@ export function EventsScreen() {
   const [captionDraft, setCaptionDraft] = useState("");
   const deletedPostIdsRef = useRef(new Set<string>());
   const [featuredVenues, setFeaturedVenues] = useState<FeaturedVenue[]>([]);
+  const featuredVenuesLoop = featuredVenues.length > 1
+    ? [...featuredVenues, ...featuredVenues, ...featuredVenues]
+    : featuredVenues;
   const venueCarouselRef = useRef<ScrollView>(null);
   const venueCarouselIndex = useRef(0);
   const venueCarouselPaused = useRef(false);
   const commentsListRef = useRef<FlatList<CommentRow>>(null);
 
   useEffect(() => {
-    if (featuredVenues.length < 2) return;
+    if (featuredVenuesLoop.length < 2) return;
     const timer = setInterval(() => {
       if (venueCarouselPaused.current) return;
-      const next = (venueCarouselIndex.current + 1) % featuredVenues.length;
+      const next = (venueCarouselIndex.current + 1) % featuredVenuesLoop.length;
       venueCarouselIndex.current = next;
       venueCarouselRef.current?.scrollTo({ x: next * (CARD_W + CARD_GAP), animated: true });
     }, 4200);
     return () => clearInterval(timer);
-  }, [featuredVenues.length]);
+  }, [featuredVenuesLoop.length]);
 
   useFocusEffect(
     useCallback(() => {
@@ -615,12 +618,16 @@ export function EventsScreen() {
       ) : null}
 
       <View
+        pointerEvents="box-none"
         style={{
-          backgroundColor: colors.background,
+          position: "absolute",
+          top: 56,
+          left: 0,
+          right: 0,
+          zIndex: 20,
+          paddingHorizontal: 16,
           paddingBottom: 8,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-          zIndex: 10,
+          backgroundColor: "transparent",
         }}
       >
         <Text className="mb-2 text-xs font-black uppercase tracking-widest" style={{ color: colors.muted }}>
@@ -646,9 +653,9 @@ export function EventsScreen() {
           snapToInterval={CARD_W + CARD_GAP}
           snapToAlignment="start"
         >
-          {featuredVenues.map((venue) => (
+          {featuredVenuesLoop.map((venue, loopIndex) => (
             <View
-              key={venue.id}
+              key={`${venue.id}-${loopIndex}`}
               style={{
                 width: CARD_W,
                 borderRadius: 20,
@@ -743,7 +750,7 @@ export function EventsScreen() {
         data={posts}
         keyExtractor={(item) => item.id}
         style={{ flex: 1 }}
-        contentContainerStyle={{ gap: 14, paddingBottom: 28, paddingTop: 12 }}
+        contentContainerStyle={{ gap: 14, paddingBottom: 28, paddingTop: featuredVenues.length ? 220 : 12 }}
         viewabilityConfig={{ itemVisiblePercentThreshold: 55 }}
         onViewableItemsChanged={onViewableItemsChanged}
         ListEmptyComponent={<Text className="text-muted">Sin publicaciones oficiales todavía.</Text>}
