@@ -520,7 +520,42 @@ export default function FriendsScreen() {
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}>
             <View style={{ backgroundColor: colors.surface, borderRadius: 20, padding: 20, alignItems: "center" }}>
               <Text className="mb-3 text-lg font-bold text-foreground">Tu código QR</Text>
-              {user?.id ? <QRCode value={`tragos://profile/${user.id}`} size={200} /> : null}
+              <View style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+                  <View
+                    style={{
+                      flex: 1,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: colors.primary + "55",
+                      backgroundColor: colors.primary + "12",
+                      paddingVertical: 12,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13 }}>Tu QR</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => router.push("/scan-qr")}
+                    style={{
+                      flex: 1,
+                      borderRadius: 14,
+                      backgroundColor: colors.primary,
+                      paddingVertical: 12,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ color: colors.background, fontWeight: "700", fontSize: 13 }}>
+                      Escanear amigo
+                    </Text>
+                  </Pressable>
+                </View>
+                {user?.id ? (
+                  <QRCode value={`junte://u/${user.id}`} size={200} />
+                ) : null}
+              </View>
               <Pressable onPress={() => setIsQrVisible(false)} style={{ marginTop: 16 }}>
                 <Text style={{ color: colors.primary, fontWeight: "700" }}>Cerrar</Text>
               </Pressable>
