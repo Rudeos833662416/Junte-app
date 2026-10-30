@@ -4,6 +4,7 @@ export type Venue = {
   address: string | null;
   description: string | null;
   city: string | null;
+  website_url?: string | null;
   latitude: number | null;
   longitude: number | null;
   admin_rank: number | null;
