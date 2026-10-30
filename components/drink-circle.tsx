@@ -63,7 +63,6 @@ type Props = {
   onToggle: () => void;
   activeColor: string;
   idleColor: string;
-  /** Reservado: selección local; el mapa no cambia de marcador por ahora. */
   onSelectionChange?: (categoryId: DrinkCategoryId, variant: string) => void;
 };
 
@@ -112,10 +111,7 @@ export function DrinkCircle({
 
   const changeCategory = useCallback(
     (delta: number) => {
-      setCategoryIndex((current) => {
-        const next = (current + delta + DRINK_CATEGORIES.length) % DRINK_CATEGORIES.length;
-        return next;
-      });
+      setCategoryIndex((current) => (current + delta + DRINK_CATEGORIES.length) % DRINK_CATEGORIES.length);
       setVariantIndex(0);
       hapticLight();
     },
@@ -137,8 +133,12 @@ export function DrinkCircle({
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => !disabled,
+        onStartShouldSetPanResponderCapture: () => !disabled,
         onMoveShouldSetPanResponder: (_, g) =>
-          !disabled && (Math.abs(g.dx) > 8 || Math.abs(g.dy) > 8),
+          !disabled && (Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6),
+        onMoveShouldSetPanResponderCapture: (_, g) =>
+          !disabled && (Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6),
+        onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
           moved.current = false;
         },
@@ -150,12 +150,10 @@ export function DrinkCircle({
           const absY = Math.abs(g.dy);
 
           if (absX > SWIPE_THRESHOLD && absX > absY) {
-            // Horizontal: marca / presentación
             changeVariant(g.dx < 0 ? 1 : -1);
             return;
           }
           if (absY > SWIPE_THRESHOLD && absY > absX) {
-            // Vertical: tipo de trago
             changeCategory(g.dy < 0 ? 1 : -1);
             return;
           }

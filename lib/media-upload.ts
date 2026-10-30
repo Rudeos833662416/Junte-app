@@ -21,16 +21,24 @@ export async function verifyPublicStorageUrl(
   const url = publicStorageUrl(bucket, path);
   let lastError = "";
 
-  for (const waitMs of [0, 350, 900, 1800]) {
+  for (const waitMs of [0, 350, 900, 1600]) {
     if (waitMs) await new Promise((resolve) => setTimeout(resolve, waitMs));
     try {
       const response = await fetch(`${url}?verify=${Date.now()}`, {
         method: "GET",
         cache: "no-store",
-        headers: { Accept: kind === "image" ? "image/*" : "video/*" },
       });
       const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-      const acceptableType = contentType === "" || contentType === "application/octet-stream" || contentType.startsWith(`${kind}/`);
+      if (contentType.includes("application/json")) {
+        lastError = `HTTP ${response.status} (application/json)`;
+        continue;
+      }
+      const acceptableType =
+        contentType === "" ||
+        contentType === "application/octet-stream" ||
+        contentType.startsWith("image/") ||
+        contentType.startsWith("video/") ||
+        contentType.startsWith(`${kind}/`);
       if (response.ok && acceptableType) return url;
       lastError = `HTTP ${response.status}${contentType ? ` (${contentType})` : ""}`;
     } catch (error) {
@@ -38,7 +46,18 @@ export async function verifyPublicStorageUrl(
     }
   }
 
-  throw new Error(`El archivo se subió, pero no se puede descargar desde Storage (${lastError || "sin respuesta"}). Verifica que el bucket ${bucket} sea público.`);
+  try {
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24);
+    if (!error && data?.signedUrl) return data.signedUrl;
+    if (error) lastError = error.message || lastError;
+  } catch (error) {
+    lastError = error instanceof Error ? error.message : lastError;
+  }
+
+  throw new Error(
+    `El archivo se subió, pero no se puede descargar desde Storage (${lastError || "sin respuesta"}). ` +
+      `En Supabase → Storage → bucket "${bucket}": actívalo como público o añade policy SELECT pública / para authenticated.`,
+  );
 }
 
 async function uploadWithExpoFetch(
@@ -109,7 +128,6 @@ export async function uploadUriToStorage(
   try {
     return await uploadWithExpoFetch(bucket, path, uri, mimeType, accessToken);
   } catch (error) {
-    // Algunos selectores Android entregan content://; se copia a cache como file:// y se reintenta.
     if (!uri.startsWith("content://")) throw error;
     const cacheUri = `${LegacyFileSystem.cacheDirectory}upload_${Date.now()}.${mimeType.split("/")[1] || "bin"}`;
     await LegacyFileSystem.copyAsync({ from: uri, to: cacheUri });

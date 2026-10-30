@@ -36,11 +36,6 @@ function UnreadBadge() {
 
     void checkUnread();
 
-    // Configure every Realtime callback before calling subscribe(). Reusing a
-    // channel after it has joined causes Supabase to throw on Android.
-    // Use a unique topic for every effect run. React Navigation/Strict Mode can
-    // briefly overlap cleanup and setup; reusing the same topic in that window
-    // can make Supabase receive a late `.on()` on an already joined channel.
     const channelName = `badge-${userId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const channel = supabase.channel(channelName);
     channelRef.current = channel;
@@ -123,15 +118,26 @@ export default function TabLayout() {
   const currentTabIndex = Math.max(0, swipeRoutes.findIndex((route) => pathname === route || (route === "/(tabs)" && pathname === "/")));
   const currentTabIndexRef = useRef(currentTabIndex);
   currentTabIndexRef.current = currentTabIndex;
-  const swipeResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 22 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
-    onPanResponderRelease: (_, gesture) => {
-      if (Math.abs(gesture.dx) < Math.max(56, Dimensions.get("window").width * 0.14)) return;
-      const nextIndex = currentTabIndexRef.current + (gesture.dx < 0 ? 1 : -1);
-      const nextRoute = swipeRoutes[nextIndex];
-      if (nextRoute) router.replace(nextRoute);
-    },
-  })).current;
+  const swipeResponder = useRef(
+    PanResponder.create({
+      // Solo desde los BORDES: el centro queda libre para el círculo de trago y carruseles.
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        const width = Dimensions.get("window").width;
+        const edge = Math.max(28, width * 0.06);
+        const fromEdge = gesture.x0 <= edge || gesture.x0 >= width - edge;
+        if (!fromEdge) return false;
+        return Math.abs(gesture.dx) > 28 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5;
+      },
+      onPanResponderRelease: (_, gesture) => {
+        const width = Dimensions.get("window").width;
+        if (Math.abs(gesture.dx) < Math.max(64, width * 0.16)) return;
+        const nextIndex = currentTabIndexRef.current + (gesture.dx < 0 ? 1 : -1);
+        const nextRoute = swipeRoutes[nextIndex];
+        if (nextRoute) router.replace(nextRoute);
+      },
+    }),
+  ).current;
 
   return (
     <View style={{ flex: 1 }} {...swipeResponder.panHandlers}>
