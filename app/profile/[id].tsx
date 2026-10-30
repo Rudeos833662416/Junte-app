@@ -236,13 +236,23 @@ export default function PublicProfileScreen() {
                 )}
               </View>
             </Pressable>
+            {profile.bio ? (
+              <View
+                pointerEvents="box-none"
+                style={{
+                  position: "absolute",
+                  top: 28,
+                  left: "50%",
+                  marginLeft: 28,
+                  zIndex: 8,
+                  maxWidth: 200,
+                }}
+              >
+                <ThoughtBubble text={profile.bio} editable={false} floating />
+              </View>
+            ) : null}
             <Text className="mt-3 text-2xl font-bold text-foreground">{name}</Text>
             <Text className="mt-1 text-sm text-muted">Perfil de Tragos Sociales</Text>
-            <View style={{ position: "relative", alignItems: "center", marginTop: 4 }}>
-              {profile.bio ? (
-                <ThoughtBubble text={profile.bio} editable={false} floating />
-              ) : null}
-            </View>
             {!isSelf ? (
               <>
                 {!isAccepted && !isPending ? (
