@@ -303,45 +303,33 @@ export default function FriendsScreen() {
             </View>
           </TouchableOpacity>
           <View className="flex-1">
-            <View style={{ flexDirection: "row", gap: 10, marginBottom: 14 }}>
-              <View
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: colors.primary + "55",
-                  backgroundColor: colors.primary + "12",
-                  paddingVertical: 12,
-                  paddingHorizontal: 10,
-                }}
-              >
-                <IconSymbol name="qrcode" size={18} color={colors.primary} />
-                <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13 }}>Tu QR</Text>
-              </View>
-              <Pressable
-                onPress={() => router.push("/scan-qr")}
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  borderRadius: 14,
-                  backgroundColor: colors.primary,
-                  paddingVertical: 12,
-                  paddingHorizontal: 10,
-                }}
-              >
-                <IconSymbol name="camera.fill" size={17} color={colors.background} />
-                <Text style={{ color: colors.background, fontWeight: "700", fontSize: 13 }}>
-                  Escanear amigo
-                </Text>
-              </Pressable>
-            </View>    );
+            <View className="mb-1 flex-row items-center gap-2">
+              <Text className="text-lg font-semibold text-foreground">{friend.name}</Text>
+              {isInBar ? (
+                <View
+                  className="flex-row items-center gap-1 rounded-full px-2 py-1"
+                  style={{ backgroundColor: `${colors.success}18` }}
+                >
+                  <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.success }} />
+                  <Text className="text-[10px] font-bold" style={{ color: colors.success }}>
+                    Brindis activo
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            {isInBar ? (
+              <>
+                <Text className="mb-1 text-sm font-medium text-foreground">Está tomando algo</Text>
+                <Text className="text-xs text-muted">Activo desde {friend.checkInTime}</Text>
+              </>
+            ) : (
+              <Text className="text-sm text-muted">Sin brindis activo</Text>
+            )}
+          </View>
+          {isInBar ? <IconSymbol name="chevron.right" size={20} color={colors.primary} /> : null}
+        </View>
+      </Pressable>
+    );
   };
 
   return (
@@ -370,7 +358,7 @@ export default function FriendsScreen() {
                 >
                   <Text className="font-semibold text-foreground">{request.name}</Text>
                   {request.message ? (
-                    <Text className="mt-1 text-sm leading-5 text-muted">"{request.message}"</Text>
+                    <Text className="mt-1 text-sm leading-5 text-muted">“{request.message}”</Text>
                   ) : null}
                   <View className="mt-3 flex-row gap-2">
                     <Pressable
