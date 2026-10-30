@@ -457,21 +457,6 @@ export default function HomeScreen() {
             >
               <Text className="font-semibold text-foreground">Ver amigos en el mapa</Text>
             </Pressable>
-            <Pressable
-              onPress={() => router.push("/messages")}
-              style={({ pressed }) => ({
-                alignItems: "center",
-                borderRadius: 12,
-                borderColor: colors.primary,
-                borderWidth: 1,
-                paddingVertical: 12,
-                opacity: pressed ? 0.7 : 1,
-              })}
-            >
-              <Text className="font-semibold" style={{ color: colors.primary }}>
-                Mensajes
-              </Text>
-            </Pressable>
           </View>
         </View>
       </ScrollView>
