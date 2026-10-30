@@ -520,7 +520,7 @@ export default function FriendsScreen() {
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}>
             <View style={{ backgroundColor: colors.surface, borderRadius: 20, padding: 20, alignItems: "center" }}>
               <Text className="mb-3 text-lg font-bold text-foreground">Tu código QR</Text>
-              <View style={{ marginBottom: 12 }}>
+              <View style={{ marginBottom: 14 }}>
                 <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
                   <View
                     style={{
