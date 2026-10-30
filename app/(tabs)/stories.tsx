@@ -1,1 +1,1 @@
-RELOAD_FROM_LOCAL
+export { default } from "@/components/stories-screen";
