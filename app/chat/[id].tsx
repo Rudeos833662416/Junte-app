@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Image as ExpoImage } from "expo-image";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
@@ -224,14 +225,57 @@ export default function ChatScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
       >
-        <View className="mb-4 flex-row items-center gap-3">
-          <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Volver">
-            <Text className="text-2xl" style={{ color: colors.primary }}>
-              ‹
+        <View
+        style={{
+          marginBottom: 14,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          paddingBottom: 12,
+        }}
+      >
+        <Pressable onPress={() => router.back()} hitSlop={14} style={{ paddingRight: 2 }}>
+          <Text style={{ fontSize: 28, color: colors.primary, lineHeight: 30 }}>‹</Text>
+        </Pressable>
+        <View
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 21,
+            overflow: "hidden",
+            backgroundColor: `${colors.primary}20`,
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 1.5,
+            borderColor: `${colors.primary}50`,
+          }}
+        >
+          {peerAvatar ? (
+            <ExpoImage
+              source={{ uri: peerAvatar }}
+              style={{ width: 42, height: 42 }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+            />
+          ) : (
+            <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>
+              {(peerName || "?").trim().slice(0, 1).toUpperCase()}
             </Text>
-          </Pressable>
-          <Text className="text-2xl font-bold text-foreground">{otherName}</Text>
+          )}
         </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ color: colors.foreground, fontSize: 17, fontWeight: "700" }} numberOfLines={1}>
+            {peerName}
+          </Text>
+          {peerTyping ? (
+            <Text style={{ color: colors.primary, fontSize: 12, marginTop: 2 }}>Escribiendo…</Text>
+          ) : (
+            <Text style={{ color: colors.muted, fontSize: 11, marginTop: 2 }}>Conversación</Text>
+          )}
+        </View>
+      </View>
 
         {loading ? (
           <View className="flex-1 items-center justify-center">
