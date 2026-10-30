@@ -367,38 +367,6 @@ export default function ProfileScreen() {
                 </View>
               </Pressable>
 
-              <View
-                pointerEvents="box-none"
-                style={{
-                  position: "absolute",
-                  top: 28,
-                  left: "50%",
-                  marginLeft: 28,
-                  zIndex: 8,
-                  maxWidth: 200,
-                }}
-              >
-                <ThoughtBubble
-                text={bio}
-                editable
-                floating
-                placeholder="¿En qué estás pensando?"
-                onSave={async (next) => {
-                  if (!user) return;
-                  const cleaned = next.trim().replace(/\s+/g, " ").slice(0, THOUGHT_MAX);
-                  const { error } = await supabase
-                    .from("profiles")
-                    .update({ bio: cleaned || null })
-                    .eq("id", user.id);
-                  if (error) {
-                    Alert.alert("No se pudo guardar", error.message);
-                    throw error;
-                  }
-                  setBio(cleaned);
-                }}
-              />
-              </View>
-
               {isEditingName ? (
                 <View className="mt-3 w-full flex-row items-center gap-2">
                   <TextInput
