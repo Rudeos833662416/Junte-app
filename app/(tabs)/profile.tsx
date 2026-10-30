@@ -14,6 +14,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { Image as ExpoImage } from "expo-image";
 import { uploadUriToStorage, verifyPublicStorageUrl } from "@/lib/media-upload";
 import { router } from "expo-router";
+import { ThoughtBubble, THOUGHT_MAX } from "@/components/thought-bubble";
 
 type UploadKind = "avatar" | "cover";
 type UploadState = { kind: UploadKind; progress: number; message: string };
@@ -50,7 +51,6 @@ export default function ProfileScreen() {
   const colors = useColors();
   const { user, loading: authLoading, logout } = useAuth({ autoFetch: true });
   const { revision } = useAppRefresh();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [locationSharing, setLocationSharing] = useState(true);
   const [isPublicProfile, setIsPublicProfile] = useState(false);
   const [discoverableNearby, setDiscoverableNearby] = useState(false);
@@ -64,9 +64,6 @@ export default function ProfileScreen() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
   const [bio, setBio] = useState("");
-  const [bioDraft, setBioDraft] = useState("");
-  const [isEditingBio, setIsEditingBio] = useState(false);
-  const [isSavingBio, setIsSavingBio] = useState(false);
 
   const fetchProfileData = useCallback(async () => {
     if (!user) return;
@@ -110,7 +107,9 @@ export default function ProfileScreen() {
     if (!user) return;
     const channel = supabase
       .channel(`tragos-sociales-profile-${user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles", filter: `id=eq.${user.id}` }, () => void fetchProfileData())
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles", filter: `id=eq.${user.id}` }, () =>
+        void fetchProfileData(),
+      )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
@@ -174,7 +173,9 @@ export default function ProfileScreen() {
         previousReference.path !== path
       ) {
         setUploadState({ kind, progress: 92, message: "Limpiando la versión anterior…" });
-        const { error: cleanupError } = await supabase.storage.from(previousReference.bucket).remove([previousReference.path]);
+        const { error: cleanupError } = await supabase.storage
+          .from(previousReference.bucket)
+          .remove([previousReference.path]);
         if (cleanupError) console.warn("No se pudo limpiar la imagen anterior:", cleanupError);
       }
       setUploadState({ kind, progress: 100, message: "Cambio guardado correctamente" });
@@ -201,7 +202,10 @@ export default function ProfileScreen() {
     const availableAt = getNameAvailableAt();
     if (availableAt && Date.now() < availableAt) {
       const days = Math.ceil((availableAt - Date.now()) / (24 * 60 * 60 * 1000));
-      Alert.alert("Cambio de nombre limitado", `Podrás cambiar tu nombre nuevamente en ${days} día${days === 1 ? "" : "s"}.`);
+      Alert.alert(
+        "Cambio de nombre limitado",
+        `Podrás cambiar tu nombre nuevamente en ${days} día${days === 1 ? "" : "s"}.`,
+      );
       return;
     }
     setNameDraft(profileName);
@@ -244,39 +248,6 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleStartBioEdit = () => {
-    setBioDraft(bio);
-    setIsEditingBio(true);
-    setUploadNotice(null);
-  };
-
-  const handleCancelBioEdit = () => {
-    if (!isSavingBio) {
-      setBioDraft(bio);
-      setIsEditingBio(false);
-    }
-  };
-
-  const handleSaveBio = async () => {
-    if (!user || isSavingBio) return;
-    const nextBio = bioDraft.trim().replace(/\s+/g, " ");
-    if (nextBio.length > 280) {
-      Alert.alert("Biografía demasiado larga", "Puedes escribir hasta 280 caracteres.");
-      return;
-    }
-    try {
-      setIsSavingBio(true);
-      const { error } = await supabase.from("profiles").update({ bio: nextBio || null }).eq("id", user.id);
-      if (error) throw error;
-      setBio(nextBio);
-      setIsEditingBio(false);
-    } catch (error) {
-      Alert.alert("No se pudo guardar la biografía", error instanceof Error ? error.message : "Inténtalo de nuevo.");
-    } finally {
-      setIsSavingBio(false);
-    }
-  };
-
   const updatePrivacySetting = async (
     field: "is_public" | "discoverable_nearby" | "location_sharing",
     value: boolean,
@@ -293,7 +264,10 @@ export default function ProfileScreen() {
       }
       if (Platform.OS !== "web") void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
-      Alert.alert("No se pudo guardar", error instanceof Error ? error.message : "Revisa la conexión e inténtalo de nuevo.");
+      Alert.alert(
+        "No se pudo guardar",
+        error instanceof Error ? error.message : "Revisa la conexión e inténtalo de nuevo.",
+      );
     }
   };
 
@@ -354,7 +328,10 @@ export default function ProfileScreen() {
                     cachePolicy="memory-disk"
                   />
                 ) : (
-                  <View className="h-full w-full items-center justify-center" style={{ backgroundColor: `${colors.primary}18` }}>
+                  <View
+                    className="h-full w-full items-center justify-center"
+                    style={{ backgroundColor: `${colors.primary}18` }}
+                  >
                     <IconSymbol name="photo.fill" size={28} color={colors.muted} />
                     <Text className="mt-2 text-xs font-bold uppercase tracking-wider text-muted">
                       Toca para añadir foto de portada
@@ -376,7 +353,12 @@ export default function ProfileScreen() {
                   style={{ borderColor: colors.surface, backgroundColor: colors.primary }}
                 >
                   {avatarUrl ? (
-                    <ExpoImage source={{ uri: avatarUrl }} style={{ width: "100%", height: "100%" }} contentFit="cover" cachePolicy="memory-disk" />
+                    <ExpoImage
+                      source={{ uri: avatarUrl }}
+                      style={{ width: "100%", height: "100%" }}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                    />
                   ) : (
                     <Text className="text-3xl font-bold" style={{ color: colors.background }}>
                       {getInitials(profileName || email)}
@@ -406,49 +388,51 @@ export default function ProfileScreen() {
                 </View>
               ) : (
                 <Pressable onPress={handleStartNameEdit} className="mt-3 flex-row items-center gap-2">
-                  <Text className="text-2xl font-bold text-foreground">{profileName || email || "Tu perfil"}</Text>
+                  <Text className="text-2xl font-bold text-foreground">
+                    {profileName || email || "Tu perfil"}
+                  </Text>
                   <IconSymbol name="pencil" size={16} color={colors.muted} />
                 </Pressable>
               )}
 
-              {uploadNotice ? <Text className="mt-2 text-xs" style={{ color: colors.success }}>{uploadNotice}</Text> : null}
+              {uploadNotice ? (
+                <Text className="mt-2 text-xs" style={{ color: colors.success }}>
+                  {uploadNotice}
+                </Text>
+              ) : null}
               {uploadState ? (
-                <Text className="mt-2 text-xs text-muted">{uploadState.message} ({uploadState.progress}%)</Text>
+                <Text className="mt-2 text-xs text-muted">
+                  {uploadState.message} ({uploadState.progress}%)
+                </Text>
               ) : null}
 
-              {isEditingBio ? (
-                <View className="mt-3 w-full">
-                  <TextInput
-                    value={bioDraft}
-                    onChangeText={setBioDraft}
-                    maxLength={280}
-                    multiline
-                    className="rounded-xl border px-3 py-2 text-sm text-foreground"
-                    style={{ borderColor: colors.border, backgroundColor: colors.background, minHeight: 72 }}
-                    placeholder="Cuéntale a la gente quién eres…"
-                    placeholderTextColor={colors.muted}
-                  />
-                  <View className="mt-2 flex-row justify-end gap-2">
-                    <Pressable onPress={() => void handleSaveBio()} className="rounded-lg px-3 py-2" style={{ backgroundColor: colors.primary }}>
-                      <Text style={{ color: colors.background, fontWeight: "700" }}>{isSavingBio ? "…" : "Guardar"}</Text>
-                    </Pressable>
-                    <Pressable onPress={handleCancelBioEdit} className="rounded-lg border px-3 py-2" style={{ borderColor: colors.border }}>
-                      <Text style={{ color: colors.muted }}>Cancelar</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : (
-                <Pressable onPress={handleStartBioEdit} className="mt-3 w-full flex-row items-start gap-2 px-2">
-                  <Text className="flex-1 text-center text-sm text-muted">{bio || "Añade una biografía"}</Text>
-                  <IconSymbol name="pencil" size={16} color={colors.muted} />
-                </Pressable>
-              )}
+              <ThoughtBubble
+                text={bio}
+                editable
+                placeholder="¿En qué estás pensando?"
+                onSave={async (next) => {
+                  if (!user) return;
+                  const cleaned = next.trim().replace(/\s+/g, " ").slice(0, THOUGHT_MAX);
+                  const { error } = await supabase
+                    .from("profiles")
+                    .update({ bio: cleaned || null })
+                    .eq("id", user.id);
+                  if (error) {
+                    Alert.alert("No se pudo guardar", error.message);
+                    throw error;
+                  }
+                  setBio(cleaned);
+                }}
+              />
 
               <Text className="mt-1 text-sm text-muted">{email}</Text>
             </View>
           </View>
 
-          <View className="mb-4 rounded-2xl border p-4" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
+          <View
+            className="mb-4 rounded-2xl border p-4"
+            style={{ borderColor: colors.border, backgroundColor: colors.surface }}
+          >
             <Text className="mb-2 text-base font-bold text-foreground">Historias</Text>
             <Text className="mb-3 text-xs text-muted">
               Publica o gestiona tus historias y la música que acompañan.
@@ -466,25 +450,35 @@ export default function ProfileScreen() {
                 opacity: pressed ? 0.85 : 1,
               })}
             >
-              <Text style={{ color: colors.background, fontWeight: "700" }}>
-                Gestionar Historias y Música
-              </Text>
+              <Text style={{ color: colors.background, fontWeight: "700" }}>Gestionar Historias y Música</Text>
             </Pressable>
           </View>
 
-          <View className="mb-4 rounded-2xl border p-4" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
+          <View
+            className="mb-4 rounded-2xl border p-4"
+            style={{ borderColor: colors.border, backgroundColor: colors.surface }}
+          >
             <Text className="mb-3 text-base font-bold text-foreground">Privacidad</Text>
             <View className="mb-3 flex-row items-center justify-between">
               <Text className="flex-1 text-sm text-foreground">Perfil público</Text>
-              <Switch value={isPublicProfile} onValueChange={() => void updatePrivacySetting("is_public", !isPublicProfile)} />
+              <Switch
+                value={isPublicProfile}
+                onValueChange={() => void updatePrivacySetting("is_public", !isPublicProfile)}
+              />
             </View>
             <View className="mb-3 flex-row items-center justify-between">
               <Text className="flex-1 text-sm text-foreground">Visible cerca</Text>
-              <Switch value={discoverableNearby} onValueChange={() => void updatePrivacySetting("discoverable_nearby", !discoverableNearby)} />
+              <Switch
+                value={discoverableNearby}
+                onValueChange={() => void updatePrivacySetting("discoverable_nearby", !discoverableNearby)}
+              />
             </View>
             <View className="flex-row items-center justify-between">
               <Text className="flex-1 text-sm text-foreground">Compartir ubicación</Text>
-              <Switch value={locationSharing} onValueChange={() => void updatePrivacySetting("location_sharing", !locationSharing)} />
+              <Switch
+                value={locationSharing}
+                onValueChange={() => void updatePrivacySetting("location_sharing", !locationSharing)}
+              />
             </View>
           </View>
 
