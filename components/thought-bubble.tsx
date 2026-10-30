@@ -1,4 +1,4 @@
-import { Modal, Pressable, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, Text, TextInput, View, StyleSheet } from "react-native";
 import { useEffect, useState } from "react";
 import { useColors } from "@/hooks/use-colors";
 
@@ -6,10 +6,11 @@ export const THOUGHT_MAX = 200;
 
 type ThoughtBubbleProps = {
   text: string | null | undefined;
-  /** Si true, al tocar abre el editor. */
   editable?: boolean;
   onSave?: (next: string) => Promise<void> | void;
   placeholder?: string;
+  /** Burbuja flotante sobre el avatar (esquina superior derecha). */
+  floating?: boolean;
 };
 
 /**
@@ -22,6 +23,7 @@ export function ThoughtBubble({
   editable = false,
   onSave,
   placeholder = "¿En qué estás pensando?",
+  floating = false,
 }: ThoughtBubbleProps) {
   const colors = useColors();
   const [open, setOpen] = useState(false);
@@ -36,8 +38,7 @@ export function ThoughtBubble({
   const count = draft.length;
   const over = count > THOUGHT_MAX;
 
-  const bubbleBg = `${colors.surface}`;
-  const border = colors.border;
+  if (!display && !editable) return null;
 
   const openEditor = () => {
     if (!editable) return;
@@ -63,142 +64,69 @@ export function ThoughtBubble({
         onPress={openEditor}
         disabled={!editable}
         accessibilityRole={editable ? "button" : "text"}
-        accessibilityLabel={editable ? "Editar pensamiento" : display || "Sin pensamiento"}
-        style={{ alignItems: "center", maxWidth: 280, marginTop: 10 }}
+        accessibilityLabel={editable ? "Editar biografía" : display || "Sin biografía"}
+        style={[
+          styles.bubble,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            maxWidth: floating ? 168 : 280,
+          },
+          floating ? styles.floating : null,
+        ]}
       >
-        <View
+        <Text
+          numberOfLines={floating ? 4 : 6}
           style={{
-            backgroundColor: bubbleBg,
-            borderColor: border,
-            borderWidth: 1.5,
-            borderRadius: 22,
-            paddingHorizontal: 16,
-            paddingVertical: 12,
-            minWidth: 120,
-            maxWidth: 280,
-            shadowColor: "#000",
-            shadowOpacity: 0.18,
-            shadowRadius: 8,
-            shadowOffset: { width: 0, height: 3 },
-            elevation: 4,
+            color: display ? colors.foreground : colors.muted,
+            fontSize: floating ? 12 : 14,
+            lineHeight: floating ? 16 : 20,
+            fontWeight: display ? "600" : "500",
           }}
         >
-          <Text
-            style={{
-              color: display ? colors.foreground : colors.muted,
-              fontSize: 13,
-              lineHeight: 18,
-              textAlign: "center",
-              fontWeight: display ? "500" : "400",
-            }}
-          >
-            {display || (editable ? placeholder : "…")}
-          </Text>
-          {editable && !display ? (
-            <Text
-              style={{
-                marginTop: 4,
-                color: colors.muted,
-                fontSize: 10,
-                textAlign: "center",
-              }}
-            >
-              Toca para escribir
-            </Text>
-          ) : null}
-        </View>
-
-        {/* Cola de pensamiento: tres esferas hacia abajo (hacia avatar/nombre) */}
-        <View style={{ alignItems: "center", marginTop: 2 }}>
-          <View
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: 6,
-              backgroundColor: bubbleBg,
-              borderWidth: 1.5,
-              borderColor: border,
-              marginLeft: -18,
-            }}
-          />
-          <View
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 4,
-              backgroundColor: bubbleBg,
-              borderWidth: 1.5,
-              borderColor: border,
-              marginTop: 2,
-              marginLeft: -28,
-            }}
-          />
-          <View
-            style={{
-              width: 5,
-              height: 5,
-              borderRadius: 3,
-              backgroundColor: bubbleBg,
-              borderWidth: 1,
-              borderColor: border,
-              marginTop: 2,
-              marginLeft: -36,
-            }}
-          />
-        </View>
+          {display || placeholder}
+        </Text>
+        <View style={[styles.tailOuter, { backgroundColor: colors.border }]} />
+        <View style={[styles.tailInner, { backgroundColor: colors.surface }]} />
+        <View style={[styles.dotLarge, { backgroundColor: colors.surface, borderColor: colors.border }]} />
+        <View style={[styles.dotSmall, { backgroundColor: colors.surface, borderColor: colors.border }]} />
       </Pressable>
 
-      <Modal visible={open} animationType="fade" transparent onRequestClose={() => setOpen(false)}>
-        <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.55)",
-            justifyContent: "center",
-            padding: 24,
-          }}
-          onPress={() => setOpen(false)}
-        >
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setOpen(false)}>
           <Pressable
-            onPress={(e) => e.stopPropagation?.()}
-            style={{
-              borderRadius: 20,
-              borderWidth: 1,
-              borderColor: border,
-              backgroundColor: colors.surface,
-              padding: 18,
-            }}
+            onPress={(e) => e.stopPropagation()}
+            style={[styles.modalCard, { backgroundColor: colors.background, borderColor: colors.border }]}
           >
-            <Text style={{ color: colors.foreground, fontWeight: "800", fontSize: 17, marginBottom: 10 }}>
+            <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800", marginBottom: 8 }}>
               Tu pensamiento
+            </Text>
+            <Text style={{ color: colors.muted, fontSize: 12, marginBottom: 10 }}>
+              Visible en tu perfil para quienes puedan verlo.
             </Text>
             <TextInput
               value={draft}
-              onChangeText={(v) => setDraft(v.slice(0, THOUGHT_MAX + 10))}
+              onChangeText={(v) => setDraft(v.slice(0, THOUGHT_MAX + 5))}
               placeholder={placeholder}
               placeholderTextColor={colors.muted}
               multiline
-              autoFocus
               maxLength={THOUGHT_MAX}
               style={{
                 minHeight: 100,
                 borderWidth: 1,
-                borderColor: border,
+                borderColor: colors.border,
                 borderRadius: 14,
                 padding: 12,
                 color: colors.foreground,
-                backgroundColor: colors.background,
                 textAlignVertical: "top",
-                fontSize: 15,
-                lineHeight: 21,
               }}
             />
             <Text
               style={{
-                marginTop: 8,
-                textAlign: "right",
-                fontSize: 12,
-                fontWeight: "600",
                 color: over ? "#ef4444" : colors.muted,
+                fontSize: 12,
+                marginTop: 6,
+                textAlign: "right",
               }}
             >
               {Math.min(count, THOUGHT_MAX)}/{THOUGHT_MAX}
@@ -210,7 +138,7 @@ export function ThoughtBubble({
                   flex: 1,
                   borderRadius: 12,
                   borderWidth: 1,
-                  borderColor: border,
+                  borderColor: colors.border,
                   paddingVertical: 12,
                   alignItems: "center",
                 }}
@@ -240,3 +168,70 @@ export function ThoughtBubble({
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  bubble: {
+    borderWidth: 1,
+    borderRadius: 18,
+    borderTopRightRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  floating: {
+    position: "absolute",
+    top: -8,
+    right: -12,
+    zIndex: 5,
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  tailOuter: {
+    position: "absolute",
+    left: 18,
+    bottom: -7,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  tailInner: {
+    position: "absolute",
+    left: 20,
+    bottom: -5,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  dotLarge: {
+    position: "absolute",
+    left: 10,
+    bottom: -16,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  dotSmall: {
+    position: "absolute",
+    left: 4,
+    bottom: -24,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    borderWidth: 1,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 18,
+  },
+});
