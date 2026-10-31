@@ -342,9 +342,41 @@ export default function FriendsScreen() {
         <View className="flex-1">
           <View className="mb-6">
             <Text className="mb-2 text-3xl font-bold text-foreground">Amigos</Text>
-            <Text className="text-sm text-muted">
+            <Text className="mb-3 text-sm text-muted">
               {friendsInBars > 0 ? `${friendsInBars} amigos en bares` : "Todavía no tienes amigos en bares"}
             </Text>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Pressable
+                onPress={() => setIsQrVisible(true)}
+                style={({ pressed }) => ({
+                  flex: 1,
+                  height: 42,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: colors.primary,
+                  backgroundColor: colors.primary + "18",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: pressed ? 0.85 : 1,
+                })}
+              >
+                <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13 }}>Tu QR</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push("/scan-qr")}
+                style={({ pressed }) => ({
+                  flex: 1,
+                  height: 42,
+                  borderRadius: 12,
+                  backgroundColor: colors.primary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: pressed ? 0.85 : 1,
+                })}
+              >
+                <Text style={{ color: "#0a0a0a", fontWeight: "700", fontSize: 13 }}>Escanear amigo</Text>
+              </Pressable>
+            </View>
           </View>
 
           {pendingRequests.length > 0 ? (
