@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Image as ExpoImage } from "expo-image";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
@@ -45,6 +46,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [otherName, setOtherName] = useState("Chat");
+  const [otherAvatar, setOtherAvatar] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
@@ -90,10 +92,11 @@ export default function ChatScreen() {
       await markAsRead(otherId);
       const profile = await supabase
         .from("public_profiles")
-        .select("name")
+        .select("name, avatar_url")
         .eq("id", otherId)
         .maybeSingle();
       setOtherName(profile.data?.name?.trim() || "Chat");
+      setOtherAvatar((profile.data as any)?.avatar_url ?? null);
     } catch (error) {
       console.warn("Chat load failed:", error);
     } finally {
@@ -230,7 +233,33 @@ export default function ChatScreen() {
               ‹
             </Text>
           </Pressable>
-          <Text className="text-2xl font-bold text-foreground">{otherName}</Text>
+          <View
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: colors.surface,
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+            }}
+          >
+            {otherAvatar ? (
+              <ExpoImage
+                source={{ uri: otherAvatar }}
+                style={{ width: 36, height: 36 }}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14 }}>
+                {(otherName || "?").charAt(0).toUpperCase()}
+              </Text>
+            )}
+          </View>
+          <Text className="text-2xl font-bold text-foreground" style={{ flex: 1 }} numberOfLines={1}>
+            {otherName}
+          </Text>
         </View>
 
         {loading ? (
