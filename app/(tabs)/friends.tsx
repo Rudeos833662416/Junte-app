@@ -311,7 +311,7 @@ export default function FriendsScreen() {
                   style={{ backgroundColor: `${colors.success}18` }}
                 >
                   <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.success }} />
-                  <Text className="text-[10px] font-bold" style={{ color: colors.success }}>
+                  <Text className="text-xs font-bold" style={{ color: colors.success }}>
                     Brindis activo
                   </Text>
                 </View>
@@ -326,7 +326,7 @@ export default function FriendsScreen() {
               <Text className="text-sm text-muted">Sin brindis activo</Text>
             )}
           </View>
-          {isInBar ? <IconSymbol name="chevron.right" size={20} color={colors.primary} /> : null}
+          {isInBar ? <IconSymbol name={"chevron.right" as never} size={20} color={colors.primary} /> : null}
         </View>
       </Pressable>
     );
