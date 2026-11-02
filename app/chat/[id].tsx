@@ -15,6 +15,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
+import { Image } from "expo-image";
 
 type Message = {
   id: string;
@@ -45,6 +46,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [otherName, setOtherName] = useState("Chat");
+  const [otherAvatar, setOtherAvatar] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
@@ -90,10 +92,11 @@ export default function ChatScreen() {
       await markAsRead(otherId);
       const profile = await supabase
         .from("public_profiles")
-        .select("name")
+        .select("name, avatar_url")
         .eq("id", otherId)
         .maybeSingle();
       setOtherName(profile.data?.name?.trim() || "Chat");
+      setOtherAvatar(profile.data?.avatar_url || null);
     } catch (error) {
       console.warn("Chat load failed:", error);
     } finally {
@@ -230,7 +233,35 @@ export default function ChatScreen() {
               ‹
             </Text>
           </Pressable>
-          <Text className="text-2xl font-bold text-foreground">{otherName}</Text>
+        <View className="min-w-0 flex-1 flex-row items-center gap-2">
+          <View
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: colors.border,
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+            }}
+          >
+            {otherAvatar ? (
+              <Image
+                source={{ uri: otherAvatar }}
+                style={{ width: 36, height: 36 }}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <Text className="text-xs font-bold text-foreground">
+                {(otherName || "?").slice(0, 1).toUpperCase()}
+              </Text>
+            )}
+          </View>
+          <Text className="min-w-0 flex-1 text-lg font-semibold text-foreground" numberOfLines={1}>
+            {otherName}
+          </Text>
+        </View>
         </View>
 
         {loading ? (
