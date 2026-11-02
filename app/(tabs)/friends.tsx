@@ -311,7 +311,7 @@ export default function FriendsScreen() {
                   style={{ backgroundColor: `${colors.success}18` }}
                 >
                   <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.success }} />
-                  <Text className="text-xs font-bold" style={{ color: colors.success }}>
+                  <Text className="text-[10px] font-bold" style={{ color: colors.success }}>
                     Brindis activo
                   </Text>
                 </View>
@@ -326,7 +326,7 @@ export default function FriendsScreen() {
               <Text className="text-sm text-muted">Sin brindis activo</Text>
             )}
           </View>
-          {isInBar ? <IconSymbol name={"chevron.right" as never} size={20} color={colors.primary} /> : null}
+          {isInBar ? <IconSymbol name="chevron.right" size={20} color={colors.primary} /> : null}
         </View>
       </Pressable>
     );
@@ -342,39 +342,25 @@ export default function FriendsScreen() {
         <View className="flex-1">
           <View className="mb-6">
             <Text className="mb-2 text-3xl font-bold text-foreground">Amigos</Text>
-            <Text className="mb-3 text-sm text-muted">
+            <Text className="text-sm text-muted">
               {friendsInBars > 0 ? `${friendsInBars} amigos en bares` : "Todavía no tienes amigos en bares"}
             </Text>
-            <View style={{ flexDirection: "row", gap: 10 }}>
+            <View className="mt-3 flex-row gap-2">
               <Pressable
                 onPress={() => setIsQrVisible(true)}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  height: 42,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: colors.primary,
-                  backgroundColor: colors.primary + "18",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  opacity: pressed ? 0.85 : 1,
-                })}
+                className="flex-1 items-center justify-center rounded-xl border py-2.5"
+                style={{ borderColor: colors.primary, backgroundColor: colors.primary + "18" }}
               >
-                <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13 }}>Tu QR</Text>
+                <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+                  Tu QR
+                </Text>
               </Pressable>
               <Pressable
                 onPress={() => router.push("/scan-qr")}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  height: 42,
-                  borderRadius: 12,
-                  backgroundColor: colors.primary,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  opacity: pressed ? 0.85 : 1,
-                })}
+                className="flex-1 items-center justify-center rounded-xl py-2.5"
+                style={{ backgroundColor: colors.primary }}
               >
-                <Text style={{ color: "#0a0a0a", fontWeight: "700", fontSize: 13 }}>Escanear amigo</Text>
+                <Text className="text-sm font-bold text-background">Escanear amigo</Text>
               </Pressable>
             </View>
           </View>
