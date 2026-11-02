@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
-import { Image as ExpoImage } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
@@ -19,7 +18,6 @@ type MessageRow = {
 type Conversation = {
   otherId: string;
   name: string;
-  avatarUrl: string | null;
   lastBody: string;
   lastAt: string;
   unread: number;
@@ -53,7 +51,6 @@ export default function MessagesInboxScreen() {
           byOther.set(otherId, {
             otherId,
             name: "Chat",
-            avatarUrl: null,
             lastBody: row.body,
             lastAt: row.created_at,
             unread: 0,
@@ -68,14 +65,11 @@ export default function MessagesInboxScreen() {
       if (otherIds.length) {
         const { data: profiles } = await supabase
           .from("public_profiles")
-          .select("id, name, avatar_url")
+          .select("id, name")
           .in("id", otherIds);
         for (const profile of profiles ?? []) {
           const current = byOther.get(profile.id);
-          if (current) {
-            current.name = profile.name?.trim() || "Chat";
-            current.avatarUrl = (profile as any).avatar_url ?? null;
-          }
+          if (current) current.name = profile.name?.trim() || "Chat";
         }
       }
 
@@ -145,15 +139,6 @@ export default function MessagesInboxScreen() {
                 opacity: pressed ? 0.75 : 1,
               })}
             >
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", marginRight: 12, overflow: "hidden" }}>
-                  {item.avatarUrl ? (
-                    <ExpoImage source={{ uri: item.avatarUrl }} style={{ width: 44, height: 44 }} contentFit="cover" cachePolicy="memory-disk" />
-                  ) : (
-                    <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>{(item.name || "?").charAt(0).toUpperCase()}</Text>
-                  )}
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
               <View className="flex-row items-center justify-between">
                 <Text className="text-base font-bold text-foreground">{item.name}</Text>
                 <Text className="text-xs text-muted">
@@ -187,7 +172,6 @@ export default function MessagesInboxScreen() {
                   </View>
                 ) : null}
               </View>
-                </View>
             </Pressable>
           )}
         />
