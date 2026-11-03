@@ -2,7 +2,7 @@
 import "./scripts/load-env.js";
 import type { ExpoConfig } from "expo/config";
 
-const rawBundleId = "com.app.socialsip";
+const rawBundleId = "app.junta2";
 const bundleId =
   rawBundleId
     .replace(/[-_]/g, ".")
@@ -17,7 +17,7 @@ const bundleId =
     .join(".") || "space.manus.app";
 const schemeFromBundleId = "socialsip";
 const env = {
-  appName: "Tragos Sociales",
+  appName: "Junta2",
   appSlug: "junte-app",
   logoUrl: "/manus-storage/icon_d4ee1ac1.png",
   appSubtitle: "time to drink",
