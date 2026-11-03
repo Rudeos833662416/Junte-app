@@ -57,6 +57,7 @@ const config: ExpoConfig = {
     softwareKeyboardLayoutMode: "resize",
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
+      googleServicesFile: "./google-services.json",
     permissions: ["POST_NOTIFICATIONS"],
     intentFilters: [
       {
