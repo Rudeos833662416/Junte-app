@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "728775786483",
+    "project_id": "tragos-sociales",
+    "storage_bucket": "tragos-sociales.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:728775786483:android:5b660f1d6c6b655f52dc86",
+        "android_client_info": {
+          "package_name": "app.junta2"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbunnT-qhZ_Ni5EBHl147ERMwk_QsSHsw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:728775786483:android:27ca94b2e8060e4752dc86",
+        "android_client_info": {
+          "package_name": "com.app.socialsip"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbunnT-qhZ_Ni5EBHl147ERMwk_QsSHsw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
