@@ -39,3 +39,13 @@ Usa solamente eventos `INSERT`; las actividades ya se generan automáticamente m
 Instala una build nativa nueva, inicia sesión en dos teléfonos con usuarios amigos, acepta los permisos de notificaciones y realiza un check-in desde uno de ellos. El otro teléfono debe recibir la notificación aun cuando Tragos Sociales no esté abierta. Al tocar un emoji, la aplicación se abrirá y guardará la reacción en la actividad.
 
 La entrega push no puede verificarse en el navegador ni en Expo Go. Requiere un APK o development build y la Edge Function/webhook activos en el proyecto Supabase.
+
+## Identidad actual (Junta2)
+
+- Nombre en el teléfono: **Junta2**
+- Android package: **`app.junta2`**
+- iOS bundle: **`app.junta2`**
+- Deep link scheme: **`junta2://`**
+- Proyecto Expo EAS (no cambiar): `@jesus_junteapp/junte-app`
+- Firebase: crear app Android con package **`app.junta2`**, descargar `google-services.json` y ponerlo en la raíz del repo.
+- Secreto Supabase `FCM_SERVICE_ACCOUNT_JSON`: service account del mismo proyecto Firebase.
