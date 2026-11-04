@@ -105,10 +105,10 @@ export default function AdminVenuesScreen() {
           .order("admin_rank", { ascending: true, nullsFirst: false })
           .limit(100);
         if (fallback.error) throw fallback.error;
-        setVenues((fallback.data ?? []) as Venue[]);
+        setVenues((fallback.data ?? []) as unknown as Venue[]);
         return;
       }
-      setVenues((data ?? []) as Venue[]);
+      setVenues((data ?? []) as unknown as Venue[]);
     } catch (err) {
       reportError(err, { screen: "admin/venues" });
       Alert.alert("Error", err instanceof Error ? err.message : "No se pudo cargar");

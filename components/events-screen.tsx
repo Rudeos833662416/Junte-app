@@ -189,7 +189,7 @@ export function EventsScreen() {
             .limit(50),
           supabase.from("profiles").select("is_admin").eq("id", user.id).maybeSingle(),
         ]);
-        const rawPosts = ((postRows ?? []) as (Omit<
+        const rawPosts = ((postRows ?? []) as unknown as (Omit<
           OfficialPost,
           "likeCount" | "commentCount" | "liked" | "authorName" | "authorAvatarUrl"
         > & { likes_count?: number | null; comments_count?: number | null })[]).filter(

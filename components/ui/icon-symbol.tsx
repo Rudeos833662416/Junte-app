@@ -41,7 +41,6 @@ const MAPPING = {
   "star.fill": "star",
   "heart.fill": "favorite",
   "plus": "add",
-  "camera.fill": "photo-camera",
   "trash.fill": "delete",
   "xmark": "close",
   "eye": "visibility",

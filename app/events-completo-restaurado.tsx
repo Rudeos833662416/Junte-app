@@ -346,7 +346,11 @@ export default function EventsScreen() {
 
   const sharePost = async (post: OfficialPost) => {
     await Share.share({ message: `Tragos Sociales${post.caption ? `: ${post.caption}` : ""}\n${post.media_url}` });
-    if (user) await supabase.from("official_post_shares").upsert({ post_id: post.id, user_id: user.id });
+    if (user) {
+      await supabase
+        .from("official_post_shares" as never)
+        .upsert({ post_id: post.id, user_id: user.id } as never);
+    }
   };
 
   const chooseImage = async () => ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.95, allowsEditing: true, aspect: [4, 3], selectionLimit: 1 });

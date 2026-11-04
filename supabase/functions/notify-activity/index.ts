@@ -51,6 +51,56 @@ async function createNativeActionToken(userId: string, activityId: string, detai
   return error ? null : raw;
 }
 
+const GENERIC_LOCATION_NAMES = new Set(["", "casa", "hogar", "residencia", "mi casa", "domicilio"]);
+
+function neighborhoodFromAddress(address: string | null | undefined) {
+  const value = String(address ?? "").trim();
+  if (!value || GENERIC_LOCATION_NAMES.has(value.toLowerCase())) return null;
+  const parts = value.split(",").map((part) => part.trim()).filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 2] : parts[0];
+}
+
+async function getVenueContext(activity: Record<string, unknown>) {
+  if (activity.venue_id != null) {
+    const { data } = await supabase
+      .from("venues")
+      .select("name, address, city, latitude, longitude")
+      .eq("id", activity.venue_id)
+      .maybeSingle();
+    if (data?.name && !GENERIC_LOCATION_NAMES.has(String(data.name).trim().toLowerCase())) {
+      return { isCommercial: true, neighborhood: String(data.name).trim() };
+    }
+    const neighborhood = neighborhoodFromAddress(data?.address ?? data?.city);
+    if (neighborhood) return { isCommercial: false, neighborhood };
+  }
+
+  const latitude = Number(activity.latitude);
+  const longitude = Number(activity.longitude);
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
+        { headers: { "User-Agent": "junte-app-notifications/1.0" } },
+      );
+      if (response.ok) {
+        const reverse = await response.json();
+        const address = reverse?.address ?? {};
+        const neighborhood = neighborhoodFromAddress(address.neighbourhood ?? address.suburb ?? address.city_district ?? address.city);
+        if (neighborhood) return { isCommercial: false, neighborhood };
+      }
+    } catch (error) {
+      console.warn("Could not resolve notification location:", error instanceof Error ? error.message : error);
+    }
+  }
+  return null;
+}
+
+function checkInMessage(actorName: string, context: { isCommercial: boolean; neighborhood: string } | null) {
+  if (!context) return `${actorName} está tomando algo cerca de ti`;
+  if (context.isCommercial) return `${actorName} está tomando algo en ${context.neighborhood}`;
+  return `${actorName} está tomando algo cerca de ${context.neighborhood}`;
+}
+
 // Implementación completa de producción v40 (Places, FCM, dedupe, audiencia).
 // Para obtener el archivo íntegro desde el entorno local del agente o del dashboard Supabase.
 
@@ -96,6 +146,7 @@ Deno.serve(async (request) => {
     const isNewStory = activityType === "story_new";
     const isCommentReply = activityType === "comment_reply";
     const isStoryReaction = activityType === "reaction_story";
+    const venueContext = isCheckIn ? await getVenueContext(activity) : null;
 
     let body = "Nueva actividad";
     if (isDirectMessage) body = activity.body ?? activity.message ?? "Te envió un mensaje";
@@ -104,7 +155,7 @@ Deno.serve(async (request) => {
     else if (isOfficialPost) body = activity.message ?? "La cuenta oficial publicó contenido nuevo en Eventos";
     else if (isNewStory) body = `${actorName} acaba de subir una historia nueva`;
     else if (isCommentReply) body = `${actorName} respondió a tu comentario`;
-    else if (isCheckIn) body = `¡${actorName} está brindando cerca de ti!`;
+    else if (isCheckIn) body = checkInMessage(actorName, venueContext);
     else body = "Terminó su visita. Toca para reaccionar.";
 
     const categoryId = isDirectMessage
@@ -142,6 +193,7 @@ Deno.serve(async (request) => {
                 : isFriendRequest
                   ? "friends"
                   : "activity",
+          quickActions: isCheckIn ? ["BRINDAR_HEALTH", "BRINDAR_ON_WAY"] : undefined,
         },
       }));
 

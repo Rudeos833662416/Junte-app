@@ -153,7 +153,7 @@ export default function ProfileScreen() {
       const column = kind === "avatar" ? "avatar_url" : "cover_url";
       const { data: savedProfile, error: profileError } = await supabase
         .from("profiles")
-        .update({ [column]: publicUrl })
+        .update({ [column]: publicUrl } as never)
         .eq("id", user.id)
         .select(column)
         .single();
@@ -254,7 +254,7 @@ export default function ProfileScreen() {
   ) => {
     if (!user) return;
     try {
-      const { error } = await supabase.from("profiles").update({ [field]: value }).eq("id", user.id);
+      const { error } = await supabase.from("profiles").update({ [field]: value } as never).eq("id", user.id);
       if (error) throw error;
       if (field === "is_public") setIsPublicProfile(value);
       if (field === "discoverable_nearby") setDiscoverableNearby(value);

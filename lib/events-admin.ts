@@ -53,7 +53,7 @@ export async function updateVenueAdmin(params: {
   if (params.longitude !== undefined) payload.longitude = params.longitude;
   if (params.admin_rank !== undefined) payload.admin_rank = params.admin_rank;
   if (params.admin_photo_url !== undefined) payload.admin_photo_url = params.admin_photo_url;
-  const { error } = await supabase.from("venues").update(payload).eq("id", params.venueId);
+  const { error } = await supabase.from("venues").update(payload as never).eq("id", params.venueId);
   if (error) throw error;
 }
 
@@ -84,7 +84,7 @@ export async function createVenueAdmin(params: {
       longitude: params.longitude ?? null,
       admin_rank: params.admin_rank ?? null,
       source: "admin",
-    })
+    } as never)
     .select("id")
     .single();
   if (error) throw error;
