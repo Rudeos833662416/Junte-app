@@ -1,21 +1,15 @@
 import { useEffect } from "react";
 
-/**
- * Registers push tokens after login. Failures are logged only — never crash UI.
- */
 export function PushRegistrar() {
   useEffect(() => {
     let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
+    let unsub: (() => void) | undefined;
 
     (async () => {
       try {
         const push = await import("@/lib/push-notifications");
         const { supabase } = await import("@/lib/supabase");
-
-        try {
-          push.setupNotificationHandler();
-        } catch {}
+        try { push.setupNotificationHandler(); } catch {}
 
         const run = async (userId?: string | null) => {
           if (cancelled || !userId) return;
@@ -33,17 +27,15 @@ export function PushRegistrar() {
         const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
           if (session?.user?.id) run(session.user.id);
         });
-        unsubscribe = () => sub.subscription.unsubscribe();
+        unsub = () => sub.subscription.unsubscribe();
       } catch (e) {
-        console.warn("[push] registrar init failed", e);
+        console.warn("[push] init failed", e);
       }
     })();
 
     return () => {
       cancelled = true;
-      try {
-        unsubscribe?.();
-      } catch {}
+      try { unsub?.(); } catch {}
     };
   }, []);
 
