@@ -97,11 +97,19 @@ export async function registerForPushNotificationsAsync(userId?: string | null) 
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await supabase.from("push_tokens").upsert(payload, {
+    // Prefer unique (user_id, platform); fall back to expo_push_token unique
+    let error = (await supabase.from("push_tokens").upsert(payload, {
       onConflict: "user_id,platform",
-    });
+    })).error;
+
     if (error) {
-      console.warn("[push] upsert failed:", error.message);
+      console.warn("[push] upsert user_id,platform failed:", error.message);
+      error = (await supabase.from("push_tokens").upsert(payload, {
+        onConflict: "expo_push_token",
+      })).error;
+    }
+    if (error) {
+      console.warn("[push] upsert expo_push_token failed:", error.message);
       const { error: insErr } = await supabase.from("push_tokens").insert(payload);
       if (insErr) {
         console.warn("[push] insert failed:", insErr.message);
