@@ -1,44 +1,49 @@
 import { useEffect } from "react";
-import {
-  registerForPushNotificationsAsync,
-  setupNotificationHandler,
-  registerNotificationCategories,
-} from "@/lib/push-notifications";
-import { supabase } from "@/lib/supabase";
 
 /**
- * Registers Expo/FCM push tokens when the user signs in.
- * Mount once near the root of the app.
+ * Registers push tokens after login. Failures are logged only — never crash UI.
  */
 export function PushRegistrar() {
   useEffect(() => {
-    setupNotificationHandler();
     let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
 
-    const run = async (userId?: string | null) => {
-      if (cancelled) return;
+    (async () => {
       try {
-        await registerNotificationCategories();
-        const token = await registerForPushNotificationsAsync(userId);
-        if (!token) {
-          console.warn("[push] register returned null — check permissions / device");
-        }
+        const push = await import("@/lib/push-notifications");
+        const { supabase } = await import("@/lib/supabase");
+
+        try {
+          push.setupNotificationHandler();
+        } catch {}
+
+        const run = async (userId?: string | null) => {
+          if (cancelled || !userId) return;
+          try {
+            await push.registerNotificationCategories().catch(() => {});
+            await push.registerForPushNotificationsAsync(userId);
+          } catch (e) {
+            console.warn("[push] register failed", e);
+          }
+        };
+
+        const { data } = await supabase.auth.getSession();
+        if (data.session?.user?.id) await run(data.session.user.id);
+
+        const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+          if (session?.user?.id) run(session.user.id);
+        });
+        unsubscribe = () => sub.subscription.unsubscribe();
       } catch (e) {
-        console.warn("[push] registrar error", e);
+        console.warn("[push] registrar init failed", e);
       }
-    };
-
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user?.id) run(data.session.user.id);
-    });
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.id) run(session.user.id);
-    });
+    })();
 
     return () => {
       cancelled = true;
-      sub.subscription.unsubscribe();
+      try {
+        unsubscribe?.();
+      } catch {}
     };
   }, []);
 
