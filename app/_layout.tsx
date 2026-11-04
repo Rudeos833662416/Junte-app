@@ -38,6 +38,39 @@ export const unstable_settings = {
   anchor: "(tabs)",
 };
 
+
+function PushRegistrar() {
+  useEffect(() => {
+    setupNotificationHandler();
+    let cancelled = false;
+
+    const run = async (userId?: string | null) => {
+      if (cancelled) return;
+      try {
+        await registerNotificationCategories();
+        await registerForPushNotificationsAsync(userId);
+      } catch (e) {
+        console.warn("[push] registrar error", e);
+      }
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.user?.id) run(data.session.user.id);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user?.id) run(session.user.id);
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  return null;
+}
+
 export default function RootLayout() {
   const initialInsets = initialWindowMetrics?.insets ?? DEFAULT_WEB_INSETS;
   const initialFrame = initialWindowMetrics?.frame ?? DEFAULT_WEB_FRAME;
@@ -91,7 +124,8 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AppRefreshProvider>
             <AuthGate />
-            <StatusBar style="auto" />
+            <PushRegistrar />
+      <StatusBar style="auto" />
           </AppRefreshProvider>
         </QueryClientProvider>
       </trpc.Provider>
