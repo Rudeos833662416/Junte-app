@@ -1,4 +1,5 @@
 import "@/global.css";
+import { NotificationBootstrap } from "@/components/notification-bootstrap";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -28,7 +29,6 @@ import {
   sendDirectMessage,
   quickBrindarMessage,
   invokeNotificationAction,
-} from "@/lib/push-notifications";
 import { PermissionsOnboarding } from "@/components/permissions-onboarding";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -38,38 +38,6 @@ export const unstable_settings = {
   anchor: "(tabs)",
 };
 
-
-function PushRegistrar() {
-  useEffect(() => {
-    setupNotificationHandler();
-    let cancelled = false;
-
-    const run = async (userId?: string | null) => {
-      if (cancelled) return;
-      try {
-        await registerNotificationCategories();
-        await registerForPushNotificationsAsync(userId);
-      } catch (e) {
-        console.warn("[push] registrar error", e);
-      }
-    };
-
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user?.id) run(data.session.user.id);
-    });
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.id) run(session.user.id);
-    });
-
-    return () => {
-      cancelled = true;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
-
-  return null;
-}
 
 export default function RootLayout() {
   const initialInsets = initialWindowMetrics?.insets ?? DEFAULT_WEB_INSETS;
@@ -124,7 +92,8 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AppRefreshProvider>
             <AuthGate />
-            <PushRegistrar />
+            
+      <NotificationBootstrap />
       <StatusBar style="auto" />
           </AppRefreshProvider>
         </QueryClientProvider>
