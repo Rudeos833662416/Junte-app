@@ -1,5 +1,4 @@
 import "@/global.css";
-import { PushRegistrar } from "@/lib/push-registrar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -92,8 +91,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AppRefreshProvider>
             <AuthGate />
-            <PushRegistrar />
-      <StatusBar style="auto" />
+            <StatusBar style="auto" />
           </AppRefreshProvider>
         </QueryClientProvider>
       </trpc.Provider>
