@@ -1,5 +1,5 @@
 import "@/global.css";
-import { NotificationBootstrap } from "@/components/notification-bootstrap";
+import { PushRegistrar } from "@/lib/push-registrar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -92,7 +92,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AppRefreshProvider>
             <AuthGate />
-            <NotificationBootstrap />
+            <PushRegistrar />
       <StatusBar style="auto" />
           </AppRefreshProvider>
         </QueryClientProvider>

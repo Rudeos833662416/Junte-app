@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase";
  * Registers Expo/FCM push tokens when the user signs in.
  * Mount once near the root of the app.
  */
-export function NotificationBootstrap() {
+export function PushRegistrar() {
   useEffect(() => {
     setupNotificationHandler();
     let cancelled = false;
@@ -19,9 +19,12 @@ export function NotificationBootstrap() {
       if (cancelled) return;
       try {
         await registerNotificationCategories();
-        await registerForPushNotificationsAsync(userId);
+        const token = await registerForPushNotificationsAsync(userId);
+        if (!token) {
+          console.warn("[push] register returned null — check permissions / device");
+        }
       } catch (e) {
-        console.warn("[push] bootstrap error", e);
+        console.warn("[push] registrar error", e);
       }
     };
 
@@ -42,4 +45,4 @@ export function NotificationBootstrap() {
   return null;
 }
 
-export default NotificationBootstrap;
+export default PushRegistrar;
