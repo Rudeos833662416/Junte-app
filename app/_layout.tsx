@@ -23,6 +23,7 @@ import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-run
 import {
   reactionFromNotificationAction,
   registerPushNotifications,
+  setupNotificationHandler,
   saveNotificationReaction,
   respondToFriendRequest,
   sendDirectMessage,
@@ -47,6 +48,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     initManusRuntime();
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") setupNotificationHandler();
   }, []);
 
   const handleSafeAreaUpdate = useCallback((metrics: Metrics) => {

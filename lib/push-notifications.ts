@@ -65,35 +65,52 @@ export function canUseNativeNotifications() {
 
 export function setupNotificationHandler() {
   if (!canUseNativeNotifications()) return;
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-    }),
-  });
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
+  } catch (error) {
+    console.warn("[push] Notification handler unavailable:", error instanceof Error ? error.message : error);
+  }
 }
 
 export async function ensureAndroidNotificationChannel() {
   if (Platform.OS !== "android") return;
-  await Notifications.setNotificationChannelAsync(PUSH_CHANNEL_ID, {
-    name: "Actividad de amigos",
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 250, 120, 250],
-    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    sound: "default",
-  });
+  try {
+    await Notifications.setNotificationChannelAsync(PUSH_CHANNEL_ID, {
+      name: "Actividad de amigos",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 120, 250],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      sound: "default",
+    });
+  } catch (error) {
+    console.warn("[push] Android channel unavailable:", error instanceof Error ? error.message : error);
+  }
+}
+
+async function safeSetNotificationCategory(identifier: string, actions: Notifications.NotificationAction[]) {
+  if (!actions.length) return;
+  try {
+    await Notifications.setNotificationCategoryAsync(identifier, actions);
+  } catch (error) {
+    console.warn(`[push] Category ${identifier} unavailable:`, error instanceof Error ? error.message : error);
+  }
 }
 
 async function registerCategories() {
   if (!canUseNativeNotifications()) return;
-  await Notifications.setNotificationCategoryAsync("FRIEND_ACTIVITY", REACTION_ACTIONS.map((action) => ({
+  await safeSetNotificationCategory("FRIEND_ACTIVITY", REACTION_ACTIONS.map((action) => ({
     identifier: action.identifier,
     buttonTitle: action.buttonTitle,
     options: { opensAppToForeground: true },
   })));
-  await Notifications.setNotificationCategoryAsync(
+  await safeSetNotificationCategory(
     "FRIEND_REQUEST",
     FRIEND_REQUEST_ACTIONS.map((action) => ({
       identifier: action.identifier,
@@ -107,9 +124,9 @@ async function registerCategories() {
     textInput: action.textInput,
     options: { opensAppToForeground: false },
   }));
-  await Notifications.setNotificationCategoryAsync("CHAT_MESSAGE", chatCategory);
-  await Notifications.setNotificationCategoryAsync("CHAT_MESSAGE_V2", chatCategory);
-  await Notifications.setNotificationCategoryAsync(
+  await safeSetNotificationCategory("CHAT_MESSAGE", chatCategory);
+  await safeSetNotificationCategory("CHAT_MESSAGE_V2", chatCategory);
+  await safeSetNotificationCategory(
     "BRINDAR_ACTIVITY",
     BRINDAR_ACTIONS.map((action) => ({
       identifier: action.identifier,

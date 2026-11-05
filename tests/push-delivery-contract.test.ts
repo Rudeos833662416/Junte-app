@@ -22,6 +22,12 @@ describe("contrato de entrega push", () => {
     expect(layoutSource).toContain("registerPushNotifications(user.id)");
   });
 
+  it("configura el handler de presentación antes de registrar el token", () => {
+    expect(layoutSource).toContain("setupNotificationHandler");
+    expect(layoutSource).toContain("setupNotificationHandler();");
+    expect(clientSource).toContain("safeSetNotificationCategory");
+  });
+
   it("muestra al usuario dónde falló el registro y permite reintentarlo", () => {
     expect(onboardingSource).toContain("getPushRegistrationDiagnostic");
     expect(onboardingSource).toContain("Alert.alert");
