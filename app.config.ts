@@ -78,7 +78,7 @@ const config: ExpoConfig = {
     output: "static",
     favicon: "./assets/images/favicon.png",
   },
-  owner: "jesus_junteapp",
+  owner: "jesusjunteapps-team",
   extra: {
     appSubtitle: env.appSubtitle,
     googleMapsApiKey:
