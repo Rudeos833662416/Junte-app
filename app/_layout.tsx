@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Platform, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Platform, Text, View } from "react-native";
 import { useAuth } from "@/hooks/use-auth";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
@@ -147,6 +147,9 @@ function AuthGate() {
     void registerPushNotifications(user.id).catch((error) => {
       if (!disposed) console.warn("Push notifications unavailable:", error);
     });
+    const appStateSubscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" && !disposed) void registerPushNotifications(user.id);
+    });
 
     void import("expo-notifications").then((Notifications) => {
       if (disposed) return;
@@ -220,6 +223,7 @@ function AuthGate() {
 
     return () => {
       disposed = true;
+      appStateSubscription.remove();
       responseSubscription?.remove();
     };
   }, [user?.id]);

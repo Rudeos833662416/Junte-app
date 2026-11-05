@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Modal, Platform, Pressable, Text, View } from "react-native";
+import { Alert, Modal, Platform, Pressable, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
-import { registerPushNotifications } from "@/lib/push-notifications";
+import { getPushRegistrationDiagnostic, registerPushNotifications } from "@/lib/push-notifications";
 
 const KEY = "skynight-permissions-onboarding-v1";
 
@@ -30,9 +30,29 @@ export function PermissionsOnboarding() {
     if (!user) return;
     try {
       await Location.requestForegroundPermissionsAsync();
-      await registerPushNotifications(user.id);
-    } catch {
-      // user can deny; still mark as seen
+      const token = await registerPushNotifications(user.id);
+      if (!token) {
+        const diagnostic = await getPushRegistrationDiagnostic(user.id);
+        const stage = diagnostic?.stage ?? "unknown";
+        const message = diagnostic?.message ?? "No se pudo registrar el dispositivo.";
+        Alert.alert(
+          "Notificaciones no activadas",
+          `Punto del fallo: ${stage}\n\n${message}`,
+          [
+            { text: "Cerrar", style: "cancel" },
+            { text: "Reintentar", onPress: () => void accept() },
+          ],
+        );
+      }
+    } catch (error) {
+      Alert.alert(
+        "Error al activar notificaciones",
+        `Punto del fallo: onboarding\n\n${error instanceof Error ? error.message : String(error)}`,
+        [
+          { text: "Cerrar", style: "cancel" },
+          { text: "Reintentar", onPress: () => void accept() },
+        ],
+      );
     }
     await dismiss();
   };

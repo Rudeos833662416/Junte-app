@@ -2,10 +2,40 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 
 export const PUSH_CHANNEL_ID = "friend-activity-v4";
 const EAS_PROJECT_ID_FALLBACK = "a595b360-16d9-40e4-9df4-7a3630257f39";
+const PUSH_DIAGNOSTIC_KEY = "junte-push-diagnostic-v1";
+
+export type PushDiagnostic = {
+  ok: boolean;
+  stage: "permission" | "expo_token" | "auth" | "supabase" | "saved" | "native";
+  message: string;
+  timestamp: string;
+  platform: string;
+};
+
+async function savePushDiagnostic(userId: string | null | undefined, diagnostic: Omit<PushDiagnostic, "timestamp" | "platform">) {
+  try {
+    await AsyncStorage.setItem(
+      `${PUSH_DIAGNOSTIC_KEY}:${userId ?? "anonymous"}`,
+      JSON.stringify({ ...diagnostic, timestamp: new Date().toISOString(), platform: Platform.OS }),
+    );
+  } catch (error) {
+    console.warn("[push][diagnostic] could not persist diagnostic:", error instanceof Error ? error.message : error);
+  }
+}
+
+export async function getPushRegistrationDiagnostic(userId?: string | null): Promise<PushDiagnostic | null> {
+  try {
+    const value = await AsyncStorage.getItem(`${PUSH_DIAGNOSTIC_KEY}:${userId ?? "anonymous"}`);
+    return value ? (JSON.parse(value) as PushDiagnostic) : null;
+  } catch {
+    return null;
+  }
+}
 
 const REACTION_ACTIONS = [
   { identifier: "REACTION_BEER", buttonTitle: "🍺" },
@@ -94,10 +124,12 @@ async function registerCategories() {
 /** Solicita permiso, obtiene token Expo/FCM y lo guarda en public.push_tokens. */
 export async function registerForPushNotificationsAsync(userId?: string | null) {
   if (!canUseNativeNotifications()) {
+    await savePushDiagnostic(userId, { ok: false, stage: "native", message: "Las notificaciones push requieren un dispositivo físico y una build nativa." });
     console.log("[push] Simulator/web — push nativo no disponible");
     return null;
   }
 
+  let stage: PushDiagnostic["stage"] = "permission";
   try {
     await ensureAndroidNotificationChannel();
     await registerCategories();
@@ -108,17 +140,22 @@ export async function registerForPushNotificationsAsync(userId?: string | null) 
       finalStatus = status;
     }
     if (finalStatus !== "granted") {
+      await savePushDiagnostic(userId, { ok: false, stage: "permission", message: `Android no concedió el permiso de notificaciones: ${finalStatus}.` });
       console.warn("[push] Permission not granted:", finalStatus);
       return null;
     }
 
+    stage = "expo_token";
     const projectId =
       Constants.easConfig?.projectId ??
       Constants.expoConfig?.extra?.eas?.projectId ??
       process.env.EXPO_PUBLIC_EAS_PROJECT_ID ??
       EAS_PROJECT_ID_FALLBACK;
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-    if (!token) return null;
+    if (!token) {
+      await savePushDiagnostic(userId, { ok: false, stage, message: `Expo no devolvió token para el proyecto ${projectId}.` });
+      return null;
+    }
 
     let fcmToken: string | null = null;
     try {
@@ -130,7 +167,10 @@ export async function registerForPushNotificationsAsync(userId?: string | null) 
 
     let uid = userId ?? null;
     if (!uid) uid = (await supabase.auth.getSession()).data.session?.user?.id ?? null;
-    if (!uid) return token;
+    if (!uid) {
+      await savePushDiagnostic(userId, { ok: false, stage: "auth", message: "No hay una sesión autenticada para asociar el token al usuario." });
+      return token;
+    }
 
     const payload = {
       user_id: uid,
@@ -139,6 +179,7 @@ export async function registerForPushNotificationsAsync(userId?: string | null) 
       platform: Platform.OS === "ios" ? "ios" : "android",
       updated_at: new Date().toISOString(),
     };
+    stage = "supabase";
     let error = (await supabase.from("push_tokens").upsert(payload, { onConflict: "user_id,platform" })).error;
     if (error) {
       console.warn("[push] upsert user_id,platform failed:", error.message);
@@ -149,10 +190,13 @@ export async function registerForPushNotificationsAsync(userId?: string | null) 
       const insertError = (await supabase.from("push_tokens").insert(payload)).error;
       if (insertError) throw insertError;
     }
+    await savePushDiagnostic(uid, { ok: true, stage: "saved", message: `Token guardado correctamente en Supabase (${payload.platform}).` });
     console.log("[push] Token saved", payload.platform, "fcm=", Boolean(fcmToken));
     return token;
   } catch (error) {
-    console.warn("[push] Registration error:", error instanceof Error ? error.message : error);
+    const message = error instanceof Error ? error.message : String(error);
+    await savePushDiagnostic(userId, { ok: false, stage, message: `Falló ${stage}: ${message}` });
+    console.warn("[push] Registration error at", stage, message);
     return null;
   }
 }
