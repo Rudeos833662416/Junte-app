@@ -117,8 +117,6 @@ async function registerCategories() {
       options: { opensAppToForeground: false },
     })),
   );
-  await Notifications.setNotificationCategoryAsync("OFFICIAL_POST", []);
-  await Notifications.setNotificationCategoryAsync("STORY_ACTIVITY", []);
 }
 
 /** Solicita permiso, obtiene token Expo/FCM y lo guarda en public.push_tokens. */
