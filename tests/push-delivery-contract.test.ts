@@ -51,4 +51,13 @@ describe("contrato de entrega push", () => {
     expect(migrationSource).toContain("friendship_blocked");
     expect(migrationSource).toContain("<> new.user_id");
   });
+
+  it("acepta o rechaza solicitudes desde el push y abre el perfil al tocarlo", () => {
+    expect(clientSource).toContain('identifier: "ACCEPT_FRIEND"');
+    expect(clientSource).toContain('identifier: "REJECT_FRIEND"');
+    expect(layoutSource).toContain('response.actionIdentifier === "ACCEPT_FRIEND"');
+    expect(layoutSource).toContain('response.actionIdentifier === "REJECT_FRIEND"');
+    expect(layoutSource).toContain("Notifications.DEFAULT_ACTION_IDENTIFIER");
+    expect(layoutSource).toContain('router.push(`/profile/${data.senderId}`');
+  });
 });

@@ -170,6 +170,13 @@ function AuthGate() {
         const reaction = reactionFromNotificationAction(response.actionIdentifier);
         if (data.activityId && reaction) void saveNotificationReaction(data.activityId, reaction, user.id);
 
+        // El toque normal sobre una solicitud no debe dejar al usuario en Amigos:
+        // lleva directamente al perfil de quien envió la solicitud.
+        if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER && data.friendshipId && data.senderId) {
+          router.push(`/profile/${data.senderId}` as never);
+          return;
+        }
+
         if (response.actionIdentifier === "ACCEPT_FRIEND") {
           void (async () => {
             const edge = await invokeNotificationAction({ actionToken, action: "friend_accept" });
