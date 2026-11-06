@@ -19,7 +19,7 @@ type PublicProfile = {
   bio: string | null;
 };
 
-type Friendship = { user_id: string; friend_id: string; status: string };
+type Friendship = { id: number; user_id: string; friend_id: string; status: string };
 
 function displayName(profile: PublicProfile) {
   return profile.name?.trim() || profile.email?.split("@")[0]?.trim() || "Usuario de Tragos Sociales";
@@ -48,9 +48,9 @@ export default function PublicProfileScreen() {
       setProfile(row ? { ...row, bio: row.bio ?? null } : null);
 
       if (user && user.id !== id) {
-        const { data: friendshipRows } = await supabase
-          .from("friendships")
-          .select("user_id, friend_id, status")
+          const { data: friendshipRows } = await supabase
+            .from("friendships")
+          .select("id, user_id, friend_id, status")
           .or(`and(user_id.eq.${user.id},friend_id.eq.${id}),and(user_id.eq.${id},friend_id.eq.${user.id})`)
           .limit(1);
         setFriendship((friendshipRows?.[0] as Friendship | undefined) ?? null);
@@ -138,6 +138,40 @@ export default function PublicProfileScreen() {
     }
   };
 
+  const removeFriend = () => {
+    if (!friendship || !user) return;
+    Alert.alert("Eliminar amigo", `¿Quieres eliminar a ${displayName(profile!)} de tus amigos?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Eliminar",
+        style: "destructive",
+        onPress: async () => {
+          const { error } = await supabase.from("friendships").delete().eq("id", friendship.id);
+          if (error) return Alert.alert("No se pudo eliminar", error.message);
+          setFriendship(null);
+          Alert.alert("Amistad eliminada", "Ya no aparecerán como amigos.");
+        },
+      },
+    ]);
+  };
+
+  const blockUser = () => {
+    if (!friendship || !user) return;
+    Alert.alert("Bloquear usuario", `¿Quieres bloquear a ${displayName(profile!)}? No podrá enviarte nuevas solicitudes.`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Bloquear",
+        style: "destructive",
+        onPress: async () => {
+          const { error } = await supabase.from("friendships").update({ status: "blocked" }).eq("id", friendship.id);
+          if (error) return Alert.alert("No se pudo bloquear", error.message);
+          setFriendship({ ...friendship, status: "blocked" });
+          Alert.alert("Usuario bloqueado", "No podrá enviarte nuevas solicitudes.");
+        },
+      },
+    ]);
+  };
+
   if (isLoading) {
     return (
       <ScreenContainer className="items-center justify-center p-6">
@@ -171,6 +205,7 @@ export default function PublicProfileScreen() {
   const isSelf = user?.id === profile.id;
   const isAccepted = friendship?.status === "accepted";
   const isPending = friendship?.status === "pending";
+  const isBlocked = friendship?.status === "blocked";
 
   return (
     <ScreenContainer className="p-5">
@@ -245,7 +280,7 @@ export default function PublicProfileScreen() {
             ) : null}
             {!isSelf ? (
               <>
-                {!isAccepted && !isPending ? (
+                {!isAccepted && !isPending && !isBlocked ? (
                   <TextInput
                     value={requestMessage}
                     onChangeText={setRequestMessage}
@@ -257,7 +292,7 @@ export default function PublicProfileScreen() {
                   />
                 ) : null}
                 <Pressable
-                  disabled={isSending || isAccepted || isPending}
+                  disabled={isSending || isAccepted || isPending || isBlocked}
                   onPress={() => void sendFriendRequest()}
                   style={({ pressed }) => ({
                     marginTop: 18,
@@ -266,20 +301,22 @@ export default function PublicProfileScreen() {
                     alignItems: "center",
                     justifyContent: "center",
                     borderRadius: 15,
-                    backgroundColor: isAccepted || isPending ? colors.surface : colors.primary,
-                    borderWidth: isAccepted || isPending ? 1 : 0,
+                    backgroundColor: isAccepted || isPending || isBlocked ? colors.surface : colors.primary,
+                    borderWidth: isAccepted || isPending || isBlocked ? 1 : 0,
                     borderColor: colors.border,
                     opacity: isSending ? 0.55 : pressed ? 0.82 : 1,
                   })}
                 >
                   <Text
                     className="font-bold"
-                    style={{ color: isAccepted || isPending ? colors.foreground : colors.background }}
+                    style={{ color: isAccepted || isPending || isBlocked ? colors.foreground : colors.background }}
                   >
                     {isAccepted
                       ? "Ya son amigos"
                       : isPending
                         ? "Solicitud pendiente"
+                        : isBlocked
+                          ? "Usuario bloqueado"
                         : isSending
                           ? "Enviando…"
                           : "Enviar solicitud"}
@@ -334,6 +371,22 @@ export default function PublicProfileScreen() {
                         </Text>
                       </View>
                     ) : null}
+                  </View>
+                ) : null}
+                {isAccepted ? (
+                  <View style={{ marginTop: 12, flexDirection: "row", gap: 10 }}>
+                    <Pressable
+                      onPress={removeFriend}
+                      style={({ pressed }) => ({ borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, opacity: pressed ? 0.7 : 1 })}
+                    >
+                      <Text style={{ color: colors.foreground, fontWeight: "700" }}>Eliminar amigo</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={blockUser}
+                      style={({ pressed }) => ({ borderWidth: 1, borderColor: "#ef4444", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, opacity: pressed ? 0.7 : 1 })}
+                    >
+                      <Text style={{ color: "#ef4444", fontWeight: "700" }}>Bloquear</Text>
+                    </Pressable>
                   </View>
                 ) : null}
               </>

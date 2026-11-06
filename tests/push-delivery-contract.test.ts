@@ -6,6 +6,7 @@ const clientSource = readFileSync(resolve(process.cwd(), "lib/push-notifications
 const functionSource = readFileSync(resolve(process.cwd(), "supabase/functions/notify-activity/index.ts"), "utf8");
 const onboardingSource = readFileSync(resolve(process.cwd(), "components/permissions-onboarding.tsx"), "utf8");
 const layoutSource = readFileSync(resolve(process.cwd(), "app/_layout.tsx"), "utf8");
+const migrationSource = readFileSync(resolve(process.cwd(), "supabase/migrations/0042_friend_controls_and_push_guards.sql"), "utf8");
 
 describe("contrato de entrega push", () => {
   it("persiste un diagnóstico por etapa y expone cómo recuperar el último error", () => {
@@ -41,5 +42,13 @@ describe("contrato de entrega push", () => {
     expect(functionSource).toContain('channelId: "friend-activity-v4"');
     expect(functionSource).toContain("categoryId");
     expect(functionSource).not.toContain('...(isInteractive ? { _contentAvailable: true, data }');
+    expect(functionSource).toContain("richContent");
+    expect(functionSource).toContain("isInteractive");
+  });
+
+  it("protege la audiencia de brindis y permite controles de amistad", () => {
+    expect(migrationSource).toContain("friendships_delete_related");
+    expect(migrationSource).toContain("friendship_blocked");
+    expect(migrationSource).toContain("<> new.user_id");
   });
 });

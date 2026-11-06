@@ -58,6 +58,7 @@ export default function FriendsScreen() {
   const [isLoadingNearby, setIsLoadingNearby] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  const [friendsSection, setFriendsSection] = useState<"friends" | "requests">("friends");
   const [publicSearchResults, setPublicSearchResults] = useState<PublicSearchProfile[]>([]);
   const [isSearchingPublic, setIsSearchingPublic] = useState(false);
 
@@ -365,9 +366,24 @@ export default function FriendsScreen() {
             </View>
           </View>
 
-          {pendingRequests.length > 0 ? (
+          <View className="mb-4 flex-row rounded-xl border p-1" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
+            {(["friends", "requests"] as const).map((section) => (
+              <Pressable
+                key={section}
+                onPress={() => setFriendsSection(section)}
+                style={{ flex: 1, alignItems: "center", borderRadius: 9, paddingVertical: 10, backgroundColor: friendsSection === section ? colors.primary : "transparent" }}
+              >
+                <Text style={{ color: friendsSection === section ? colors.background : colors.foreground, fontWeight: "700" }}>
+                  {section === "friends" ? "Mis amigos" : `Solicitudes${pendingRequests.length ? ` (${pendingRequests.length})` : ""}`}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {friendsSection === "requests" ? (
             <View className="mb-5 rounded-2xl border p-4" style={{ backgroundColor: colors.surface, borderColor: colors.border }}>
               <Text className="text-base font-bold text-foreground">Solicitudes para conectar</Text>
+              {pendingRequests.length === 0 ? <Text className="mt-3 text-sm text-muted">No tienes solicitudes pendientes.</Text> : null}
               {pendingRequests.map((request) => (
                 <View
                   key={request.id}
