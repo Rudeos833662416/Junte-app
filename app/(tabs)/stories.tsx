@@ -6,7 +6,7 @@ import { useAppRefresh } from "@/lib/app-refresh";
 import { supabase } from "@/lib/supabase";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocalSearchParams } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Alert, Animated, Easing, Image as RNImage, Modal, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image as ExpoImage } from "expo-image";
@@ -92,6 +92,7 @@ export default function StoriesScreen() {
   const { user } = useAuth({ autoFetch: true });
   const { revision } = useAppRefresh();
   const { userId: requestedUserId } = useLocalSearchParams<{ userId?: string }>();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [groupedStories, setGroupedStories] = useState<GroupedStoryUser[]>([]);
@@ -130,6 +131,22 @@ export default function StoriesScreen() {
   const viewerSheetTouchStartY = useRef<number | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchInFlightRef = useRef(false);
+  const requestedUserConsumedRef = useRef<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Tabs se congelan fuera de foco; cerrar el visor evita que un refresh
+        // Realtime/AppState lo vuelva a presentar al regresar a la app.
+        setActiveGroupIndex(null);
+        setActiveStoryIndex(0);
+        setProgressTimer(0);
+        setIsPaused(false);
+        setShowViewers(false);
+        setIsChromeHidden(false);
+      };
+    }, []),
+  );
 
   // Optimización: el filtrado O(n) por render se reemplaza por una lista memoizada.
   const friendGroups = useMemo(() => groupedStories.filter((group) => !group.isSelf), [groupedStories]);
@@ -221,12 +238,16 @@ export default function StoriesScreen() {
       void Promise.all(urlsToPrefetch.map((url) => RNImage.prefetch(url).catch(() => false)));
       const videosToWarm = [...new Set(groups.flatMap((group) => group.stories.filter((story) => story.media_type === "video").map((story) => story.media_url)))].slice(0, 6);
       void Promise.all(videosToWarm.map((url) => resolveCachedVideoUri(url).catch(() => url)));
-      if (requestedUserId) {
+      if (requestedUserId && requestedUserConsumedRef.current !== requestedUserId) {
         const requestedIndex = groups.findIndex((group) => group.userId === requestedUserId);
         if (requestedIndex >= 0) {
+          requestedUserConsumedRef.current = requestedUserId;
           setActiveGroupIndex(requestedIndex);
           setActiveStoryIndex(0);
           setProgressTimer(0);
+          // Consumir el deep link: no debe quedar en la URL para reabrir el
+          // mismo Estado después de Realtime, AppState o una navegación.
+          router.replace("/(tabs)/stories");
         }
       }
     } catch (err) {
@@ -238,7 +259,7 @@ export default function StoriesScreen() {
       setIsLoading(false);
       fetchInFlightRef.current = false;
     }
-  }, [requestedUserId, user]);
+  }, [requestedUserId, router, user]);
 
   const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await fetchStories(); } finally { setIsRefreshing(false); } }, [fetchStories]);
 

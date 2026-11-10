@@ -34,6 +34,13 @@ describe("mejoras confirmadas en la grabación", () => {
 		expect(stories).toContain("longPressTimerRef.current = null");
 	});
 
+  it("cierra el visor al perder foco y consume el deep link una sola vez", () => {
+    expect(stories).toContain("useFocusEffect");
+    expect(stories).toContain("setActiveGroupIndex(null);");
+    expect(stories).toContain("requestedUserConsumedRef");
+    expect(stories).toContain('router.replace("/(tabs)/stories")');
+  });
+
   it("elimina la acción QR redundante y conserva una acción explícita para escanear", () => {
     expect(friends).toContain("Escanear QR");
     expect(friends).not.toContain("Mostrar mi QR");
