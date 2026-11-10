@@ -146,6 +146,8 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.muted,
         headerShown: false,
+        lazy: true,
+        freezeOnBlur: true,
         tabBarButton: HapticTab,
         tabBarStyle: {
           paddingTop: 7,

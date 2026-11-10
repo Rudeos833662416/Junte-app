@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image as ExpoImage } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useStoryUploadQueue } from "@/lib/story-upload-queue";
+import { resolveCachedVideoUri } from "@/lib/video-cache";
 
 type SelectedMedia = {
   uri: string;
@@ -61,10 +62,20 @@ function formatStoryAge(createdAt: string) {
 }
 
 function StoryVideo({ uri, onReady }: { uri: string; onReady: () => void }) {
-  const player = useVideoPlayer(uri, (videoPlayer) => {
+  const [sourceUri, setSourceUri] = useState(uri);
+  const player = useVideoPlayer(sourceUri, (videoPlayer) => {
     videoPlayer.loop = true;
     videoPlayer.muted = false;
   });
+  useEffect(() => {
+    let cancelled = false;
+    void resolveCachedVideoUri(uri).then((resolved) => {
+      if (!cancelled) setSourceUri(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [uri]);
   useEffect(() => {
     try { player.play(); }
     catch { /* El player puede estar liberándose durante un cambio de historia. */ }
@@ -117,6 +128,8 @@ export default function StoriesScreen() {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileTransition = useRef(new Animated.Value(0)).current;
   const viewerSheetTouchStartY = useRef<number | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchInFlightRef = useRef(false);
 
   // Optimización: el filtrado O(n) por render se reemplaza por una lista memoizada.
   const friendGroups = useMemo(() => groupedStories.filter((group) => !group.isSelf), [groupedStories]);
@@ -132,9 +145,12 @@ export default function StoriesScreen() {
   }, [groupedStories]);
 
   const fetchStories = useCallback(async () => {
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     if (!user) {
       setGroupedStories([]);
       setIsLoading(false);
+      fetchInFlightRef.current = false;
       return;
     }
 
@@ -203,6 +219,8 @@ export default function StoriesScreen() {
       setGroupedStories(groups);
       const urlsToPrefetch = [...new Set(groups.flatMap((group) => group.stories.map((story) => story.media_url)).filter(Boolean))].slice(0, 30);
       void Promise.all(urlsToPrefetch.map((url) => RNImage.prefetch(url).catch(() => false)));
+      const videosToWarm = [...new Set(groups.flatMap((group) => group.stories.filter((story) => story.media_type === "video").map((story) => story.media_url)))].slice(0, 6);
+      void Promise.all(videosToWarm.map((url) => resolveCachedVideoUri(url).catch(() => url)));
       if (requestedUserId) {
         const requestedIndex = groups.findIndex((group) => group.userId === requestedUserId);
         if (requestedIndex >= 0) {
@@ -218,25 +236,39 @@ export default function StoriesScreen() {
     } finally {
       hasLoadedStoriesOnce.current = true;
       setIsLoading(false);
+      fetchInFlightRef.current = false;
     }
   }, [requestedUserId, user]);
 
   const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await fetchStories(); } finally { setIsRefreshing(false); } }, [fetchStories]);
+
+  const scheduleStoriesRefresh = useCallback(() => {
+    if (refreshTimerRef.current) return;
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      void fetchStories();
+    }, 350);
+  }, [fetchStories]);
 
   useEffect(() => {
     void fetchStories();
     if (!user) return;
     const channel = supabase
       .channel(`tragos-sociales-stories-${user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "stories" }, () => void fetchStories())
-      .on("postgres_changes", { event: "*", schema: "public", table: "story_views" }, () => void fetchStories())
-      .on("postgres_changes", { event: "*", schema: "public", table: "story_reactions" }, () => void fetchStories())
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => void fetchStories())
+      .on("postgres_changes", { event: "*", schema: "public", table: "stories" }, scheduleStoriesRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "story_views" }, scheduleStoriesRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "story_reactions" }, scheduleStoriesRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleStoriesRefresh)
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [fetchStories, revision, user]);
+  }, [fetchStories, revision, scheduleStoriesRefresh, user]);
+
+  useEffect(() => () => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
+  }, []);
 
   const pickMedia = async () => {
     try {
