@@ -1,4 +1,4 @@
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SecureMediaViewer } from "@/components/secure-media-viewer";
@@ -22,7 +22,7 @@ type PublicProfile = {
 type Friendship = { id: number; user_id: string; friend_id: string; status: string };
 
 function displayName(profile: PublicProfile) {
-  return profile.name?.trim() || profile.email?.split("@")[0]?.trim() || "Usuario de Tragos Sociales";
+  return profile.name?.trim() || profile.email?.split("@")[0]?.trim() || "Usuario de Junta2";
 }
 
 export default function PublicProfileScreen() {
@@ -37,6 +37,7 @@ export default function PublicProfileScreen() {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   const hasLoadedProfileOnce = useRef(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadProfile = useCallback(async () => {
     if (!id) return;
@@ -69,6 +70,8 @@ export default function PublicProfileScreen() {
       setIsLoading(false);
     }
   }, [id, user]);
+
+  const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await loadProfile(); } finally { setIsRefreshing(false); } }, [loadProfile]);
 
   useFocusEffect(
     useCallback(() => {
@@ -163,10 +166,46 @@ export default function PublicProfileScreen() {
         text: "Bloquear",
         style: "destructive",
         onPress: async () => {
-          const { error } = await supabase.from("friendships").update({ status: "blocked" }).eq("id", friendship.id);
-          if (error) return Alert.alert("No se pudo bloquear", error.message);
-          setFriendship({ ...friendship, status: "blocked" });
+          const { data, error } = await supabase.rpc("set_friendship_status", {
+            p_friendship_id: friendship.id,
+            p_status: "blocked",
+          });
+          if (error) {
+            const friendshipChanged = error.code === "42501" || error.message.includes("friendship_not_found_or_forbidden");
+            if (friendshipChanged) {
+              setFriendship(null);
+              void loadProfile();
+              return Alert.alert("La amistad cambió", "La amistad ya no está disponible. Actualizamos el perfil; si quieres, puedes enviar una nueva solicitud.");
+            }
+            return Alert.alert("No se pudo bloquear", "No pudimos completar esta acción. Inténtalo de nuevo.");
+          }
+          const saved = data as { id: number; user_id: string; friend_id: string; status: string } | null;
+          if (!saved || saved.status !== "blocked") {
+            return Alert.alert("No se pudo confirmar", "Supabase no confirmó el bloqueo. Inténtalo de nuevo.");
+          }
+          setFriendship(saved);
           Alert.alert("Usuario bloqueado", "No podrá enviarte nuevas solicitudes.");
+        },
+      },
+    ]);
+  };
+
+  const unblockUser = () => {
+    if (!friendship || !user) return;
+    Alert.alert("Desbloquear usuario", `¿Quieres desbloquear a ${displayName(profile!)}?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Desbloquear",
+        onPress: async () => {
+          const { error } = await supabase
+            .from("friendships")
+            .delete()
+            .eq("id", friendship.id)
+            .eq("status", "blocked")
+            .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
+          if (error) return Alert.alert("No se pudo desbloquear", error.message);
+          setFriendship(null);
+          Alert.alert("Usuario desbloqueado", "Ahora puedes enviar una nueva solicitud si lo deseas.");
         },
       },
     ]);
@@ -209,9 +248,11 @@ export default function PublicProfileScreen() {
 
   return (
     <ScreenContainer className="p-5">
-      <ScrollView contentContainerStyle={{ paddingBottom: 36 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 36 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} colors={[colors.primary]} />} >
         <Pressable
           onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Volver al perfil anterior"
           style={({ pressed }) => ({ alignSelf: "flex-start", paddingVertical: 8, opacity: pressed ? 0.55 : 1 })}
         >
           <Text className="font-semibold" style={{ color: colors.primary }}>
@@ -272,7 +313,7 @@ export default function PublicProfileScreen() {
               </View>
             </Pressable>
             <Text className="mt-3 text-2xl font-bold text-foreground">{name}</Text>
-            <Text className="mt-1 text-sm text-muted">Perfil de Tragos Sociales</Text>
+            <Text className="mt-1 text-sm text-muted">Perfil de Junta2</Text>
             {profile.bio ? (
               <View style={{ marginTop: 12, width: "100%", alignItems: "center", paddingHorizontal: 8 }}>
                 <ThoughtBubble text={profile.bio} editable={false} floating={false} />
@@ -374,20 +415,40 @@ export default function PublicProfileScreen() {
                   </View>
                 ) : null}
                 {isAccepted ? (
-                  <View style={{ marginTop: 12, flexDirection: "row", gap: 10 }}>
+                  <View style={{ width: "100%", marginTop: 12, gap: 10 }}>
                     <Pressable
                       onPress={removeFriend}
-                      style={({ pressed }) => ({ borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, opacity: pressed ? 0.7 : 1 })}
+                      style={({ pressed }) => ({ minHeight: 46, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, opacity: pressed ? 0.7 : 1 })}
                     >
                       <Text style={{ color: colors.foreground, fontWeight: "700" }}>Eliminar amigo</Text>
                     </Pressable>
                     <Pressable
                       onPress={blockUser}
-                      style={({ pressed }) => ({ borderWidth: 1, borderColor: "#ef4444", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, opacity: pressed ? 0.7 : 1 })}
+                      style={({ pressed }) => ({ minHeight: 46, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#ef4444", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, opacity: pressed ? 0.7 : 1 })}
                     >
                       <Text style={{ color: "#ef4444", fontWeight: "700" }}>Bloquear</Text>
                     </Pressable>
                   </View>
+                ) : isBlocked ? (
+                  <Pressable
+                    onPress={unblockUser}
+                    style={({ pressed }) => ({
+                      marginTop: 12,
+                      minHeight: 48,
+                      minWidth: 220,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 15,
+                      borderWidth: 1,
+                      borderColor: colors.primary,
+                      backgroundColor: `${colors.primary}14`,
+                      opacity: pressed ? 0.75 : 1,
+                    })}
+                  >
+                    <Text className="font-bold" style={{ color: colors.primary }}>
+                      Desbloquear
+                    </Text>
+                  </Pressable>
                 ) : null}
               </>
             ) : null}

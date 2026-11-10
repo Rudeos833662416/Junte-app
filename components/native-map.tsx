@@ -11,7 +11,7 @@ export default function NativeMapFallback() {
       <View className="flex-1">
         <View className="mb-4">
           <Text className="text-3xl font-bold text-foreground">Mapa</Text>
-          <Text className="text-sm text-muted">time to drink · ubicación real en tu dispositivo</Text>
+          <Text className="text-sm text-muted">Tus panas, tu plan, tu junte · ubicación real en tu dispositivo</Text>
         </View>
         <View
           className="flex-1 items-center justify-center rounded-2xl border bg-surface px-6"
@@ -19,10 +19,10 @@ export default function NativeMapFallback() {
         >
           <IconSymbol name="map.fill" size={56} color={colors.primary} />
           <Text className="mt-4 text-center text-lg font-semibold text-foreground">
-            Mapa nativo de Tragos Sociales
+            Mapa nativo de Junta2
           </Text>
           <Text className="mt-2 text-center text-sm leading-5 text-muted">
-            Abre Tragos Sociales en Expo Go o en una build Android/iOS para conceder el permiso de ubicación y ver tu posición real.
+            Abre Junta2 en Expo Go o en una build Android/iOS para conceder el permiso de ubicación y ver tu posición real.
           </Text>
         </View>
       </View>

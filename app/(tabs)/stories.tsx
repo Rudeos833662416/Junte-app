@@ -5,15 +5,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { useAppRefresh } from "@/lib/app-refresh";
 import { supabase } from "@/lib/supabase";
 import * as ImagePicker from "expo-image-picker";
-import * as ImageManipulator from "expo-image-manipulator";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
-import { ActivityIndicator, Alert, Animated, Easing, Image as RNImage, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Easing, Image as RNImage, Modal, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { LayoutChangeEvent } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { uploadUriToStorage, verifyPublicStorageUrl } from "@/lib/media-upload";
+import { useStoryUploadQueue } from "@/lib/story-upload-queue";
 
 type SelectedMedia = {
   uri: string;
@@ -48,9 +46,10 @@ type GroupedStoryUser = {
   latestCreatedAt: string;
 };
 
-const MAX_STORY_VIDEO_BYTES = 80_000_000;
-const MAX_COMPRESSED_VIDEO_BYTES = 25_000_000;
-const MAX_STORY_DURATION_SECONDS = 15;
+const MAX_STORY_VIDEO_BYTES = 300_000_000;
+const MAX_COMPRESSED_VIDEO_BYTES = 100_000_000;
+const MAX_STORY_DURATION_SECONDS = 300;
+const STORY_VIDEO_DURATION_MESSAGE = "Las historias en vídeo pueden durar como máximo 5 minutos (300 segundos).";
 
 function formatStoryAge(createdAt: string) {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000));
@@ -61,51 +60,20 @@ function formatStoryAge(createdAt: string) {
   return `hace ${hours} h`;
 }
 
-async function prepareStoryImage(uri: string) {
-  return ImageManipulator.manipulateAsync(
-    uri,
-    [{ resize: { width: 1440 } }],
-    { format: ImageManipulator.SaveFormat.PNG },
-  );
-}
-
-async function prepareStoryVideo(uri: string, onProgress: (progress: number) => void) {
-  if (Platform.OS === "web") return uri;
-  const { compress, getMetadata } = await import("expo-image-and-video-compressor");
-  const sourceMetadata = await getMetadata(uri);
-  if (sourceMetadata.duration > MAX_STORY_DURATION_SECONDS) {
-    throw new Error("Las historias en vídeo pueden durar como máximo 15 segundos.");
-  }
-  if (sourceMetadata.size > MAX_STORY_VIDEO_BYTES) {
-    throw new Error("El vídeo supera el límite de 80 MB.");
-  }
-  onProgress(0.1);
-  const compressedUri = await compress(uri, {
-    bitrate: 2_500_000,
-    maxSize: 720,
-    codec: "h264",
-    speed: "fast",
-    minimumFileSizeForCompress: 2_000_000,
-    progressDivider: 5,
-  }, (progress) => onProgress(0.1 + progress * 0.65));
-  const compressedMetadata = await getMetadata(compressedUri);
-  if (compressedMetadata.duration > MAX_STORY_DURATION_SECONDS || compressedMetadata.size > MAX_COMPRESSED_VIDEO_BYTES) {
-    throw new Error("El vídeo no pudo quedar dentro de 15 segundos y 25 MB.");
-  }
-  onProgress(0.82);
-  return compressedUri;
-}
-
-function StoryVideo({ uri, onReady }: { uri: string; onReady: (event: LayoutChangeEvent) => void }) {
+function StoryVideo({ uri, onReady }: { uri: string; onReady: () => void }) {
   const player = useVideoPlayer(uri, (videoPlayer) => {
     videoPlayer.loop = true;
     videoPlayer.muted = false;
   });
   useEffect(() => {
-    player.play();
-    return () => player.pause();
+    try { player.play(); }
+    catch { /* El player puede estar liberándose durante un cambio de historia. */ }
+    return () => {
+      try { player.pause(); }
+      catch { /* El player nativo ya fue liberado. */ }
+    };
   }, [player]);
-  return <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" nativeControls={false} onLayout={onReady} />;
+  return <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" nativeControls={false} onFirstFrameRender={onReady} />;
 }
 
 export default function StoriesScreen() {
@@ -118,9 +86,16 @@ export default function StoriesScreen() {
   const [groupedStories, setGroupedStories] = useState<GroupedStoryUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const hasLoadedStoriesOnce = useRef(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [, setUploadProgress] = useState(0);
-  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const { jobs, enqueue, retry } = useStoryUploadQueue();
+  const userUploadJobs = useMemo(() => Object.values(jobs).filter((job) => job.userId === user?.id), [jobs, user?.id]);
+  const activeUpload = userUploadJobs.find((job) => job.status === "queued" || job.status === "uploading");
+  const failedUpload = userUploadJobs.find((job) => job.status === "failed");
+  const isUploading = Boolean(activeUpload);
+  const uploadMessage = activeUpload
+    ? `${activeUpload.status === "queued" ? "En cola" : "Subiendo"}… ${Math.round(activeUpload.progress * 100)}%`
+    : null;
 
   const [selectedMedia, setSelectedMedia] = useState<SelectedMedia | null>(null);
   const [caption, setCaption] = useState("");
@@ -164,6 +139,7 @@ export default function StoriesScreen() {
     }
 
     try {
+      setLoadError(null);
       if (!hasLoadedStoriesOnce.current) setIsLoading(true);
       await supabase.rpc("purge_expired_stories");
       const { data, error } = await supabase
@@ -238,11 +214,14 @@ export default function StoriesScreen() {
     } catch (err) {
       console.error("Error fetching stories:", err);
       setGroupedStories([]);
+      setLoadError(err instanceof Error ? err.message : "No se pudieron cargar los estados.");
     } finally {
       hasLoadedStoriesOnce.current = true;
       setIsLoading(false);
     }
   }, [requestedUserId, user]);
+
+  const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await fetchStories(); } finally { setIsRefreshing(false); } }, [fetchStories]);
 
   useEffect(() => {
     void fetchStories();
@@ -276,11 +255,11 @@ export default function StoriesScreen() {
         const durationMs = asset.duration ?? undefined;
         const fileSize = asset.fileSize ?? undefined;
         if (type === "video" && durationMs !== undefined && durationMs > MAX_STORY_DURATION_SECONDS * 1000) {
-          Alert.alert("Vídeo demasiado largo", "Máximo 15 s. En iOS recorta al elegir; en Android recorta antes de subir.");
+          Alert.alert("Vídeo demasiado largo", "Máximo 5 minutos (300 s). Elige un fragmento más corto antes de subirlo.");
           return;
         }
         if (type === "video" && fileSize !== undefined && fileSize > MAX_STORY_VIDEO_BYTES) {
-          Alert.alert("Vídeo demasiado pesado", "El vídeo seleccionado supera el límite de 80 MB.");
+          Alert.alert("Vídeo demasiado pesado", "El vídeo seleccionado supera el límite de 300 MB.");
           return;
         }
         const filename = uri.split("/").pop() ?? `story_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
@@ -295,51 +274,12 @@ export default function StoriesScreen() {
   const publishStory = async () => {
     if (!user || !selectedMedia || isUploading) return;
     try {
-      setIsUploading(true);
-      setUploadMessage("Preparando contenido…");
-
-      let finalUri = selectedMedia.uri;
-      if (selectedMedia.type === "image") {
-        const prepared = await prepareStoryImage(selectedMedia.uri);
-        finalUri = prepared.uri;
-      } else {
-        finalUri = await prepareStoryVideo(selectedMedia.uri, (p) => setUploadProgress(p));
-      }
-
-      setUploadProgress(0.85);
-      setUploadMessage("Subiendo estado…");
-
-      const ext = selectedMedia.type === "video" ? "mp4" : "png";
-      const mimeType = selectedMedia.type === "video" ? "video/mp4" : "image/png";
-      const path = `${user.id}/${Date.now()}.${ext}`;
-      await uploadUriToStorage("stories", path, finalUri, mimeType);
-
-      const mediaUrl = await verifyPublicStorageUrl("stories", path, selectedMedia.type);
-
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      const { error: insertError } = await supabase.from("stories").insert({
-        user_id: user.id,
-        media_url: mediaUrl,
-        media_type: selectedMedia.type,
-        caption: caption.trim() || null,
-        visibility: privacy === "public" ? "public" : "friends",
-        privacy,
-        expires_at: expiresAt,
-      });
-      if (insertError) throw insertError;
-
+      await enqueue({ userId: user.id, uri: selectedMedia.uri, mimeType: selectedMedia.mimeType, type: selectedMedia.type, caption, privacy });
       setSelectedMedia(null);
       setCaption("");
       setPrivacy("all_friends");
-      setUploadMessage("Estado publicado…");
-      await new Promise((r) => setTimeout(r, 600));
-      await fetchStories();
     } catch (err) {
       Alert.alert("No se pudo publicar", err instanceof Error ? err.message : "Inténtalo de nuevo.");
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
-      setUploadMessage(null);
     }
   };
 
@@ -530,10 +470,14 @@ export default function StoriesScreen() {
     const storyId = activeStory?.id;
     if (!storyId) return;
     setShowViewers(false);
+    setIsStoryMediaLoading(activeStory.media_type === "video");
+    if (activeStory.media_type === "image") {
+      void RNImage.prefetch(activeStory.media_url).finally(() => setIsStoryMediaLoading(false));
+    }
     void loadReaction(storyId);
     if (activeGroup && !activeGroup.isSelf) void recordStoryView(storyId);
     void loadViewerCount(storyId);
-  }, [activeStory?.id, activeGroup, loadReaction, recordStoryView, loadViewerCount]);
+  }, [activeStory, activeGroup, loadReaction, recordStoryView, loadViewerCount]);
 
   const navigateToGroup = (nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= groupedStories.length || nextIndex === activeGroupIndex) return;
@@ -554,12 +498,27 @@ export default function StoriesScreen() {
     longPressTimerRef.current = setTimeout(() => setIsChromeHidden(true), 320);
   };
 
-  const handleViewerTouchEnd = () => {
+  const handleViewerTouchEnd = (event?: { nativeEvent: { pageX: number; pageY: number } }) => {
+    const start = touchStartRef.current;
+    const dy = start && event ? event.nativeEvent.pageY - start.y : 0;
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     longPressTimerRef.current = null;
     setIsPaused(false);
     setIsChromeHidden(false);
+    touchStartRef.current = null;
+    if (dy < -80) onSwipeUp();
   };
+
+  const onSwipeUp = () => {
+    if (activeGroup?.isSelf && activeStory) void loadViewers(activeStory.id);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const storyId = activeStory?.id;
@@ -572,7 +531,7 @@ export default function StoriesScreen() {
 
   return (
     <ScreenContainer className="px-5 pt-3">
-      <ScrollView contentContainerStyle={{ paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 48 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} colors={[colors.primary]} />}>
         <View className="mb-4">
           <Text className="text-2xl font-black text-foreground">Estados</Text>
           <Text className="text-xs text-muted">Comparte momentos que desaparecen en 24 horas</Text>
@@ -595,14 +554,14 @@ export default function StoriesScreen() {
             >
               <View className="flex-row items-center gap-3">
                 <View className="relative h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2" style={{ borderColor: colors.primary, borderRadius: 28 }}>
-                  <ExpoImage source={{ uri: groupedStories.find((g) => g.isSelf)?.stories[0]?.media_url }} style={{ width: 52, height: 52, borderRadius: 26 }} contentFit="cover" cachePolicy="none" />
+                  <ExpoImage source={{ uri: groupedStories.find((g) => g.isSelf)?.stories[0]?.media_url }} style={{ width: 52, height: 52, borderRadius: 26 }} contentFit="cover" cachePolicy="memory-disk" />
                 </View>
                 <View>
                   <Text className="text-base font-bold text-foreground">Mi estado</Text>
                   <Text className="text-xs text-muted">Pulsa para ver tus estados activos</Text>
                 </View>
               </View>
-              <Pressable onPress={pickMedia} className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}>
+              <Pressable onPress={pickMedia} accessibilityRole="button" accessibilityLabel="Añadir un estado" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}>
                 <IconSymbol name="plus" size={20} color="#FFFFFF" />
               </Pressable>
             </Pressable>
@@ -624,13 +583,27 @@ export default function StoriesScreen() {
           )}
         </View>
 
+        {activeUpload ? (
+          <View className="mb-4 rounded-2xl border p-4" style={{ backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}55` }}>
+            <Text className="text-sm font-bold text-foreground">{uploadMessage}</Text>
+            <Text className="mt-1 text-xs text-muted">Puedes cambiar de pestaña; la publicación continuará.</Text>
+          </View>
+        ) : failedUpload ? (
+          <View className="mb-4 rounded-2xl border p-4" style={{ backgroundColor: `${colors.error}12`, borderColor: `${colors.error}55` }}>
+            <Text className="text-sm font-bold text-foreground">No se pudo publicar este Estado</Text>
+            <Text className="mt-1 text-xs text-muted">{failedUpload.error || "Inténtalo de nuevo."}</Text>
+            <Pressable onPress={() => void retry(failedUpload.id)} className="mt-3 self-start rounded-xl px-4 py-2" style={{ backgroundColor: colors.primary }}>
+              <Text className="text-sm font-bold" style={{ color: colors.onPrimary }}>Reintentar</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         {/* Actualizaciones recientes */}
         <Text className="mb-3 text-xs font-bold uppercase tracking-wider text-muted">Actualizaciones Recientes</Text>
         {isLoading ? (
-          <View className="py-12 items-center justify-center">
-            <ActivityIndicator color={colors.primary} />
-            <Text className="mt-2 text-xs text-muted">Cargando estados…</Text>
-          </View>
+          <View accessibilityLabel="Cargando estados" className="gap-3"><View className="h-20 rounded-2xl" style={{ backgroundColor: `${colors.border}55` }} /><View className="h-20 rounded-2xl" style={{ backgroundColor: `${colors.border}55` }} /></View>
+        ) : loadError ? (
+          <View className="rounded-2xl border p-6 items-center" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}12` }}><Text className="text-center text-sm text-foreground">{loadError}</Text><Pressable onPress={() => void handleRefresh()} accessibilityRole="button" accessibilityLabel="Reintentar cargar estados" style={{ minHeight: 44, justifyContent: "center" }}><Text className="font-bold" style={{ color: colors.primary }}>Reintentar</Text></Pressable></View>
         ) : friendGroups.length === 0 ? (
           <View className="rounded-2xl border border-dashed p-8 items-center justify-center" style={{ borderColor: colors.border }}>
             <Text className="text-sm font-medium text-muted text-center">No hay estados recientes de tus amigos.</Text>
@@ -653,7 +626,7 @@ export default function StoriesScreen() {
                   <View className="flex-row items-center gap-3">
                     <View className="relative h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 p-0.5" style={{ borderColor: colors.primary, borderRadius: 28 }}>
                       {group.avatarUrl ? (
-                        <ExpoImage source={{ uri: group.avatarUrl }} style={{ width: 52, height: 52, borderRadius: 26 }} contentFit="cover" cachePolicy="none" />
+                        <ExpoImage source={{ uri: group.avatarUrl }} style={{ width: 52, height: 52, borderRadius: 26 }} contentFit="cover" cachePolicy="memory-disk" />
                       ) : (
                         <View className="h-full w-full items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}>
                           <Text className="text-lg font-bold text-white">{group.userName[0]?.toUpperCase() ?? "?"}</Text>
@@ -674,19 +647,19 @@ export default function StoriesScreen() {
       </ScrollView>
 
       {/* Modal Compositor / Previsualización antes de publicar */}
-      <Modal visible={Boolean(selectedMedia)} animationType="slide" transparent>
-        <View className="flex-1 justify-end bg-black/80">
-          <View className="rounded-t-3xl border-t p-6" style={{ backgroundColor: colors.surface, borderColor: colors.border }}>
+      <Modal visible={Boolean(selectedMedia)} animationType="slide" presentationStyle="fullScreen">
+        <View className="flex-1" style={{ backgroundColor: colors.surface }}>
+          <View className="flex-1 p-6" style={{ backgroundColor: colors.surface }}>
             <View className="flex-row items-center justify-between mb-4">
               <Text className="text-lg font-bold text-foreground">Nuevo Estado</Text>
-              <Pressable onPress={() => setSelectedMedia(null)} className="p-1">
+              <Pressable onPress={() => setSelectedMedia(null)} accessibilityRole="button" accessibilityLabel="Cerrar nuevo estado" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
                 <IconSymbol name="xmark.circle.fill" size={24} color={colors.muted} />
               </Pressable>
             </View>
 
             <View className="h-64 w-full overflow-hidden rounded-2xl bg-black mb-4">
               {selectedMedia?.type === "image" ? (
-                <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} className="h-full w-full" contentFit="contain" cachePolicy="none" />
+                <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} className="h-full w-full" contentFit="contain" cachePolicy="memory-disk" />
               ) : (
                 <Text className="text-white text-center m-auto">Vídeo seleccionado</Text>
               )}
@@ -726,10 +699,13 @@ export default function StoriesScreen() {
               <View className="py-4 items-center">
                 <ActivityIndicator color={colors.primary} size="large" />
                 <Text className="mt-2 text-xs font-semibold text-foreground">{uploadMessage || "Subiendo…"}</Text>
+                <Pressable onPress={() => setSelectedMedia(null)} className="mt-4 rounded-xl border px-4 py-3" style={{ borderColor: colors.border }}>
+                  <Text className="text-sm font-bold text-foreground">Ocultar y seguir usando Junta2</Text>
+                </Pressable>
               </View>
             ) : (
               <Pressable onPress={() => void publishStory()} className="py-4 rounded-xl items-center" style={{ backgroundColor: colors.primary }}>
-                <Text className="font-bold text-white">Publicar Estado</Text>
+                <Text className="font-bold" style={{ color: colors.onPrimary }}>Publicar Estado</Text>
               </Pressable>
             )}
           </View>
@@ -756,7 +732,7 @@ export default function StoriesScreen() {
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <View style={{ width: 38, height: 38, borderRadius: 19, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: colors.primary }}>
                   {activeGroup.avatarUrl ? (
-                    <ExpoImage source={{ uri: activeGroup.avatarUrl }} style={{ width: 38, height: 38, borderRadius: 19 }} contentFit="cover" cachePolicy="none" />
+                    <ExpoImage source={{ uri: activeGroup.avatarUrl }} style={{ width: 38, height: 38, borderRadius: 19 }} contentFit="cover" cachePolicy="memory-disk" />
                   ) : (
                     <Text style={{ color: "#FFFFFF", fontWeight: "800" }}>{activeGroup.userName[0]?.toUpperCase() ?? "?"}</Text>
                   )}
@@ -768,7 +744,7 @@ export default function StoriesScreen() {
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
                 {activeGroup.isSelf ? (
-                  <Pressable onPress={() => void deleteStory(activeStory.id)} hitSlop={8} style={{ padding: 6 }}>
+                  <Pressable onPress={() => void deleteStory(activeStory.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Eliminar estado" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
                     <IconSymbol name="trash.fill" size={20} color="#FF6B6B" />
                   </Pressable>
                 ) : null}
@@ -776,7 +752,7 @@ export default function StoriesScreen() {
             </View> : null}
 
             <View pointerEvents="none" style={{ position: "absolute", inset: 0, zIndex: 1, alignItems: "center", justifyContent: "center" }}>
-              {activeStory.media_type === "video" ? <StoryVideo uri={activeStory.media_url} onReady={() => setIsStoryMediaLoading(false)} /> : <ExpoImage source={{ uri: activeStory.media_url }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" onLoadStart={() => setIsStoryMediaLoading(true)} onLoad={() => setIsStoryMediaLoading(false)} onError={() => setIsStoryMediaLoading(false)} />}
+              {activeStory.media_type === "video" ? <StoryVideo key={`story-video-${activeStory.id}`} uri={activeStory.media_url} onReady={() => setIsStoryMediaLoading(false)} /> : <ExpoImage source={{ uri: activeStory.media_url }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" transition={120} onLoad={() => setIsStoryMediaLoading(false)} onError={() => setIsStoryMediaLoading(false)} />}
               {isStoryMediaLoading ? <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.22)" }}><View style={{ width: "72%", height: "58%", borderRadius: 18, backgroundColor: "rgba(255,255,255,0.08)" }} /><ActivityIndicator color="#FFFFFF" size="large" style={{ position: "absolute" }} /></View> : null}
             </View>
 
@@ -794,6 +770,7 @@ export default function StoriesScreen() {
                   if (!start) return;
                   const dx = event.nativeEvent.pageX - start.x;
                   const dy = event.nativeEvent.pageY - start.y;
+                  if (dy < -80) { onSwipeUp(); return; }
                   const isShortTap = Date.now() - start.at < 300 && Math.abs(dx) < 24 && Math.abs(dy) < 24;
                   if ((dx > 60 && Math.abs(dx) > Math.abs(dy)) || isShortTap) {
                     if (activeStoryIndex > 0) { setActiveStoryIndex((index) => index - 1); setProgressTimer(0); }
@@ -811,6 +788,7 @@ export default function StoriesScreen() {
                   if (!start) return;
                   const dx = event.nativeEvent.pageX - start.x;
                   const dy = event.nativeEvent.pageY - start.y;
+                  if (dy < -80) { onSwipeUp(); return; }
                   const isShortTap = Date.now() - start.at < 300 && Math.abs(dx) < 24 && Math.abs(dy) < 24;
                   if ((dx < -60 && Math.abs(dx) > Math.abs(dy)) || isShortTap) {
                     if (activeStoryIndex < activeGroup.stories.length - 1) { setActiveStoryIndex((index) => index + 1); setProgressTimer(0); }
@@ -825,7 +803,7 @@ export default function StoriesScreen() {
             <View style={{ position: "absolute", left: 16, right: 16, bottom: Math.max(insets.bottom + 12, 28), zIndex: 4 }}>
               {activeStory.caption ? <Text style={{ marginBottom: 12, paddingHorizontal: 14, color: "#FFFFFF", textAlign: "center", fontSize: 14, fontWeight: "600" }}>{activeStory.caption}</Text> : null}
               {activeGroup.isSelf ? (
-                <Pressable onPress={(event) => { stopEventPropagation(event); void loadViewers(activeStory.id); }} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 24, paddingHorizontal: 18, backgroundColor: "rgba(0,0,0,0.68)" }}>
+                <Pressable onPress={(event) => { stopEventPropagation(event); void loadViewers(activeStory.id); }} accessibilityRole="button" accessibilityLabel="Ver quién vio este estado" style={{ minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 24, paddingHorizontal: 18, backgroundColor: "rgba(0,0,0,0.68)" }}>
                   <IconSymbol name="eye" size={17} color="#FFFFFF" />
                   <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "800" }}>Visto por {viewerCountByStory[activeStory.id] ?? viewers.length} personas</Text>
                 </Pressable>
@@ -865,7 +843,7 @@ export default function StoriesScreen() {
               ) : viewers.map((viewer) => (
                 <View key={viewer.viewer_id} className="mb-3 flex-row items-center gap-3 rounded-2xl border p-3" style={{ borderColor: colors.border }}>
                   {viewer.avatar_url ? (
-                    <ExpoImage source={{ uri: viewer.avatar_url }} style={{ width: 40, height: 40 }} className="h-10 w-10 rounded-full" contentFit="cover" cachePolicy="none" />
+                    <ExpoImage source={{ uri: viewer.avatar_url }} style={{ width: 40, height: 40 }} className="h-10 w-10 rounded-full" contentFit="cover" cachePolicy="memory-disk" />
                   ) : (
                     <View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}>
                       <Text className="font-bold text-white">{viewer.name[0]?.toUpperCase() ?? "?"}</Text>

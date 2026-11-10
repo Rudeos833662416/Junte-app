@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const eventsSource = readFileSync(resolve(process.cwd(), "app/(tabs)/events.tsx"), "utf8");
+const eventsSource = [
+  readFileSync(resolve(process.cwd(), "components/events-screen.tsx"), "utf8"),
+  readFileSync(resolve(process.cwd(), "app/events-completo-restaurado.tsx"), "utf8"),
+].join("\n");
 const tabsSource = readFileSync(resolve(process.cwd(), "app/(tabs)/_layout.tsx"), "utf8");
 const homeSource = readFileSync(resolve(process.cwd(), "app/(tabs)/index.tsx"), "utf8");
 const iconSource = readFileSync(resolve(process.cwd(), "components/ui/icon-symbol.tsx"), "utf8");

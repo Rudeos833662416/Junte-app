@@ -481,6 +481,10 @@ export type Database = {
       }
     }
     Functions: {
+      is_blocked_between: {
+        Args: { p_left: string; p_right: string }
+        Returns: boolean
+      }
       get_map_activity: { Args: Record<string, never>; Returns: Json }
       start_my_checkin: {
         Args: {
@@ -509,6 +513,10 @@ export type Database = {
       admin_soft_delete_official_post: { Args: { p_post_id: string }; Returns: Json }
       claim_notification_action_token: {
         Args: { p_token_hash: string; p_lease_id: string }
+        Returns: Json
+      }
+      set_friendship_status: {
+        Args: { p_friendship_id: number; p_status: string }
         Returns: Json
       }
     }

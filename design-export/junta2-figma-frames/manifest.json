@@ -1,0 +1,63 @@
+{
+  "name": "Junta2 · Figma frames",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "format": "SVG editable",
+  "count": 16,
+  "screens": [
+    {
+      "file": "01-login.svg"
+    },
+    {
+      "file": "02-inicio.svg"
+    },
+    {
+      "file": "03-amigos.svg"
+    },
+    {
+      "file": "04-solicitudes.svg"
+    },
+    {
+      "file": "05-mapa.svg"
+    },
+    {
+      "file": "06-actividad.svg"
+    },
+    {
+      "file": "07-eventos.svg"
+    },
+    {
+      "file": "08-perfil.svg"
+    },
+    {
+      "file": "09-estados.svg"
+    },
+    {
+      "file": "10-mensajes.svg"
+    },
+    {
+      "file": "11-chat.svg"
+    },
+    {
+      "file": "12-perfil-amigo.svg"
+    },
+    {
+      "file": "13-scan-qr.svg"
+    },
+    {
+      "file": "14-notificacion-mensaje.svg"
+    },
+    {
+      "file": "15-notificacion-solicitud.svg"
+    },
+    {
+      "file": "16-notificacion-brindis.svg"
+    }
+  ],
+  "notes": [
+    "Arrastra cada SVG a Figma; formas y textos quedan como capas editables.",
+    "Las notificaciones incluyen acciones rápidas."
+  ]
+}

@@ -228,7 +228,7 @@ export default function EventsScreen() {
     const postsWithCounts = rawPosts.map((post) => {
       const author = authorMap.get(post.created_by);
       const counts = countsByPost.get(post.id);
-      return { ...post, likeCount: counts?.likes ?? 0, commentCount: counts?.comments ?? 0, liked: likedSet.has(post.id), authorName: author?.name?.trim() || author?.username?.trim() || "Tragos Sociales Oficial", authorAvatarUrl: author?.avatar_url ?? null };
+      return { ...post, likeCount: counts?.likes ?? 0, commentCount: counts?.comments ?? 0, liked: likedSet.has(post.id), authorName: author?.name?.trim() || author?.username?.trim() || "Junta2 Oficial", authorAvatarUrl: author?.avatar_url ?? null };
     });
     if (loadVersion !== loadVersionRef.current) return;
     setVenues((venueRows ?? []) as Venue[]);
@@ -345,7 +345,7 @@ export default function EventsScreen() {
   };
 
   const sharePost = async (post: OfficialPost) => {
-    await Share.share({ message: `Tragos Sociales${post.caption ? `: ${post.caption}` : ""}\n${post.media_url}` });
+    await Share.share({ message: `Junta2${post.caption ? `: ${post.caption}` : ""}\n${post.media_url}` });
     if (user) {
       await supabase
         .from("official_post_shares" as never)
@@ -580,7 +580,7 @@ export default function EventsScreen() {
               {!loading && featuredVenues.length === 0 ? <View className="w-72 rounded-3xl border p-6" style={{ borderColor: colors.border }}><Text className="text-sm text-muted">El administrador todavía no ha configurado el Top 5.</Text></View> : null}
             </ScrollView>
             <View className="mb-3 mt-7 flex-row items-center justify-between">
-              <Text className="text-xs font-black uppercase tracking-widest text-muted">Tragos Sociales</Text>
+              <Text className="text-xs font-black uppercase tracking-widest text-muted">Junta2</Text>
               <MaterialIcons name="verified" size={18} color={colors.primary} />
             </View>
           </View>

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 const root = process.cwd();
 const profile = readFileSync(resolve(root, "app/(tabs)/profile.tsx"), "utf8");
+const thoughtBubble = readFileSync(resolve(root, "components/thought-bubble.tsx"), "utf8");
 const stories = readFileSync(resolve(root, "app/(tabs)/stories.tsx"), "utf8");
 const home = readFileSync(resolve(root, "app/(tabs)/index.tsx"), "utf8");
 const tabs = readFileSync(resolve(root, "app/(tabs)/_layout.tsx"), "utf8");
@@ -12,9 +13,9 @@ const bioMigration = readFileSync(resolve(root, "supabase/migrations/0022_profil
 
 describe("Correcciones críticas solicitadas", () => {
   it("permite biografías de 280 caracteres en UI y base de datos", () => {
-    expect(profile).toContain("value.slice(0, 280)");
-    expect(profile).toContain("maxLength={280}");
-    expect(profile).toContain("nextBio.length > 280");
+    expect(thoughtBubble).toContain("THOUGHT_MAX = 280");
+    expect(thoughtBubble).toContain("slice(0, THOUGHT_MAX)");
+    expect(thoughtBubble).toContain("maxLength={THOUGHT_MAX}");
     expect(bioMigration).toContain("char_length(bio) <= 280");
     expect(bioMigration).toContain("NOTIFY pgrst, 'reload schema'");
   });

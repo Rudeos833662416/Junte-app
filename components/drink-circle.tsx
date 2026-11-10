@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { Platform } from "react-native";
+import { useColors } from "@/hooks/use-colors";
 
 export type DrinkCategoryId = "cerveza" | "cocteles" | "whisky" | "licor" | "vino" | "sin_alcohol";
 
@@ -77,6 +78,7 @@ export function DrinkCircle({
   idleColor,
   onSelectionChange,
 }: Props) {
+  const colors = useColors();
   const [categoryIndex, setCategoryIndex] = useState(0);
   const [variantIndex, setVariantIndex] = useState(0);
   const pulse = useRef(new Animated.Value(0)).current;
@@ -213,7 +215,7 @@ export function DrinkCircle({
             numberOfLines={1}
             style={{
               marginTop: 4,
-              color: "#fff",
+              color: colors.onPrimary,
               fontWeight: "800",
               fontSize: 15,
               maxWidth: SIZE - 36,
@@ -225,7 +227,7 @@ export function DrinkCircle({
           <Text
             style={{
               marginTop: 2,
-              color: "rgba(255,255,255,0.85)",
+              color: `${colors.onPrimary}CC`,
               fontSize: 11,
               fontWeight: "600",
             }}
@@ -240,7 +242,7 @@ export function DrinkCircle({
           marginTop: 14,
           fontSize: 17,
           fontWeight: "700",
-          color: active ? activeColor : "#E8E8E8",
+          color: active ? activeColor : colors.foreground,
         }}
       >
         {active ? "¡Brindando!" : "Toca para brindar"}
@@ -251,16 +253,16 @@ export function DrinkCircle({
           style={{
             marginTop: 6,
             fontSize: 11,
-            color: "rgba(255,255,255,0.45)",
+          color: colors.muted,
             textAlign: "center",
             maxWidth: 220,
           }}
         >
-          ↑↓ tipo de trago · ←→ marca
+          Desliza ↑↓ para cambiar el tipo · ←→ para cambiar la variedad
         </Text>
       ) : (
         <Pressable onPress={onToggle} disabled={disabled} hitSlop={8} style={{ marginTop: 4 }}>
-          <Text style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Toca de nuevo para terminar</Text>
+          <Text style={{ fontSize: 12, color: colors.muted }}>Toca de nuevo para terminar</Text>
         </Pressable>
       )}
     </View>

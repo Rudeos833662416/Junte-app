@@ -6,7 +6,7 @@ import { useAppRefresh } from "@/lib/app-refresh";
 import { supabase } from "@/lib/supabase";
 import { Image as ExpoImage } from "expo-image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Platform, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Platform, Pressable, RefreshControl, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import * as Haptics from "expo-haptics";
 
@@ -69,6 +69,8 @@ export default function ActivityScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const hasLoadedActivitiesOnce = useRef(false);
   const [savingReactionId, setSavingReactionId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadActivities = useCallback(async () => {
     if (!user) {
@@ -77,6 +79,7 @@ export default function ActivityScreen() {
       return;
     }
     try {
+      setLoadError(null);
       if (!hasLoadedActivitiesOnce.current) setIsLoading(true);
       const { data, error } = await supabase
         .from("activities")
@@ -123,7 +126,7 @@ export default function ActivityScreen() {
       );
     } catch (error) {
       console.warn("Activity unavailable:", error);
-      setActivities([]);
+      setLoadError("No se pudo actualizar la actividad. Conservamos las novedades anteriores; inténtalo de nuevo.");
     } finally {
       hasLoadedActivitiesOnce.current = true;
       setIsLoading(false);
@@ -145,6 +148,8 @@ export default function ActivityScreen() {
       void supabase.removeChannel(channel);
     };
   }, [loadActivities, revision, user]);
+
+  const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await loadActivities(); } finally { setIsRefreshing(false); } }, [loadActivities]);
 
   const subtitle = useMemo(
     () => (activities.length === 1 ? "1 novedad de tus amigos" : `${activities.length} novedades de tus amigos`),
@@ -265,10 +270,16 @@ export default function ActivityScreen() {
             </Pressable>
           ) : null}
         </View>
-        {isLoading ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color={colors.primary} />
+        {loadError ? (
+          <View className="mb-3 rounded-2xl border p-3" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}12` }}>
+            <Text className="text-sm text-foreground">{loadError}</Text>
+            <Pressable onPress={() => void handleRefresh()} accessibilityRole="button" accessibilityLabel="Reintentar cargar actividad" style={{ minHeight: 44, justifyContent: "center" }}>
+              <Text className="font-bold" style={{ color: colors.primary }}>Reintentar</Text>
+            </Pressable>
           </View>
+        ) : null}
+        {isLoading ? (
+          <View accessibilityLabel="Cargando actividad" className="gap-3"><View className="h-24 rounded-2xl" style={{ backgroundColor: `${colors.border}55` }} /><View className="h-24 rounded-2xl" style={{ backgroundColor: `${colors.border}55` }} /><View className="h-24 rounded-2xl" style={{ backgroundColor: `${colors.border}55` }} /></View>
         ) : activities.length === 0 ? (
           <View className="flex-1 items-center justify-center">
             <IconSymbol name="bell.fill" size={38} color={colors.muted} />
@@ -282,6 +293,7 @@ export default function ActivityScreen() {
             data={activities}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 20 }}
+            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} colors={[colors.primary]} />}
             renderItem={({ item }) => {
               const icon = activityIcon(item.type);
               const iconColor = icon.tone === "success" ? colors.success : colors.primary;

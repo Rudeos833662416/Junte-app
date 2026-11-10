@@ -4,17 +4,43 @@
 
 :root {
   color-scheme: dark;
-  background-color: #05070D;
+  background-color: #0A0A0A;
+  --brand-orange: #FC4C02;
+  --brand-orange-2: #FF7A18;
+  --brand-cream: #FFF1D0;
+  --brand-ink: #0A0A0A;
+  --ease-brand: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 html,
 body {
   min-height: 100%;
-  background: #05070D;
-  color: #F7FBFF;
+  background: #0A0A0A;
+  color: #FFF8E8;
 }
 
 ::selection {
-  background: #2A5E8F;
-  color: #F7FBFF;
+  background: #FC4C02;
+  color: #FFF1D0;
+}
+
+/* Brand motion: fast feedback, never decorative delay. */
+button,
+[role="button"] {
+  transition: transform 160ms var(--ease-brand), opacity 160ms var(--ease-brand), background-color 160ms var(--ease-brand);
+}
+
+button:active,
+[role="button"]:active {
+  transform: scale(0.975);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

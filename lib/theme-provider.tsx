@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Appearance, View, useColorScheme as useSystemColorScheme } from "react-native";
 import { colorScheme as nativewindColorScheme, vars } from "nativewind";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { SchemeColors, type ColorScheme } from "@/constants/theme";
 
@@ -8,6 +9,8 @@ type ThemeContextValue = {
   colorScheme: ColorScheme;
   setColorScheme: (scheme: ColorScheme) => void;
 };
+
+export const THEME_PREFERENCE_KEY = "junta2-theme-preference-v1";
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
@@ -32,7 +35,21 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const setColorScheme = useCallback((scheme: ColorScheme) => {
     setColorSchemeState(scheme);
     applyScheme(scheme);
+    void AsyncStorage.setItem(THEME_PREFERENCE_KEY, scheme).catch((error) => {
+      console.warn("[theme] No se pudo guardar la preferencia:", error instanceof Error ? error.message : error);
+    });
   }, [applyScheme]);
+
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(THEME_PREFERENCE_KEY).then((stored) => {
+      if (!active) return;
+      if (stored === "light" || stored === "dark") setColorSchemeState(stored);
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     applyScheme(colorScheme);
@@ -42,6 +59,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     () =>
       vars({
         "color-primary": SchemeColors[colorScheme].primary,
+        "color-onPrimary": SchemeColors[colorScheme].onPrimary,
         "color-background": SchemeColors[colorScheme].background,
         "color-surface": SchemeColors[colorScheme].surface,
         "color-foreground": SchemeColors[colorScheme].foreground,

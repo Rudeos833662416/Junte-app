@@ -31,6 +31,8 @@ import {
   invokeNotificationAction,
 } from "@/lib/push-notifications";
 import { PermissionsOnboarding } from "@/components/permissions-onboarding";
+import { StoryUploadQueueProvider } from "@/lib/story-upload-queue";
+import { notificationResponseKey, routeForNotification } from "@/lib/notification-routing";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -148,6 +150,7 @@ function AuthGate() {
     if (!user || Platform.OS === "web") return;
     let disposed = false;
     let responseSubscription: { remove: () => void } | null = null;
+    const handledResponses = new Set<string>();
 
     void registerPushNotifications(user.id).catch((error) => {
       if (!disposed) console.warn("Push notifications unavailable:", error);
@@ -164,16 +167,29 @@ function AuthGate() {
           friendshipId?: string;
           senderId?: string;
           chatId?: string;
+          directMessageId?: string;
+          postId?: string;
+          storyId?: string;
+          storyUserId?: string;
+          screen?: string;
           actionToken?: string;
         };
+        const responseKey = notificationResponseKey(response);
+        if (handledResponses.has(responseKey)) return;
+        handledResponses.add(responseKey);
+        if (handledResponses.size > 100) {
+          const oldest = handledResponses.values().next().value;
+          if (oldest) handledResponses.delete(oldest);
+        }
         const actionToken = data.actionToken;
         const reaction = reactionFromNotificationAction(response.actionIdentifier);
         if (data.activityId && reaction) void saveNotificationReaction(data.activityId, reaction, user.id);
 
         // El toque normal sobre una solicitud no debe dejar al usuario en Amigos:
         // lleva directamente al perfil de quien envió la solicitud.
-        if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER && data.friendshipId && data.senderId) {
-          router.push(`/profile/${data.senderId}` as never);
+        if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+          const route = routeForNotification(data);
+          if (route) router.push(route as never);
           return;
         }
 
@@ -250,14 +266,16 @@ function AuthGate() {
   }
 
   return (
-    <>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="login" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="oauth/callback" />
-        <Stack.Screen name="auth/callback" />
-      </Stack>
-      {user ? <PermissionsOnboarding /> : null}
-    </>
+    <StoryUploadQueueProvider>
+      <>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="login" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="oauth/callback" />
+          <Stack.Screen name="auth/callback" />
+        </Stack>
+        {user ? <PermissionsOnboarding /> : null}
+      </>
+    </StoryUploadQueueProvider>
   );
 }

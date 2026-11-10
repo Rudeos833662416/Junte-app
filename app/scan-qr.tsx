@@ -29,7 +29,7 @@ export default function ScanQrScreen() {
     if (hasScanned) return;
     const profileId = extractProfileId(data);
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(profileId)) {
-      setErrorMessage("Este código no pertenece a un perfil de Tragos Sociales.");
+      setErrorMessage("Este código no pertenece a un perfil de Junta2.");
       return;
     }
 
@@ -41,7 +41,7 @@ export default function ScanQrScreen() {
     return (
       <ScreenContainer className="items-center justify-center p-6">
         <Text className="text-xl font-bold text-foreground">Escáner QR</Text>
-        <Text className="mt-2 text-center text-sm leading-5 text-muted">El escáner QR está disponible en el APK de Tragos Sociales para Android y iOS.</Text>
+        <Text className="mt-2 text-center text-sm leading-5 text-muted">El escáner QR está disponible en el APK de Junta2 para Android y iOS.</Text>
         <Pressable onPress={() => router.back()} style={({ pressed }) => ({ marginTop: 20, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14, backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 })}>
           <Text className="font-bold text-background">Volver</Text>
         </Pressable>
@@ -77,7 +77,7 @@ export default function ScanQrScreen() {
       />
       <View className="absolute inset-x-0 top-0 items-center px-6 pt-16">
         <Text className="text-2xl font-bold text-white">Escanea para conectar</Text>
-        <Text className="mt-2 text-center text-sm text-white/80">Apunta al código QR del perfil de Tragos Sociales.</Text>
+        <Text className="mt-2 text-center text-sm text-white/80">Apunta al código QR del perfil de Junta2.</Text>
         <View className="mt-8 h-64 w-64 rounded-3xl border-2 border-white/90" />
         {errorMessage ? <Text className="mt-4 rounded-xl bg-black/60 px-4 py-3 text-center text-sm text-white">{errorMessage}</Text> : null}
         {cameraError ? <Text className="mt-4 rounded-xl bg-red-900/80 px-4 py-3 text-center text-sm text-white">{cameraError}</Text> : null}

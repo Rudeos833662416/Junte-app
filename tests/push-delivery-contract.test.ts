@@ -35,16 +35,19 @@ describe("contrato de entrega push", () => {
     expect(onboardingSource).toContain("Reintentar");
   });
 
-  it("envía contenido visible también para acciones interactivas", () => {
-    expect(functionSource).toContain("title:");
-    expect(functionSource).toContain("body,");
+	it("envía contenido visible también para acciones interactivas", () => {
+		expect(functionSource).toContain("title:");
+		expect(functionSource).toContain("body,");
     expect(functionSource).toContain('sound: "default"');
     expect(functionSource).toContain('channelId: "friend-activity-v4"');
     expect(functionSource).toContain("categoryId");
     expect(functionSource).not.toContain('...(isInteractive ? { _contentAvailable: true, data }');
     expect(functionSource).toContain("richContent");
-    expect(functionSource).toContain("isInteractive");
-  });
+		expect(functionSource).toContain("isInteractive");
+		expect(functionSource).toContain("android: {");
+		expect(functionSource).toContain("actions:");
+		expect(functionSource).toContain("avatarUrl");
+	});
 
   it("protege la audiencia de brindis y permite controles de amistad", () => {
     expect(migrationSource).toContain("friendships_delete_related");
@@ -52,12 +55,24 @@ describe("contrato de entrega push", () => {
     expect(migrationSource).toContain("<> new.user_id");
   });
 
-  it("acepta o rechaza solicitudes desde el push y abre el perfil al tocarlo", () => {
+	it("acepta o rechaza solicitudes desde el push y abre el perfil al tocarlo", () => {
     expect(clientSource).toContain('identifier: "ACCEPT_FRIEND"');
     expect(clientSource).toContain('identifier: "REJECT_FRIEND"');
     expect(layoutSource).toContain('response.actionIdentifier === "ACCEPT_FRIEND"');
     expect(layoutSource).toContain('response.actionIdentifier === "REJECT_FRIEND"');
     expect(layoutSource).toContain("Notifications.DEFAULT_ACTION_IDENTIFIER");
-    expect(layoutSource).toContain('router.push(`/profile/${data.senderId}`');
-  });
+		expect(layoutSource).toContain("const route = routeForNotification(data)");
+		expect(layoutSource).toContain("if (route) router.push(route as never)");
+	});
+
+	it("expone desbloqueo persistente y un único acceso para conectar por QR", () => {
+		const profileSource = readFileSync(resolve(process.cwd(), "app/profile/[id].tsx"), "utf8");
+		const friendsSource = readFileSync(resolve(process.cwd(), "app/(tabs)/friends.tsx"), "utf8");
+		expect(profileSource).toContain("unblockUser");
+		expect(profileSource).toContain('.delete()');
+		expect(profileSource).toContain("Desbloquear");
+		expect(friendsSource).toContain("Conectar con QR");
+		expect(friendsSource).toContain("Escanear QR");
+		expect(friendsSource).not.toContain("Mostrar mi QR");
+	});
 });

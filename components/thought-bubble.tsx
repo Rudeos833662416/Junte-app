@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useColors } from "@/hooks/use-colors";
 
 /** Límite al guardar (DB); la UI no recorta el texto en pantalla. */
-export const THOUGHT_MAX = 200;
+export const THOUGHT_MAX = 280;
 
 type ThoughtBubbleProps = {
   text: string | null | undefined;

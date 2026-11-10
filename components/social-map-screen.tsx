@@ -182,7 +182,7 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
         : await Location.requestForegroundPermissionsAsync();
       setPermission(permissionResult.status);
       if (permissionResult.status !== Location.PermissionStatus.GRANTED) {
-        setErrorMessage("Permite la ubicación mientras usas Tragos Sociales para mostrarte en el mapa.");
+        setErrorMessage("Permite la ubicación mientras usas Junta2 para mostrarte en el mapa.");
         return;
       }
 

@@ -49,6 +49,7 @@ export default function ChatScreen() {
   const [otherAvatar, setOtherAvatar] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const listRef = useRef<FlatList<Message>>(null);
 
   const markAsRead = useCallback(
@@ -79,6 +80,7 @@ export default function ChatScreen() {
   const loadMessages = useCallback(async () => {
     if (!user || !otherId) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const { data, error } = await supabase
         .from("direct_messages")
@@ -88,7 +90,12 @@ export default function ChatScreen() {
         )
         .order("created_at", { ascending: true });
       if (error) throw error;
-      setMessages((data ?? []) as Message[]);
+      const confirmed = (data ?? []) as Message[];
+      setMessages((current) => {
+        const confirmedIds = new Set(confirmed.map((message) => message.client_message_id).filter(Boolean));
+        const pending = current.filter((message) => message.pending && !confirmedIds.has(message.client_message_id));
+        return [...confirmed, ...pending];
+      });
       await markAsRead(otherId);
       const profile = await supabase
         .from("public_profiles")
@@ -99,6 +106,7 @@ export default function ChatScreen() {
       setOtherAvatar(profile.data?.avatar_url || null);
     } catch (error) {
       console.warn("Chat load failed:", error);
+      setLoadError("No se pudo actualizar la conversación. Conservamos los mensajes anteriores; inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -205,7 +213,7 @@ export default function ChatScreen() {
       }
       setMessages((current) => current.filter((item) => item.client_message_id !== clientMessageId));
       setDraft(body);
-      Alert.alert("No se pudo enviar", error.message);
+      Alert.alert("No se pudo enviar", "El mensaje quedó sin enviar. Comprueba tu conexión e inténtalo de nuevo.");
       return;
     }
 
@@ -269,6 +277,8 @@ export default function ChatScreen() {
             <ActivityIndicator color={colors.primary} />
           </View>
         ) : (
+          <>
+          {loadError ? <View className="mb-3 rounded-xl border p-3" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}12` }}><Text className="text-sm text-foreground">{loadError}</Text><Pressable onPress={() => void loadMessages()} accessibilityRole="button" accessibilityLabel="Reintentar actualizar conversación" style={{ minHeight: 44, justifyContent: "center" }}><Text className="font-bold" style={{ color: colors.primary }}>Reintentar</Text></Pressable></View> : null}
           <FlatList
             ref={listRef}
             data={messages}
@@ -313,10 +323,13 @@ export default function ChatScreen() {
               );
             }}
           />
+          </>
         )}
 
         <View className="mt-2 flex-row items-end gap-2">
           <TextInput
+            accessibilityLabel="Mensaje"
+            accessibilityHint="Escribe un mensaje para enviarlo a tu contacto"
             value={draft}
             onChangeText={setDraft}
             placeholder="Mensaje…"
@@ -337,6 +350,8 @@ export default function ChatScreen() {
             }}
           />
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Enviar mensaje"
             onPress={() => void sendMessage()}
             disabled={sending || !draft.trim()}
             style={({ pressed }) => ({

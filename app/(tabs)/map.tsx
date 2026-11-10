@@ -1,5 +1,5 @@
-import NativeMap from "@/components/native-map";
+import { SocialMapScreen } from "@/components/social-map-screen";
 
 export default function MapScreen() {
-  return <NativeMap />;
+  return <SocialMapScreen useGoogleProvider />;
 }

@@ -1,4 +1,4 @@
-import { Alert, ActivityIndicator, ScrollView, Text, TextInput, View, Pressable, Switch, Platform } from "react-native";
+import { Alert, ActivityIndicator, Modal, RefreshControl, ScrollView, Text, TextInput, View, Pressable, Switch, Platform } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
@@ -15,6 +15,7 @@ import { Image as ExpoImage } from "expo-image";
 import { uploadUriToStorage, verifyPublicStorageUrl } from "@/lib/media-upload";
 import { router } from "expo-router";
 import { ThoughtBubble, THOUGHT_MAX } from "@/components/thought-bubble";
+import { useThemeContext } from "@/lib/theme-provider";
 
 type UploadKind = "avatar" | "cover";
 type UploadState = { kind: UploadKind; progress: number; message: string };
@@ -49,6 +50,7 @@ function getInitials(name: string) {
 
 export default function ProfileScreen() {
   const colors = useColors();
+  const { colorScheme, setColorScheme } = useThemeContext();
   const { user, loading: authLoading, logout } = useAuth({ autoFetch: true });
   const { revision } = useAppRefresh();
   const [locationSharing, setLocationSharing] = useState(true);
@@ -64,10 +66,17 @@ export default function ProfileScreen() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
   const [bio, setBio] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const fetchProfileData = useCallback(async () => {
     if (!user) return;
     try {
+      setLoadError(null);
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("name, bio, avatar_url, cover_url, is_public, discoverable_nearby, location_sharing, last_name_changed_at")
@@ -77,8 +86,8 @@ export default function ProfileScreen() {
         setProfileName(profileData?.name?.trim() || user.name || user.email?.split("@")[0] || "");
         setNameLastChangedAt(profileData?.last_name_changed_at ?? null);
         setBio(profileData?.bio?.trim() || "");
-        setAvatarUrl(profileData?.avatar_url ? `${profileData.avatar_url}?t=${Date.now()}` : null);
-        setCoverUrl(profileData?.cover_url ? `${profileData.cover_url}?t=${Date.now()}` : null);
+        setAvatarUrl(profileData?.avatar_url ?? null);
+        setCoverUrl(profileData?.cover_url ?? null);
         setIsPublicProfile(Boolean(profileData?.is_public));
         setDiscoverableNearby(Boolean(profileData?.discoverable_nearby));
         setLocationSharing(profileData?.location_sharing !== false);
@@ -99,6 +108,7 @@ export default function ProfileScreen() {
       }
     } catch (error) {
       console.error("Error loading profile data:", error);
+      setLoadError(error instanceof Error ? error.message : "No se pudo cargar tu perfil.");
     }
   }, [user]);
 
@@ -115,6 +125,8 @@ export default function ProfileScreen() {
       void supabase.removeChannel(channel);
     };
   }, [fetchProfileData, revision, user]);
+
+  const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await fetchProfileData(); } finally { setIsRefreshing(false); } }, [fetchProfileData]);
 
   const uploadProfileImage = async (kind: UploadKind) => {
     if (!user || uploadState) return;
@@ -286,6 +298,27 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const handleDeleteAccount = async () => {
+    if (!user || isDeletingAccount) return;
+    if (deleteConfirmation.trim().toUpperCase() !== "ELIMINAR") {
+      setDeleteError("Escribe ELIMINAR para confirmar que deseas borrar la cuenta.");
+      return;
+    }
+    try {
+      setIsDeletingAccount(true);
+      setDeleteError(null);
+      const { error } = await supabase.functions.invoke("delete-account");
+      if (error) throw error;
+      await logout();
+      setIsDeleteModalVisible(false);
+      router.replace("/login");
+    } catch {
+      setDeleteError("No se pudo eliminar la cuenta. No se borró nada; revisa tu conexión e inténtalo de nuevo.");
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <ScreenContainer className="items-center justify-center p-6">
@@ -308,6 +341,7 @@ export default function ProfileScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ flexGrow: 1, paddingBottom: 48 }}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} colors={[colors.primary]} />}
         >
           <View
             className="mb-6 overflow-hidden rounded-3xl border shadow-lg"
@@ -379,7 +413,7 @@ export default function ProfileScreen() {
                     placeholderTextColor={colors.muted}
                     autoFocus
                   />
-                  <Pressable onPress={() => void handleSaveName()} disabled={isSavingName}>
+                  <Pressable onPress={() => void handleSaveName()} disabled={isSavingName} accessibilityRole="button" accessibilityLabel="Guardar nombre" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
                     <Text style={{ color: colors.primary, fontWeight: "700" }}>{isSavingName ? "…" : "OK"}</Text>
                   </Pressable>
                   <Pressable onPress={handleCancelNameEdit}>
@@ -400,6 +434,7 @@ export default function ProfileScreen() {
                   {uploadNotice}
                 </Text>
               ) : null}
+              {loadError ? <View className="mt-2 w-full rounded-xl border p-3" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}12` }}><Text className="text-sm text-foreground">{loadError}</Text><Pressable onPress={() => void handleRefresh()} accessibilityRole="button" accessibilityLabel="Reintentar cargar perfil" style={{ minHeight: 44, justifyContent: "center" }}><Text className="font-bold" style={{ color: colors.primary }}>Reintentar</Text></Pressable></View> : null}
               {uploadState ? (
                 <Text className="mt-2 text-xs text-muted">
                   {uploadState.message} ({uploadState.progress}%)
@@ -490,26 +525,59 @@ export default function ProfileScreen() {
             className="mb-4 rounded-2xl border p-4"
             style={{ borderColor: colors.border, backgroundColor: colors.surface }}
           >
+            <Text className="mb-1 text-base font-bold text-foreground">Apariencia</Text>
+            <Text className="mb-3 text-xs leading-5 text-muted">
+              Elige cómo quieres ver Junta2. Se guarda en este dispositivo.
+            </Text>
+            <View className="mb-5 flex-row gap-2">
+              {(["light", "dark"] as const).map((scheme) => {
+                const selected = colorScheme === scheme;
+                return (
+                  <Pressable
+                    key={scheme}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={scheme === "light" ? "Usar modo claro" : "Usar modo oscuro"}
+                    onPress={() => setColorScheme(scheme)}
+                    style={({ pressed }) => ({
+                      flex: 1,
+                      minHeight: 46,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: selected ? colors.primary : colors.border,
+                      backgroundColor: selected ? `${colors.primary}18` : colors.background,
+                      opacity: pressed ? 0.78 : 1,
+                    })}
+                  >
+                    <Text style={{ color: selected ? colors.primary : colors.foreground, fontWeight: "800" }}>
+                      {scheme === "light" ? "Claro" : "Oscuro"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
             <Text className="mb-3 text-base font-bold text-foreground">Privacidad</Text>
             <View className="mb-3 flex-row items-center justify-between">
               <Text className="flex-1 text-sm text-foreground">Perfil público</Text>
               <Switch
                 value={isPublicProfile}
-                onValueChange={() => void updatePrivacySetting("is_public", !isPublicProfile)}
+                onValueChange={() => void updatePrivacySetting("is_public", !isPublicProfile)} accessibilityLabel="Perfil público"
               />
             </View>
             <View className="mb-3 flex-row items-center justify-between">
               <Text className="flex-1 text-sm text-foreground">Visible cerca</Text>
               <Switch
                 value={discoverableNearby}
-                onValueChange={() => void updatePrivacySetting("discoverable_nearby", !discoverableNearby)}
+                onValueChange={() => void updatePrivacySetting("discoverable_nearby", !discoverableNearby)} accessibilityLabel="Visible cerca"
               />
             </View>
             <View className="flex-row items-center justify-between">
               <Text className="flex-1 text-sm text-foreground">Compartir ubicación</Text>
               <Switch
                 value={locationSharing}
-                onValueChange={() => void updatePrivacySetting("location_sharing", !locationSharing)}
+                onValueChange={() => void updatePrivacySetting("location_sharing", !locationSharing)} accessibilityLabel="Compartir ubicación"
               />
             </View>
           </View>
@@ -517,12 +585,55 @@ export default function ProfileScreen() {
           <Pressable
             onPress={handleLogout}
             className="mb-6 items-center rounded-2xl border py-3"
-            style={{ borderColor: "#ef4444" }}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar sesión"
+            style={{ borderColor: colors.error }}
           >
-            <Text style={{ color: "#ef4444", fontWeight: "700" }}>Cerrar sesión</Text>
+            <Text style={{ color: colors.error, fontWeight: "700" }}>Cerrar sesión</Text>
           </Pressable>
+          <View className="mb-6 rounded-2xl border p-4" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}0D` }}>
+            <Text className="text-base font-bold text-foreground">Eliminar cuenta</Text>
+            <Text className="mt-1 text-xs leading-5 text-muted">Esta acción es permanente. Se eliminarán tu perfil, amistades, historias, mensajes y notificaciones.</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Eliminar cuenta permanentemente"
+              disabled={isDeletingAccount}
+              onPress={() => { setDeleteError(null); setDeleteConfirmation(""); setIsDeleteModalVisible(true); }}
+              style={({ pressed }) => ({ marginTop: 14, minHeight: 46, alignItems: "center", justifyContent: "center", borderRadius: 12, borderWidth: 1, borderColor: colors.error, opacity: pressed ? 0.78 : 1 })}
+            >
+              <Text style={{ color: colors.error, fontWeight: "800" }}>Eliminar cuenta permanentemente</Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <Modal visible={isDeleteModalVisible} transparent animationType="fade" onRequestClose={() => { if (!isDeletingAccount) setIsDeleteModalVisible(false); }}>
+        <View style={{ flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.62)" }}>
+          <View className="rounded-3xl p-5" style={{ backgroundColor: colors.surface }}>
+            <Text className="text-xl font-bold text-foreground">¿Eliminar tu cuenta?</Text>
+            <Text className="mt-2 text-sm leading-5 text-muted">No podrás recuperar esta cuenta. Para confirmar, escribe exactamente ELIMINAR.</Text>
+            <TextInput
+              accessibilityLabel="Escribe ELIMINAR para confirmar"
+              value={deleteConfirmation}
+              onChangeText={setDeleteConfirmation}
+              autoCapitalize="characters"
+              editable={!isDeletingAccount}
+              placeholder="ELIMINAR"
+              placeholderTextColor={colors.muted}
+              className="mt-4 rounded-xl border px-4 py-3 text-foreground"
+              style={{ borderColor: colors.border }}
+            />
+            {deleteError ? <Text accessibilityRole="alert" className="mt-3 text-sm" style={{ color: colors.error }}>{deleteError}</Text> : null}
+            <View className="mt-5 flex-row gap-3">
+              <Pressable disabled={isDeletingAccount} onPress={() => setIsDeleteModalVisible(false)} style={{ flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
+                <Text className="font-bold text-foreground">Cancelar</Text>
+              </Pressable>
+              <Pressable disabled={isDeletingAccount} onPress={() => void handleDeleteAccount()} style={{ flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: colors.error, opacity: isDeletingAccount ? 0.6 : 1 }}>
+                {isDeletingAccount ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={{ color: colors.onPrimary, fontWeight: "800" }}>Eliminar</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }

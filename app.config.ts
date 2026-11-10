@@ -20,7 +20,7 @@ const env = {
   appName: "Junta2",
   appSlug: "junte-app",
   logoUrl: "/manus-storage/icon_d4ee1ac1.png",
-  appSubtitle: "time to drink",
+  appSubtitle: "Tus panas, tu plan, tu junte",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -31,7 +31,7 @@ const config: ExpoConfig = {
   slug: env.appSlug,
   version: "1.0.0",
   orientation: "portrait",
-  icon: "./assets/images/icon.png",
+  icon: "./assets/brand/icon.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
   newArchEnabled: true,
@@ -41,17 +41,16 @@ const config: ExpoConfig = {
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
       NSLocationWhenInUseUsageDescription:
-        "Tragos Sociales necesita acceso a tu ubicación para mostrar dónde están tus amigos.",
+        "Junta2 necesita acceso a tu ubicación para mostrar dónde están tus amigos.",
       NSLocationAlwaysAndWhenInUseUsageDescription:
-        "Tragos Sociales necesita acceso a tu ubicación mientras usas el mapa y el descubrimiento cercano.",
+        "Junta2 necesita acceso a tu ubicación mientras usas el mapa y el descubrimiento cercano.",
     },
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: "#E6F4FE",
-      foregroundImage: "./assets/images/android-icon-foreground.png",
-      backgroundImage: "./assets/images/android-icon-background.png",
-      monochromeImage: "./assets/images/android-icon-monochrome.png",
+      backgroundColor: "#FC4C02",
+      foregroundImage: "./assets/brand/adaptive-foreground.png",
+      monochromeImage: "./assets/brand/adaptive-monochrome.png",
     },
     edgeToEdgeEnabled: true,
     softwareKeyboardLayoutMode: "resize",
@@ -76,7 +75,7 @@ const config: ExpoConfig = {
   web: {
     bundler: "metro",
     output: "static",
-    favicon: "./assets/images/favicon.png",
+    favicon: "./assets/brand/icon.png",
   },
   owner: "jesusjunteapps-team",
   extra: {
@@ -103,8 +102,8 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Tragos Sociales necesita la cámara para escanear códigos QR de amistad.",
-        microphonePermission: "Tragos Sociales necesita el micrófono solo si grabas vídeo con audio.",
+        cameraPermission: "Junta2 necesita la cámara para escanear códigos QR de amistad.",
+        microphonePermission: "Junta2 necesita el micrófono solo si grabas vídeo con audio.",
         recordAudioAndroid: false,
       },
     ],
@@ -124,12 +123,12 @@ const config: ExpoConfig = {
     [
       "expo-splash-screen",
       {
-        image: "./assets/images/splash-icon.png",
+        image: "./assets/brand/splash.png",
         imageWidth: 200,
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        backgroundColor: "#0A0A0A",
         dark: {
-          backgroundColor: "#000000",
+          backgroundColor: "#0A0A0A",
         },
       },
     ],

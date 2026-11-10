@@ -90,7 +90,7 @@ function LocationConsentPrompt() {
           <View className="mb-4 h-1.5 w-12 self-center rounded-full" style={{ backgroundColor: colors.border }} />
           <Text className="text-2xl font-bold text-foreground">Tu ubicación, bajo tu control</Text>
           <Text className="mt-3 text-base leading-6 text-muted">
-            Tragos Sociales usa tu ubicación mientras activas el mapa o el descubrimiento cercano para mostrar tu posición aproximada y encontrar personas que también eligieron aparecer.
+            Junta2 usa tu ubicación mientras activas el mapa o el descubrimiento cercano para mostrar tu posición aproximada y encontrar personas que también eligieron aparecer.
           </Text>
           <Text className="mt-3 text-sm leading-5 text-muted">
             No mostramos tu dirección exacta. Puedes cambiar esta decisión desde Perfil o desde los ajustes del dispositivo.
@@ -143,16 +143,22 @@ export default function TabLayout() {
     <View style={{ flex: 1 }} {...swipeResponder.panHandlers}>
       <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.tint,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.muted,
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarStyle: {
-          paddingTop: 8,
+          paddingTop: 7,
           paddingBottom: bottomPadding,
           height: tabBarHeight,
-          backgroundColor: colors.background,
+          backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          borderTopWidth: 0.5,
+          borderTopWidth: 1,
+          elevation: 12,
+          shadowColor: colors.abyss,
+          shadowOpacity: 0.18,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: -4 },
         },
       }}
     >

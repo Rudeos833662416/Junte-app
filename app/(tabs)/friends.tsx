@@ -1,4 +1,4 @@
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Modal, Pressable, RefreshControl, Text, TextInput, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { router } from "expo-router";
 import * as Location from "expo-location";
@@ -25,7 +25,7 @@ type Friend = {
 };
 
 type FriendshipRow = { id: number; user_id: string; friend_id: string; status: string; request_message?: string | null };
-type PendingRequest = { id: number; senderId: string; name: string; message: string | null };
+type PendingRequest = { id: number; senderId: string; name: string; avatarUrl: string | null; message: string | null };
 type ProfileRow = { id: string; name: string | null; email: string | null; avatar_url?: string | null };
 type NearbyProfile = { id: string; name: string | null; avatar_url: string | null; cover_url: string | null; distance_km: number };
 type PublicSearchProfile = { id: string; name: string | null; username: string | null; avatar_url: string | null; cover_url: string | null; bio: string | null };
@@ -48,6 +48,7 @@ export default function FriendsScreen() {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
   const { revision } = useAppRefresh();
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [friends, setFriends] = useState<Friend[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,6 +59,8 @@ export default function FriendsScreen() {
   const [isLoadingNearby, setIsLoadingNearby] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  const [requestsError, setRequestsError] = useState<string | null>(null);
+  const [respondingRequestId, setRespondingRequestId] = useState<number | null>(null);
   const [friendsSection, setFriendsSection] = useState<"friends" | "requests">("friends");
   const [publicSearchResults, setPublicSearchResults] = useState<PublicSearchProfile[]>([]);
   const [isSearchingPublic, setIsSearchingPublic] = useState(false);
@@ -81,8 +84,7 @@ export default function FriendsScreen() {
       if (error) throw error;
       setNearbyProfiles((data ?? []) as NearbyProfile[]);
     } catch (error) {
-      setNearbyProfiles([]);
-      setNearbyError(error instanceof Error ? error.message : "No se pudieron buscar personas cercanas.");
+      setNearbyError("No se pudieron buscar personas cercanas. Revisa tu conexión e inténtalo de nuevo.");
     } finally {
       setIsLoadingNearby(false);
     }
@@ -96,26 +98,54 @@ export default function FriendsScreen() {
       .eq("friend_id", user.id)
       .eq("status", "pending")
       .order("created_at", { ascending: false });
-    if (error) return;
+    if (error) {
+      setRequestsError("No se pudieron cargar las solicitudes. Inténtalo de nuevo.");
+      return;
+    }
+    setRequestsError(null);
     const rows = (requests ?? []) as FriendshipRow[];
     if (rows.length === 0) {
       setPendingRequests([]);
       return;
     }
     const senderIds = rows.map((row) => row.user_id);
-    const { data: profiles } = await supabase.rpc("get_visible_profiles", { p_ids: senderIds });
-    const profileMap = new Map(((profiles ?? []) as { id: string; name: string | null }[]).map((profile) => [profile.id, profile.name?.trim() || "Usuario"]));
-    setPendingRequests(rows.map((row) => ({ id: row.id, senderId: row.user_id, name: profileMap.get(row.user_id) || "Usuario", message: row.request_message ?? null })));
+    const { data: profiles, error: profilesError } = await supabase.rpc("get_visible_profiles", { p_ids: senderIds });
+    if (profilesError) {
+      setRequestsError("No se pudieron mostrar los perfiles de las solicitudes.");
+      return;
+    }
+    const profileMap = new Map(
+      ((profiles ?? []) as { id: string; name: string | null; avatar_url?: string | null }[]).map((profile) => [
+        profile.id,
+        { name: profile.name?.trim() || "Usuario", avatarUrl: profile.avatar_url ?? null },
+      ]),
+    );
+    setPendingRequests(
+      rows.map((row) => ({
+        id: row.id,
+        senderId: row.user_id,
+        name: profileMap.get(row.user_id)?.name || "Usuario",
+        avatarUrl: profileMap.get(row.user_id)?.avatarUrl ?? null,
+        message: row.request_message ?? null,
+      })),
+    );
   }, [user]);
 
   const respondToRequest = async (requestId: number, status: "accepted" | "blocked") => {
-    const { error } = await supabase.from("friendships").update({ status }).eq("id", requestId).eq("friend_id", user?.id ?? "");
-    if (error) {
-      setLoadError(error.message);
-      return;
+    if (respondingRequestId !== null) return;
+    setRespondingRequestId(requestId);
+    setRequestsError(null);
+    try {
+      const { error } = await supabase.from("friendships").update({ status }).eq("id", requestId).eq("friend_id", user?.id ?? "");
+      if (error) {
+        setRequestsError("No se pudo actualizar la solicitud. Inténtalo de nuevo.");
+        return;
+      }
+      setPendingRequests((current) => current.filter((request) => request.id !== requestId));
+      void fetchFriends();
+    } finally {
+      setRespondingRequestId(null);
     }
-    setPendingRequests((current) => current.filter((request) => request.id !== requestId));
-    void fetchFriends();
   };
 
   const fetchFriends = useCallback(async () => {
@@ -189,8 +219,7 @@ export default function FriendsScreen() {
       );
     } catch (error) {
       console.error("Error loading friends:", error);
-      setFriends([]);
-      setLoadError(error instanceof Error ? error.message : "No se pudieron cargar tus amigos.");
+      setLoadError("No se pudieron actualizar tus amigos. Conservamos la información anterior; inténtalo de nuevo.");
     } finally {
       hasLoadedFriendsOnce.current = true;
       setIsLoading(false);
@@ -245,6 +274,11 @@ export default function FriendsScreen() {
 
   const friendsInBars = friends.filter((friend) => friend.status === "in_bar").length;
 
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try { await Promise.all([fetchFriends(), fetchPendingRequests()]); } finally { setIsRefreshing(false); }
+  }, [fetchFriends, fetchPendingRequests]);
+
   const renderFriendCard = ({ item: friend }: { item: Friend }) => {
     const isInBar = friend.status === "in_bar";
     const openFriendStory = () => {
@@ -257,7 +291,7 @@ export default function FriendsScreen() {
     return (
       <Pressable onPress={() => router.push(`/profile/${friend.id}`)} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
         <View
-          className="mb-2 flex-row items-center gap-3 rounded-2xl border p-3"
+          className="p-3 rounded-2xl mb-2 flex-row items-center gap-3 border"
           style={{ backgroundColor: colors.surface, borderColor: colors.border }}
         >
           <TouchableOpacity
@@ -294,7 +328,7 @@ export default function FriendsScreen() {
                   source={{ uri: friend.avatarUrl }}
                   style={{ width: 60, height: 60, borderRadius: 30 }}
                   contentFit="cover"
-                  cachePolicy="none"
+                  cachePolicy="memory-disk"
                 />
               ) : (
                 <Text className="text-xl font-bold" style={{ color: colors.primary }}>
@@ -346,24 +380,24 @@ export default function FriendsScreen() {
             <Text className="text-sm text-muted">
               {friendsInBars > 0 ? `${friendsInBars} amigos en bares` : "Todavía no tienes amigos en bares"}
             </Text>
-            <View className="mt-3 flex-row gap-2">
-              <Pressable
-                onPress={() => setIsQrVisible(true)}
-                className="flex-1 items-center justify-center rounded-xl border py-2.5"
-                style={{ borderColor: colors.primary, backgroundColor: colors.primary + "18" }}
-              >
-                <Text className="text-sm font-bold" style={{ color: colors.primary }}>
-                  Tu QR
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => router.push("/scan-qr")}
-                className="flex-1 items-center justify-center rounded-xl py-2.5"
-                style={{ backgroundColor: colors.primary }}
-              >
-                <Text className="text-sm font-bold text-background">Escanear amigo</Text>
-              </Pressable>
-            </View>
+            <Pressable
+              onPress={() => setIsQrVisible(true)}
+              accessibilityLabel="Conectar con QR"
+              style={({ pressed }) => ({
+                marginTop: 14,
+                minHeight: 52,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                borderRadius: 16,
+                backgroundColor: colors.primary,
+                opacity: pressed ? 0.84 : 1,
+              })}
+            >
+              <IconSymbol name="qrcode" size={21} color={colors.background} />
+              <Text className="text-sm font-bold text-background">Conectar con QR</Text>
+            </Pressable>
           </View>
 
           <View className="mb-4 flex-row rounded-xl border p-1" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
@@ -371,7 +405,10 @@ export default function FriendsScreen() {
               <Pressable
                 key={section}
                 onPress={() => setFriendsSection(section)}
-                style={{ flex: 1, alignItems: "center", borderRadius: 9, paddingVertical: 10, backgroundColor: friendsSection === section ? colors.primary : "transparent" }}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: friendsSection === section }}
+                accessibilityLabel={section === "friends" ? "Ver mis amigos" : `Ver solicitudes${pendingRequests.length ? `, ${pendingRequests.length} pendientes` : ""}`}
+                style={{ flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingVertical: 10, backgroundColor: friendsSection === section ? colors.primary : "transparent" }}
               >
                 <Text style={{ color: friendsSection === section ? colors.background : colors.foreground, fontWeight: "700" }}>
                   {section === "friends" ? "Mis amigos" : `Solicitudes${pendingRequests.length ? ` (${pendingRequests.length})` : ""}`}
@@ -382,45 +419,84 @@ export default function FriendsScreen() {
 
           {friendsSection === "requests" ? (
             <View className="mb-5 rounded-2xl border p-4" style={{ backgroundColor: colors.surface, borderColor: colors.border }}>
-              <Text className="text-base font-bold text-foreground">Solicitudes para conectar</Text>
-              {pendingRequests.length === 0 ? <Text className="mt-3 text-sm text-muted">No tienes solicitudes pendientes.</Text> : null}
+              <View className="flex-row items-center justify-between">
+                <View>
+                  <Text className="text-base font-bold text-foreground">Solicitudes para conectar</Text>
+                  <Text className="mt-1 text-xs text-muted">Responde cuando estés listo</Text>
+                </View>
+                {pendingRequests.length ? (
+                  <View className="rounded-full px-3 py-1" style={{ backgroundColor: `${colors.primary}20` }}>
+                    <Text className="text-xs font-bold" style={{ color: colors.primary }}>{pendingRequests.length}</Text>
+                  </View>
+                ) : null}
+              </View>
+              {requestsError ? (
+                <View className="mt-3 rounded-xl border p-3" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}12` }}>
+                  <Text className="text-sm text-foreground">{requestsError}</Text>
+                  <Pressable onPress={() => void fetchPendingRequests()} accessibilityRole="button" accessibilityLabel="Reintentar cargar solicitudes" style={{ minHeight: 44, justifyContent: "center" }}>
+                    <Text className="font-bold" style={{ color: colors.primary }}>Reintentar</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {pendingRequests.length === 0 && !requestsError ? <Text className="mt-4 text-sm text-muted">No tienes solicitudes pendientes.</Text> : null}
               {pendingRequests.map((request) => (
                 <View
                   key={request.id}
-                  className="mt-3 rounded-xl border p-3"
+                  className="mt-4 rounded-2xl border p-4"
                   style={{ borderColor: colors.border, backgroundColor: colors.background }}
                 >
-                  <Text className="font-semibold text-foreground">{request.name}</Text>
+                  <Pressable
+                    onPress={() => router.push(`/profile/${request.senderId}`)}
+                    className="flex-row items-center gap-3"
+                  >
+                    <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-full" style={{ backgroundColor: `${colors.primary}22` }}>
+                      {request.avatarUrl ? (
+                        <ExpoImage source={{ uri: request.avatarUrl }} style={{ width: 48, height: 48 }} contentFit="cover" />
+                      ) : (
+                        <Text className="text-lg font-bold" style={{ color: colors.primary }}>{getInitials(request.name)}</Text>
+                      )}
+                    </View>
+                    <View className="flex-1">
+                      <Text className="font-semibold text-foreground">{request.name}</Text>
+                      <Text className="mt-1 text-xs text-muted">Toca para ver su perfil</Text>
+                    </View>
+                  </Pressable>
                   {request.message ? (
                     <Text className="mt-1 text-sm leading-5 text-muted">“{request.message}”</Text>
                   ) : null}
-                  <View className="mt-3 flex-row gap-2">
+                  <View className="mt-4 flex-row gap-3">
                     <Pressable
+                      disabled={respondingRequestId === request.id}
                       onPress={() => void respondToRequest(request.id, "accepted")}
                       style={({ pressed }) => ({
                         flex: 1,
+                        minHeight: 48,
                         alignItems: "center",
+                        justifyContent: "center",
                         borderRadius: 10,
                         backgroundColor: colors.primary,
                         paddingVertical: 10,
-                        opacity: pressed ? 0.8 : 1,
+                        opacity: respondingRequestId === request.id ? 0.55 : pressed ? 0.8 : 1,
                       })}
                     >
-                      <Text className="text-xs font-bold text-background">Aceptar</Text>
+                      {respondingRequestId === request.id ? <ActivityIndicator color={colors.background} /> : <Text className="text-sm font-bold text-background">Aceptar</Text>}
                     </Pressable>
                     <Pressable
+                      disabled={respondingRequestId === request.id}
                       onPress={() => void respondToRequest(request.id, "blocked")}
                       style={({ pressed }) => ({
                         flex: 1,
+                        minHeight: 48,
                         alignItems: "center",
+                        justifyContent: "center",
                         borderRadius: 10,
                         borderWidth: 1,
                         borderColor: colors.border,
                         paddingVertical: 10,
-                        opacity: pressed ? 0.7 : 1,
+                        opacity: respondingRequestId === request.id ? 0.55 : pressed ? 0.7 : 1,
                       })}
                     >
-                      <Text className="text-xs font-semibold text-foreground">Ahora no</Text>
+                      <Text className="text-sm font-semibold text-foreground">Rechazar</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -487,33 +563,24 @@ export default function FriendsScreen() {
             </View>
           ) : null}
 
-          <View className="mb-4 flex-row gap-2">
-            <Pressable
-              onPress={() => setIsQrVisible(true)}
+           <View className="mb-4">
+             <Pressable
+               disabled={isLoadingNearby}
+               onPress={() => void fetchNearbyProfiles()}
+              accessibilityRole="button"
+              accessibilityLabel="Buscar personas cercanas"
               style={({ pressed }) => ({
-                flex: 1,
+                minHeight: 48,
                 alignItems: "center",
-                borderRadius: 12,
-                backgroundColor: colors.primary,
-                paddingVertical: 12,
-                opacity: pressed ? 0.85 : 1,
-              })}
-            >
-              <Text className="text-sm font-bold text-background">Mi QR</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => void fetchNearbyProfiles()}
-              style={({ pressed }) => ({
-                flex: 1,
-                alignItems: "center",
+                justifyContent: "center",
                 borderRadius: 12,
                 borderWidth: 1,
                 borderColor: colors.border,
                 paddingVertical: 12,
-                opacity: pressed ? 0.8 : 1,
-              })}
-            >
-              <Text className="text-sm font-semibold text-foreground">Cercanos</Text>
+                 opacity: isLoadingNearby ? 0.55 : pressed ? 0.8 : 1,
+               })}
+             >
+               {isLoadingNearby ? <ActivityIndicator color={colors.primary} /> : <Text className="text-sm font-semibold text-foreground">Ver personas cercanas</Text>}
             </Pressable>
           </View>
 
@@ -536,12 +603,13 @@ export default function FriendsScreen() {
             </View>
           ) : null}
 
-          {loadError ? <Text className="mb-2 text-sm text-muted">{loadError}</Text> : null}
+          {loadError ? <View className="mb-3 rounded-xl border p-3" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}12` }}><Text className="text-sm text-foreground">{loadError}</Text><Pressable onPress={() => void handleRefresh()} accessibilityRole="button" accessibilityLabel="Reintentar cargar amigos" style={{ minHeight: 44, justifyContent: "center" }}><Text className="font-bold" style={{ color: colors.primary }}>Reintentar</Text></Pressable></View> : null}
           {isLoading ? (
-            <ActivityIndicator color={colors.primary} />
+            <View accessibilityLabel="Cargando amigos" className="gap-2"><View className="h-16 rounded-2xl" style={{ backgroundColor: `${colors.border}55` }} /><View className="h-16 rounded-2xl" style={{ backgroundColor: `${colors.border}55` }} /><View className="h-16 rounded-2xl" style={{ backgroundColor: `${colors.border}55` }} /></View>
           ) : (
             <FlatList
               data={filteredFriends}
+              refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} colors={[colors.primary]} />}
               keyExtractor={(item) => item.id}
               renderItem={renderFriendCard}
               ListEmptyComponent={<Text className="text-muted">Aún no tienes amigos conectados.</Text>}
@@ -550,14 +618,28 @@ export default function FriendsScreen() {
           )}
         </View>
 
-        <Modal visible={isQrVisible} transparent animationType="fade" onRequestClose={() => setIsQrVisible(false)}>
+        <Modal visible={isQrVisible} transparent animationType="slide" onRequestClose={() => setIsQrVisible(false)}>
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}>
-            <View style={{ backgroundColor: colors.surface, borderRadius: 20, padding: 20, alignItems: "center" }}>
-              <Text className="mb-3 text-lg font-bold text-foreground">Tu código QR</Text>
-              {user?.id ? <QRCode value={`tragos://profile/${user.id}`} size={200} /> : null}
-              <Pressable onPress={() => setIsQrVisible(false)} style={{ marginTop: 16 }}>
-                <Text style={{ color: colors.primary, fontWeight: "700" }}>Cerrar</Text>
+            <View style={{ backgroundColor: colors.surface, borderRadius: 24, padding: 22 }}>
+              <View className="mb-2 flex-row items-center justify-between">
+                <View>
+                  <Text className="text-xl font-bold text-foreground">Conectar con QR</Text>
+              <Text className="mt-1 text-sm text-muted">Escanea un código o comparte el tuyo</Text>
+                </View>
+                <Pressable onPress={() => setIsQrVisible(false)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Cerrar código QR" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
+                  <Text className="text-lg font-bold text-muted">×</Text>
+                </Pressable>
+              </View>
+              <Pressable
+                onPress={() => { setIsQrVisible(false); router.push("/scan-qr"); }}
+                style={({ pressed }) => ({ marginTop: 18, minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: colors.primary, opacity: pressed ? 0.82 : 1 })}
+              >
+                <Text className="font-bold text-background">Escanear QR</Text>
               </Pressable>
+              <View className="mt-5 items-center rounded-2xl p-4" style={{ backgroundColor: colors.background }}>
+                <Text className="mb-3 text-xs font-bold uppercase tracking-wider text-muted">Mi código personal</Text>
+                {user?.id ? <QRCode value={`socialsip://profile/${user.id}`} size={170} /> : null}
+              </View>
             </View>
           </View>
         </Modal>

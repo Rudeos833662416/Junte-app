@@ -2,16 +2,28 @@ import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { completeSupabaseAuthUrl, SUPABASE_AUTH_REDIRECT, supabase } from "@/lib/supabase";
+import { BrandBackdrop } from "@/components/brand-backdrop";
+import { useThemeContext } from "@/lib/theme-provider";
 import { useState } from "react";
 import * as WebBrowser from "expo-web-browser";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 if (Platform.OS === "web") {
   WebBrowser.maybeCompleteAuthSession();
 }
 
+function authErrorMessage(cause: unknown, fallback: string) {
+  const message = cause instanceof Error ? cause.message.toLowerCase() : "";
+  if (message.includes("invalid login credentials")) return "El email o la contraseña no son correctos.";
+  if (message.includes("email not confirmed")) return "Confirma tu email antes de iniciar sesión.";
+  if (message.includes("cancel")) return "El inicio de sesión fue cancelado.";
+  if (message.includes("network") || message.includes("fetch")) return "No hay conexión estable. Revisa internet e inténtalo de nuevo.";
+  return fallback;
+}
+
 export default function LoginScreen() {
   const colors = useColors();
+  const { colorScheme } = useThemeContext();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,7 +54,7 @@ export default function LoginScreen() {
         setErrorMessage("El inicio de sesión con Google fue cancelado.");
       }
     } catch (cause) {
-      setErrorMessage(cause instanceof Error ? cause.message : "No se pudo iniciar sesión con Google.");
+      setErrorMessage(authErrorMessage(cause, "No se pudo iniciar sesión con Google. Inténtalo de nuevo."));
     } finally {
       setIsSubmitting(false);
     }
@@ -83,7 +95,7 @@ export default function LoginScreen() {
         if (error) throw error;
       }
     } catch (cause) {
-      setErrorMessage(cause instanceof Error ? cause.message : "No se pudo completar el acceso.");
+      setErrorMessage(authErrorMessage(cause, "No se pudo completar el acceso. Revisa tus datos e inténtalo de nuevo."));
     } finally {
       setIsSubmitting(false);
     }
@@ -91,12 +103,18 @@ export default function LoginScreen() {
 
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]} className="px-6">
+      <BrandBackdrop>
       <ScrollView contentContainerStyle={{ flexGrow: 1, paddingVertical: 40, justifyContent: "center" }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View className="items-center">
-          <Text className="text-4xl font-bold text-foreground">Tragos Sociales</Text>
-          <Text className="mt-1 text-sm font-semibold tracking-[3px] text-primary">time to drink</Text>
+          <Image
+            source={colorScheme === "light" ? require("@/assets/brand/wordmark-light.png") : require("@/assets/brand/wordmark-dark.png")}
+            accessibilityLabel="Junta2"
+            resizeMode="contain"
+            style={{ width: 248, height: 116 }}
+          />
+          <Text className="-mt-1 text-sm font-bold uppercase tracking-[2px] text-primary">Tus panas, tu plan, tu junte</Text>
           <Text className="mt-3 max-w-xs text-center text-base leading-6 text-muted">
-            Tus amigos, tus bares y tus mejores planes en un solo lugar.
+            Conecta con tus panas, descubre planes y brinda juntos.
           </Text>
         </View>
 
@@ -104,6 +122,7 @@ export default function LoginScreen() {
 
           {mode === "signup" ? (
             <TextInput
+              accessibilityLabel="Nombre"
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
@@ -114,6 +133,7 @@ export default function LoginScreen() {
             />
           ) : null}
           <TextInput
+            accessibilityLabel="Email"
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -126,6 +146,7 @@ export default function LoginScreen() {
           />
           <View className="relative">
             <TextInput
+              accessibilityLabel="Contraseña"
               value={password}
               onChangeText={setPassword}
               autoCapitalize="none"
@@ -162,7 +183,7 @@ export default function LoginScreen() {
           </View>
 
           {errorMessage ? (
-            <View className="rounded-xl border border-error/30 bg-error/10 p-4">
+            <View accessibilityRole="alert" className="rounded-xl border border-error/30 bg-error/10 p-4">
               <Text className="text-sm leading-5 text-error">{errorMessage}</Text>
             </View>
           ) : null}
@@ -184,10 +205,12 @@ export default function LoginScreen() {
               },
             ]}
           >
-            {isSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-base font-bold text-white">{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</Text>}
+            {isSubmitting ? <ActivityIndicator color={colors.onPrimary} /> : <Text className="text-base font-bold" style={{ color: colors.onPrimary }}>{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</Text>}
           </Pressable>
 
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Continuar con Google"
             onPress={handleGoogleLogin}
             disabled={isSubmitting}
             style={({ pressed }) => [
@@ -206,13 +229,14 @@ export default function LoginScreen() {
             <Text className="text-base font-semibold text-foreground">Continuar con Google</Text>
           </Pressable>
 
-          <Pressable onPress={() => { setMode(mode === "login" ? "signup" : "login"); setErrorMessage(null); }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={mode === "login" ? "Crear una cuenta" : "Volver a iniciar sesión"} onPress={() => { setMode(mode === "login" ? "signup" : "login"); setErrorMessage(null); }}>
             <Text className="text-center text-sm font-semibold" style={{ color: colors.primary }}>
               {mode === "login" ? "¿No tienes cuenta? Crear una" : "¿Ya tienes cuenta? Iniciar sesión"}
             </Text>
           </Pressable>
         </View>
       </ScrollView>
+      </BrandBackdrop>
     </ScreenContainer>
   );
 }

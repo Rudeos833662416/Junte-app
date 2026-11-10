@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const indexSource = readFileSync(resolve(process.cwd(), "app/(tabs)/index.tsx"), "utf8");
 const mapSource = readFileSync(resolve(process.cwd(), "components/social-map-screen.tsx"), "utf8");
-const eventsSource = readFileSync(resolve(process.cwd(), "app/(tabs)/events.tsx"), "utf8");
+const eventsSource = readFileSync(resolve(process.cwd(), "app/events-completo-restaurado.tsx"), "utf8");
 const sqlSource = readFileSync(resolve(process.cwd(), "supabase/migrations/0028_brindar_atomic_map_activity.sql"), "utf8");
 
 describe("Brindis activo y clustering", () => {

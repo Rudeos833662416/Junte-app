@@ -1,20 +1,24 @@
 /** @type {const} */
+// Junta2 brand system — source of truth derived from MANUALDEMARCA.pdf.
 const themeColors = {
-  // Tragos Sociales: navy profundo, negro azabache, plata lunar y blanco estelar.
-  primary: { light: '#9BC4E5', dark: '#9BC4E5' },
-  background: { light: '#05070D', dark: '#05070D' },
-  surface: { light: '#0B1220', dark: '#0B1220' },
-  foreground: { light: '#F7FBFF', dark: '#F7FBFF' },
-  muted: { light: '#A9B8C8', dark: '#A9B8C8' },
-  border: { light: '#22344A', dark: '#22344A' },
-  success: { light: '#62D7B4', dark: '#62D7B4' },
-  warning: { light: '#F1C875', dark: '#F1C875' },
-  error: { light: '#F28D9A', dark: '#F28D9A' },
-  midnight: { light: '#0B1220', dark: '#0B1220' },
-  abyss: { light: '#05070D', dark: '#05070D' },
-  lunar: { light: '#F7FBFF', dark: '#F7FBFF' },
-  silver: { light: '#B8C6D4', dark: '#B8C6D4' },
-  starlight: { light: '#D9ECFF', dark: '#D9ECFF' },
+  primary: { light: '#FC4C02', dark: '#FC4C02' },
+  onPrimary: { light: '#17120E', dark: '#17120E' },
+  primaryPressed: { light: '#D93E00', dark: '#FF6A22' },
+  secondary: { light: '#FF7A18', dark: '#FF7A18' },
+  accent: { light: '#FFF1D0', dark: '#FFF1D0' },
+  background: { light: '#FFF1D0', dark: '#0A0A0A' },
+  surface: { light: '#FFF9EC', dark: '#151515' },
+  foreground: { light: '#17120E', dark: '#FFF8E8' },
+  muted: { light: '#665A4D', dark: '#B9AA98' },
+  border: { light: '#E8D7B8', dark: '#3A3027' },
+  success: { light: '#247A50', dark: '#65D391' },
+  warning: { light: '#A85E00', dark: '#FFB45A' },
+  error: { light: '#B42318', dark: '#FF8A80' },
+  midnight: { light: '#151515', dark: '#151515' },
+  abyss: { light: '#0A0A0A', dark: '#0A0A0A' },
+  lunar: { light: '#FFF1D0', dark: '#FFF1D0' },
+  silver: { light: '#B9AA98', dark: '#B9AA98' },
+  starlight: { light: '#FFF8E8', dark: '#FFF8E8' },
 };
 
 module.exports = { themeColors };

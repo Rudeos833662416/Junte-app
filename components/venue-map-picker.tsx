@@ -15,7 +15,7 @@ export default function VenueMapPicker({ initialCoordinate }: VenueMapPickerProp
     <View className="h-56 items-center justify-center rounded-2xl border px-5" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
       <Text className="text-center text-sm font-semibold text-foreground">El selector exacto está disponible en el APK</Text>
       <Text className="mt-2 text-center text-xs leading-5 text-muted">
-        {initialCoordinate ? "Abre Tragos Sociales en Android o iOS para tocar el punto exacto en el mapa." : "Permite la ubicación para centrar el mapa."}
+        {initialCoordinate ? "Abre Junta2 en Android o iOS para tocar el punto exacto en el mapa." : "Permite la ubicación para centrar el mapa."}
       </Text>
     </View>
   );

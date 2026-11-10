@@ -30,10 +30,12 @@ export default function MessagesInboxScreen() {
   const { user } = useAuth({ autoFetch: true });
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<Conversation[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const { data, error } = await supabase
         .from("direct_messages")
@@ -85,7 +87,7 @@ export default function MessagesInboxScreen() {
       setItems(list);
     } catch (err) {
       console.warn("Inbox load failed:", err);
-      setItems([]);
+      setLoadError("No se pudo actualizar tus mensajes. Conservamos las conversaciones anteriores; inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -126,6 +128,8 @@ export default function MessagesInboxScreen() {
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : (
+        <>
+        {loadError ? <View className="mb-3 rounded-xl border p-3" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}12` }}><Text className="text-sm text-foreground">{loadError}</Text><Pressable onPress={() => void load()} accessibilityRole="button" accessibilityLabel="Reintentar actualizar mensajes" style={{ minHeight: 44, justifyContent: "center" }}><Text className="font-bold" style={{ color: colors.primary }}>Reintentar</Text></Pressable></View> : null}
         <FlatList
           data={items}
           keyExtractor={(item) => item.otherId}
@@ -208,7 +212,8 @@ export default function MessagesInboxScreen() {
               </View>
             </Pressable>
           )}
-        />
+          />
+        </>
       )}
     </ScreenContainer>
   );

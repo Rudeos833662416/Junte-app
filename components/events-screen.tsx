@@ -15,7 +15,7 @@ import { supabase } from "@/lib/supabase";
 import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -63,6 +63,8 @@ type FeaturedVenue = {
 export function EventsScreen() {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
+  const { postId: requestedPostId } = useLocalSearchParams<{ postId?: string }>();
+  const postId = typeof requestedPostId === "string" ? requestedPostId : undefined;
   const [posts, setPosts] = useState<OfficialPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -89,6 +91,7 @@ export function EventsScreen() {
   const venueCarouselIndex = useRef(0);
   const venueCarouselPaused = useRef(false);
   const commentsListRef = useRef<FlatList<CommentRow>>(null);
+  const postsListRef = useRef<FlatList<OfficialPost>>(null);
 
 
   useFocusEffect(
@@ -268,6 +271,16 @@ export function EventsScreen() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!postId || !posts.length) return;
+    const index = posts.findIndex((post) => post.id === postId);
+    if (index < 0) return;
+    const timer = setTimeout(() => {
+      postsListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.12 });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [postId, posts]);
 
   useEffect(() => {
     if (!user) return;
@@ -608,7 +621,11 @@ export function EventsScreen() {
       ) : null}
 
       <FlatList
+        ref={postsListRef}
         data={posts}
+        onScrollToIndexFailed={({ index }) => {
+          setTimeout(() => postsListRef.current?.scrollToIndex({ index, animated: true }), 300);
+        }}
         ListHeaderComponent={() => (
 <View
         style={{
