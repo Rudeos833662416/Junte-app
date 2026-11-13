@@ -17,6 +17,7 @@ import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import MapView, { Marker } from "react-native-maps";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -1127,6 +1128,7 @@ export function EventsScreen() {
           </View>
           {venueProfile?.active_promotion ? <View style={{ marginTop: 16, borderRadius: 18, padding: 15, backgroundColor: `${colors.primary}16`, borderWidth: 1, borderColor: `${colors.primary}44` }}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: "900", textTransform: "uppercase" }}>Oferta activa</Text><Text style={{ color: colors.foreground, fontSize: 17, fontWeight: "900", marginTop: 5 }}>{venueProfile.active_promotion}</Text></View> : null}
           {venueProfile?.opening_hours ? <View style={{ marginTop: 14, borderRadius: 18, padding: 15, backgroundColor: colors.surface }}><Text style={{ color: colors.muted, fontSize: 12, fontWeight: "800" }}>HORARIO</Text><Text style={{ color: colors.foreground, fontSize: 16, fontWeight: "800", marginTop: 5 }}>{venueProfile.opening_hours}</Text></View> : null}
+          {venueProfile?.latitude != null && venueProfile.longitude != null ? <View style={{ marginTop: 14, borderRadius: 18, overflow: "hidden", backgroundColor: colors.surface }}><Text style={{ color: colors.muted, fontSize: 12, fontWeight: "800", paddingHorizontal: 15, paddingTop: 15 }}>UBICACIÓN</Text><Pressable onPress={() => { const v = venueProfile; setVenueProfile(null); openVenueOnMap(v); }} accessibilityRole="button" accessibilityLabel={`Abrir ${venueProfile.name} en el mapa`}><MapView style={{ height: 142, marginTop: 10 }} initialRegion={{ latitude: venueProfile.latitude, longitude: venueProfile.longitude, latitudeDelta: 0.008, longitudeDelta: 0.008 }} scrollEnabled={false} zoomEnabled={false} rotateEnabled={false} pitchEnabled={false} showsPointsOfInterest={false} showsUserLocation={false}><Marker coordinate={{ latitude: venueProfile.latitude, longitude: venueProfile.longitude }} /></MapView><Text style={{ color: colors.primary, fontWeight: "900", padding: 13 }}>Abrir mapa centrado →</Text></Pressable></View> : null}
           {venueProfile?.description ? (
             <View style={{ marginTop: 14, borderRadius: 18, padding: 15, backgroundColor: colors.surface }}><Text style={{ color: colors.muted, fontSize: 12, fontWeight: "800" }}>SOBRE EL LOCAL</Text><Text style={{ color: colors.foreground, marginTop: 7, lineHeight: 22 }}>
               {venueProfile.description}
