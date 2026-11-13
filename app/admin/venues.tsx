@@ -36,6 +36,10 @@ type FormState = {
   rank: string;
   latitude: string;
   longitude: string;
+  facebook: string;
+  instagram: string;
+  tiktok: string;
+  whatsapp: string;
 };
 
 const emptyForm = (): FormState => ({
@@ -47,6 +51,10 @@ const emptyForm = (): FormState => ({
   rank: "",
   latitude: "",
   longitude: "",
+  facebook: "",
+  instagram: "",
+  tiktok: "",
+  whatsapp: "",
 });
 
 function formFromVenue(venue: Venue): FormState {
@@ -59,6 +67,10 @@ function formFromVenue(venue: Venue): FormState {
     rank: venue.admin_rank != null ? String(venue.admin_rank) : "",
     latitude: venue.latitude != null ? String(venue.latitude) : "",
     longitude: venue.longitude != null ? String(venue.longitude) : "",
+    facebook: venue.facebook_url ?? "",
+    instagram: venue.instagram_url ?? "",
+    tiktok: venue.tiktok_url ?? "",
+    whatsapp: venue.whatsapp_number ?? "",
   };
 }
 
@@ -92,7 +104,7 @@ export default function AdminVenuesScreen() {
       const { data, error } = await supabase
         .from("venues")
         .select(
-          "id, name, address, description, city, website_url, latitude, longitude, admin_rank, admin_photo_url",
+          "id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url",
         )
         .order("admin_rank", { ascending: true, nullsFirst: false })
         .limit(100);
@@ -100,7 +112,7 @@ export default function AdminVenuesScreen() {
         const fallback = await supabase
           .from("venues")
           .select(
-            "id, name, address, description, city, latitude, longitude, admin_rank, admin_photo_url",
+            "id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url",
           )
           .order("admin_rank", { ascending: true, nullsFirst: false })
           .limit(100);
@@ -185,6 +197,10 @@ export default function AdminVenuesScreen() {
         address: form.address.trim() || null,
         city: form.city.trim() || null,
         website_url: form.website.trim() || null,
+        facebook_url: form.facebook.trim() || null,
+        instagram_url: form.instagram.trim() || null,
+        tiktok_url: form.tiktok.trim() || null,
+        whatsapp_number: form.whatsapp.trim() || null,
         latitude: lat,
         longitude: lng,
         admin_rank: parseRank(),
@@ -215,6 +231,10 @@ export default function AdminVenuesScreen() {
         address: form.address.trim() || null,
         city: form.city.trim() || null,
         website_url: form.website.trim() || null,
+        facebook_url: form.facebook.trim() || null,
+        instagram_url: form.instagram.trim() || null,
+        tiktok_url: form.tiktok.trim() || null,
+        whatsapp_number: form.whatsapp.trim() || null,
         latitude: lat,
         longitude: lng,
         admin_rank: parseRank(),
@@ -363,6 +383,14 @@ export default function AdminVenuesScreen() {
         placeholderTextColor={colors.muted}
         style={inputStyle}
       />
+      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Facebook (URL)</Text>
+      <TextInput value={form.facebook} onChangeText={(v) => setField("facebook", v)} placeholder="https://facebook.com/..." autoCapitalize="none" keyboardType="url" placeholderTextColor={colors.muted} style={inputStyle} />
+      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Instagram (URL)</Text>
+      <TextInput value={form.instagram} onChangeText={(v) => setField("instagram", v)} placeholder="https://instagram.com/..." autoCapitalize="none" keyboardType="url" placeholderTextColor={colors.muted} style={inputStyle} />
+      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>TikTok (URL)</Text>
+      <TextInput value={form.tiktok} onChangeText={(v) => setField("tiktok", v)} placeholder="https://tiktok.com/@..." autoCapitalize="none" keyboardType="url" placeholderTextColor={colors.muted} style={inputStyle} />
+      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>WhatsApp (con código de país)</Text>
+      <TextInput value={form.whatsapp} onChangeText={(v) => setField("whatsapp", v)} placeholder="+58 412 123 4567" autoCapitalize="none" keyboardType="phone-pad" placeholderTextColor={colors.muted} style={inputStyle} />
       <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Ranking (1–99)</Text>
       <TextInput
         value={form.rank}

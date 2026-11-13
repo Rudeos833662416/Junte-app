@@ -38,6 +38,10 @@ export async function updateVenueAdmin(params: {
   city?: string | null;
   description?: string | null;
   website_url?: string | null;
+  facebook_url?: string | null;
+  instagram_url?: string | null;
+  tiktok_url?: string | null;
+  whatsapp_number?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   admin_rank?: number | null;
@@ -49,6 +53,10 @@ export async function updateVenueAdmin(params: {
   if (params.city !== undefined) payload.city = params.city;
   if (params.description !== undefined) payload.description = params.description;
   if (params.website_url !== undefined) payload.website_url = params.website_url;
+  if (params.facebook_url !== undefined) payload.facebook_url = params.facebook_url;
+  if (params.instagram_url !== undefined) payload.instagram_url = params.instagram_url;
+  if (params.tiktok_url !== undefined) payload.tiktok_url = params.tiktok_url;
+  if (params.whatsapp_number !== undefined) payload.whatsapp_number = params.whatsapp_number;
   if (params.latitude !== undefined) payload.latitude = params.latitude;
   if (params.longitude !== undefined) payload.longitude = params.longitude;
   if (params.admin_rank !== undefined) payload.admin_rank = params.admin_rank;
@@ -68,6 +76,10 @@ export async function createVenueAdmin(params: {
   city?: string | null;
   description?: string | null;
   website_url?: string | null;
+  facebook_url?: string | null;
+  instagram_url?: string | null;
+  tiktok_url?: string | null;
+  whatsapp_number?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   admin_rank?: number | null;
@@ -80,6 +92,10 @@ export async function createVenueAdmin(params: {
       city: params.city ?? null,
       description: params.description ?? null,
       website_url: params.website_url ?? null,
+      facebook_url: params.facebook_url ?? null,
+      instagram_url: params.instagram_url ?? null,
+      tiktok_url: params.tiktok_url ?? null,
+      whatsapp_number: params.whatsapp_number ?? null,
       latitude: params.latitude ?? null,
       longitude: params.longitude ?? null,
       admin_rank: params.admin_rank ?? null,

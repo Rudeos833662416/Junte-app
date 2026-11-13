@@ -10,11 +10,13 @@ import {
   formatDate,
 } from "@/lib/events-shared";
 import { publishOfficialPost } from "@/lib/events-admin";
+import { normalizeVenueUrl, normalizeWhatsAppUrl } from "@/lib/venue-contacts";
 import { reportError } from "@/lib/report";
 import { supabase } from "@/lib/supabase";
 import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -33,6 +35,7 @@ import {
   UIManager,
   KeyboardAvoidingView,
   Keyboard,
+  Linking,
   type ViewToken,
 } from "react-native";
 
@@ -48,6 +51,43 @@ function canEditComment(createdAt: string) {
   return Date.now() - new Date(createdAt).getTime() < EDIT_WINDOW_MS;
 }
 
+function VenueContactButton({
+  label,
+  icon,
+  color,
+  onPress,
+}: {
+  label: string;
+  icon: "facebook" | "instagram" | "music-note" | "whatsapp" | "web";
+  color: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Abrir ${label}`}
+      style={({ pressed }) => ({
+        minWidth: 44,
+        minHeight: 44,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: `${color}55`,
+        backgroundColor: `${color}14`,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 7,
+        opacity: pressed ? 0.72 : 1,
+      })}
+    >
+      <MaterialCommunityIcons name={icon} size={19} color={color} />
+      <Text style={{ color, fontWeight: "800", fontSize: 12 }}>{label}</Text>
+    </Pressable>
+  );
+}
+
 type FeaturedVenue = {
   id: number;
   name: string;
@@ -58,6 +98,11 @@ type FeaturedVenue = {
   longitude: number | null;
   admin_rank: number | null;
   admin_photo_url: string | null;
+  website_url: string | null;
+  facebook_url: string | null;
+  instagram_url: string | null;
+  tiktok_url: string | null;
+  whatsapp_number: string | null;
 };
 
 export function EventsScreen() {
@@ -254,7 +299,7 @@ export function EventsScreen() {
         setIsAdmin(Boolean(adminRow?.is_admin));
         const { data: venueRows } = await supabase
           .from("venues")
-          .select("id, name, address, description, city, latitude, longitude, admin_rank, admin_photo_url")
+          .select("id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url")
           .not("admin_rank", "is", null)
           .order("admin_rank", { ascending: true })
           .limit(5);
@@ -1047,6 +1092,53 @@ export function EventsScreen() {
           <Text style={{ color: colors.muted, marginTop: 8, lineHeight: 20 }}>
             {venueProfile?.address || venueProfile?.city || "Dirección por confirmar"}
           </Text>
+          {venueProfile?.description ? (
+            <Text style={{ color: colors.foreground, marginTop: 16, lineHeight: 22 }}>
+              {venueProfile.description}
+            </Text>
+          ) : null}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 18 }}>
+            {normalizeVenueUrl(venueProfile?.website_url) ? (
+              <VenueContactButton
+                label="Web"
+                icon="web"
+                color={colors.primary}
+                onPress={() => void Linking.openURL(normalizeVenueUrl(venueProfile?.website_url)!)}
+              />
+            ) : null}
+            {normalizeVenueUrl(venueProfile?.facebook_url) ? (
+              <VenueContactButton
+                label="Facebook"
+                icon="facebook"
+                color="#1877F2"
+                onPress={() => void Linking.openURL(normalizeVenueUrl(venueProfile?.facebook_url)!)}
+              />
+            ) : null}
+            {normalizeVenueUrl(venueProfile?.instagram_url) ? (
+              <VenueContactButton
+                label="Instagram"
+                icon="instagram"
+                color="#E4405F"
+                onPress={() => void Linking.openURL(normalizeVenueUrl(venueProfile?.instagram_url)!)}
+              />
+            ) : null}
+            {normalizeVenueUrl(venueProfile?.tiktok_url) ? (
+              <VenueContactButton
+                label="TikTok"
+                icon="music-note"
+                color={colors.foreground}
+                onPress={() => void Linking.openURL(normalizeVenueUrl(venueProfile?.tiktok_url)!)}
+              />
+            ) : null}
+            {normalizeWhatsAppUrl(venueProfile?.whatsapp_number) ? (
+              <VenueContactButton
+                label="WhatsApp"
+                icon="whatsapp"
+                color="#25D366"
+                onPress={() => void Linking.openURL(normalizeWhatsAppUrl(venueProfile?.whatsapp_number)!)}
+              />
+            ) : null}
+          </View>
           <Pressable
             onPress={() => {
               const v = venueProfile;

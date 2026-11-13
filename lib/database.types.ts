@@ -430,6 +430,11 @@ export type Database = {
           admin_rank: number | null
           admin_photo_url: string | null
           description: string | null
+          website_url: string | null
+          facebook_url: string | null
+          instagram_url: string | null
+          tiktok_url: string | null
+          whatsapp_number: string | null
         }
         Insert: {
           id?: number
@@ -446,6 +451,11 @@ export type Database = {
           admin_rank?: number | null
           admin_photo_url?: string | null
           description?: string | null
+          website_url?: string | null
+          facebook_url?: string | null
+          instagram_url?: string | null
+          tiktok_url?: string | null
+          whatsapp_number?: string | null
         }
         Update: {
           id?: number
@@ -462,6 +472,11 @@ export type Database = {
           admin_rank?: number | null
           admin_photo_url?: string | null
           description?: string | null
+          website_url?: string | null
+          facebook_url?: string | null
+          instagram_url?: string | null
+          tiktok_url?: string | null
+          whatsapp_number?: string | null
         }
         Relationships: []
       }

@@ -5,6 +5,10 @@ export type Venue = {
   description: string | null;
   city: string | null;
   website_url?: string | null;
+  facebook_url?: string | null;
+  instagram_url?: string | null;
+  tiktok_url?: string | null;
+  whatsapp_number?: string | null;
   latitude: number | null;
   longitude: number | null;
   admin_rank: number | null;
