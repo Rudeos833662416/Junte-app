@@ -29,7 +29,7 @@ function groupsOfFour(images: CollageImage[]) {
 
 function CollageLayer({ images, opacity, gap }: { images: CollageImage[]; opacity: Animated.Value | number; gap: number }) {
   return <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity }]}>
-    <View style={[styles.grid, { gap }]}>{images.map((image, index) => <ExpoImage key={`${image.id}-${index}`} source={{ uri: image.image_url }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" cachePolicy="memory-disk" contentFit="cover" transition={0} style={styles.tile} />)}</View>
+    <View style={[styles.grid, { gap }]}>{images.map((image, index) => <ExpoImage key={`${image.id}-${index}`} source={{ uri: image.image_url }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" cachePolicy="memory-disk" contentFit="cover" transition={220} style={styles.tile} />)}</View>
   </Animated.View>;
 }
 
@@ -101,12 +101,16 @@ export function HomeCollage() {
       holdTimer = setTimeout(() => {
         if (generation !== generationRef.current) return;
         const next = (activeGroup + 1) % groups.length;
-        transition.setValue(0);
-        Animated.timing(transition, { toValue: 1, duration: Math.max(3000, Math.min(3500, settings.fade_duration_ms)), useNativeDriver: true }).start(({ finished }) => {
-          if (!finished || generation !== generationRef.current) return;
-          setActiveGroup(next);
+        const nextUrls = groups[next].map((image) => image.image_url);
+        void ExpoImage.prefetch(nextUrls).finally(() => {
+          if (generation !== generationRef.current) return;
           transition.setValue(0);
-          fadeTimer = setTimeout(schedule, 0);
+          Animated.timing(transition, { toValue: 1, duration: Math.max(1800, Math.min(3500, settings.fade_duration_ms)), useNativeDriver: true }).start(({ finished }) => {
+            if (!finished || generation !== generationRef.current) return;
+            setActiveGroup(next);
+            transition.setValue(0);
+            fadeTimer = setTimeout(schedule, 0);
+          });
         });
       }, settings.hold_duration_ms);
     };

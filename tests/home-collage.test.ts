@@ -21,6 +21,7 @@ describe("Home collage", () => {
   it("uses a slow crossfade cadence and cleans Realtime", () => {
     expect(settings).toContain("fade_duration_ms: 2300");
     expect(settings).toContain("hold_duration_ms: 6500");
+    expect(collage).toContain("ExpoImage.prefetch");
     expect(collage).toContain("removeChannel");
   });
 
