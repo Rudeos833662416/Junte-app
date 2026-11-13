@@ -1,5 +1,7 @@
 import { ScreenContainer } from "@/components/screen-container";
 import { DrinkCircle } from "@/components/drink-circle";
+import { HomeCollage } from "@/components/home-collage";
+import { HomeCollageAdmin } from "@/components/home-collage-admin";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { useAppRefresh } from "@/lib/app-refresh";
@@ -29,6 +31,8 @@ export default function HomeScreen() {
   const { revision } = useAppRefresh();
 
   const [activeCheckin, setActiveCheckin] = useState<ActiveCheckin | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [collageAdminVisible, setCollageAdminVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkinVisibility, setCheckinVisibility] = useState<CheckinVisibility>("friends");
   const [friendOptions, setFriendOptions] = useState<{ id: string; name: string }[]>([]);
@@ -36,6 +40,16 @@ export default function HomeScreen() {
   const [visibilityMenuOpen, setVisibilityMenuOpen] = useState(false);
   const [exceptPickerOpen, setExceptPickerOpen] = useState(false);
   const hasLoadedHomeOnce = useRef(false);
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+    void supabase.from("profiles").select("is_admin").eq("id", user.id).maybeSingle().then(({ data }) => {
+      setIsAdmin(Boolean(data?.is_admin));
+    });
+  }, [user?.id]);
 
   const visibilityLabel = useMemo(() => {
     if (checkinVisibility === "everyone") return "Todos";
@@ -272,19 +286,33 @@ export default function HomeScreen() {
   const isCheckedIn = Boolean(activeCheckin);
 
   return (
-    <ScreenContainer className="p-6">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View className="flex-1 justify-center gap-7">
-          <View className="items-center gap-2">
-            <Text className="text-4xl font-bold text-foreground">
-              {isCheckedIn ? "¡Brindis activo!" : "¿Dónde estás?"}
-            </Text>
-            <Text className="text-center text-base text-muted">
-              {isCheckedIn
-                ? "Brindando desde tu ubicación actual"
-                : "Notifica a tus amigos dónde estás tomando algo"}
-            </Text>
-          </View>
+    <ScreenContainer className="p-0">
+      <View style={{ flex: 1 }}>
+        <HomeCollage />
+        <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 24 }} showsVerticalScrollIndicator={false}>
+          <View className="flex-1 justify-center gap-7">
+            <View className="items-center gap-2">
+              <View style={{ width: "100%", minHeight: 44, flexDirection: "row", justifyContent: "flex-end" }}>
+                {isAdmin ? (
+                  <Pressable
+                    onPress={() => setCollageAdminVisible(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Administrar collage de Home"
+                    style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: `${colors.surface}E8` }}
+                  >
+                    <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "900" }}>Collage</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              <Text className="text-4xl font-bold text-foreground">
+                {isCheckedIn ? "¡Brindis activo!" : "¿Dónde estás?"}
+              </Text>
+              <Text className="text-center text-base text-muted">
+                {isCheckedIn
+                  ? "Brindando desde tu ubicación actual"
+                  : "Notifica a tus amigos dónde estás tomando algo"}
+              </Text>
+            </View>
 
           <View className="items-center">
             {!isCheckedIn ? (
@@ -443,24 +471,26 @@ export default function HomeScreen() {
             ) : null}
           </View>
 
-          <View className="gap-3">
-            <Pressable
-              onPress={() => router.push("/(tabs)/map")}
-              style={({ pressed }) => ({
-                alignItems: "center",
-                borderRadius: 12,
-                borderColor: colors.border,
-                borderWidth: 1,
-                paddingVertical: 12,
-                opacity: pressed ? 0.7 : 1,
-              })}
-            >
-              <Text className="font-semibold text-foreground">Ver amigos en el mapa</Text>
-            </Pressable>
-            
+            <View className="gap-3">
+              <Pressable
+                onPress={() => router.push("/(tabs)/map")}
+                style={({ pressed }) => ({
+                  alignItems: "center",
+                  borderRadius: 12,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                  paddingVertical: 12,
+                  backgroundColor: `${colors.surface}E8`,
+                  opacity: pressed ? 0.7 : 1,
+                })}
+              >
+                <Text className="font-semibold text-foreground">Ver amigos en el mapa</Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+        <HomeCollageAdmin visible={collageAdminVisible} onClose={() => setCollageAdminVisible(false)} />
+      </View>
     </ScreenContainer>
   );
 }
