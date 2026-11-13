@@ -46,6 +46,11 @@ export async function updateVenueAdmin(params: {
   longitude?: number | null;
   admin_rank?: number | null;
   admin_photo_url?: string | null;
+  category?: string;
+  opening_hours?: string | null;
+  venue_status?: string;
+  rating?: number | null;
+  active_promotion?: string | null;
 }) {
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (params.name !== undefined) payload.name = params.name;
@@ -61,6 +66,11 @@ export async function updateVenueAdmin(params: {
   if (params.longitude !== undefined) payload.longitude = params.longitude;
   if (params.admin_rank !== undefined) payload.admin_rank = params.admin_rank;
   if (params.admin_photo_url !== undefined) payload.admin_photo_url = params.admin_photo_url;
+  if (params.category !== undefined) payload.category = params.category;
+  if (params.opening_hours !== undefined) payload.opening_hours = params.opening_hours;
+  if (params.venue_status !== undefined) payload.venue_status = params.venue_status;
+  if (params.rating !== undefined) payload.rating = params.rating;
+  if (params.active_promotion !== undefined) payload.active_promotion = params.active_promotion;
   const { error } = await supabase.from("venues").update(payload as never).eq("id", params.venueId);
   if (error) throw error;
 }
@@ -83,6 +93,11 @@ export async function createVenueAdmin(params: {
   latitude?: number | null;
   longitude?: number | null;
   admin_rank?: number | null;
+  category?: string;
+  opening_hours?: string | null;
+  venue_status?: string;
+  rating?: number | null;
+  active_promotion?: string | null;
 }) {
   const { data, error } = await supabase
     .from("venues")
@@ -99,6 +114,11 @@ export async function createVenueAdmin(params: {
       latitude: params.latitude ?? null,
       longitude: params.longitude ?? null,
       admin_rank: params.admin_rank ?? null,
+      category: params.category ?? "bar",
+      opening_hours: params.opening_hours ?? null,
+      venue_status: params.venue_status ?? "unknown",
+      rating: params.rating ?? null,
+      active_promotion: params.active_promotion ?? null,
       source: "admin",
     } as never)
     .select("id")

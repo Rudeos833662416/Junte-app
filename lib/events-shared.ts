@@ -1,3 +1,5 @@
+import type { VenueCategory } from "@/lib/map-venues";
+
 export type Venue = {
   id: number;
   name: string;
@@ -13,6 +15,11 @@ export type Venue = {
   longitude: number | null;
   admin_rank: number | null;
   admin_photo_url: string | null;
+  category?: VenueCategory;
+  opening_hours?: string | null;
+  venue_status?: "open" | "closed" | "unknown";
+  rating?: number | null;
+  active_promotion?: string | null;
 };
 
 export type OfficialPost = {

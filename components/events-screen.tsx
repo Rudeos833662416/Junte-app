@@ -107,13 +107,19 @@ type FeaturedVenue = {
   instagram_url: string | null;
   tiktok_url: string | null;
   whatsapp_number: string | null;
+  category?: string;
+  opening_hours?: string | null;
+  venue_status?: "open" | "closed" | "unknown";
+  rating?: number | null;
+  active_promotion?: string | null;
 };
 
 export function EventsScreen() {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
-  const { postId: requestedPostId } = useLocalSearchParams<{ postId?: string }>();
+  const { postId: requestedPostId, venueId: requestedVenueId } = useLocalSearchParams<{ postId?: string; venueId?: string }>();
   const postId = typeof requestedPostId === "string" ? requestedPostId : undefined;
+  const venueId = typeof requestedVenueId === "string" ? requestedVenueId : undefined;
   const [posts, setPosts] = useState<OfficialPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -303,11 +309,19 @@ export function EventsScreen() {
         setIsAdmin(Boolean(adminRow?.is_admin));
         const { data: venueRows } = await supabase
           .from("venues")
-          .select("id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url")
+          .select("id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url, category, opening_hours, venue_status, rating, active_promotion")
           .not("admin_rank", "is", null)
           .order("admin_rank", { ascending: true })
           .limit(5);
         setFeaturedVenues((venueRows ?? []) as FeaturedVenue[]);
+        if (venueId) {
+          const { data: requestedVenue } = await supabase
+            .from("venues")
+            .select("id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url, category, opening_hours, venue_status, rating, active_promotion")
+            .eq("id", Number(venueId))
+            .maybeSingle();
+          if (requestedVenue) setVenueProfile(requestedVenue as FeaturedVenue);
+        }
       } catch (err) {
         reportError(err, { screen: "events", action: "loadData" });
       } finally {
@@ -320,6 +334,12 @@ export function EventsScreen() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!venueId || !featuredVenues.length) return;
+    const requested = featuredVenues.find((venue) => String(venue.id) === venueId);
+    if (requested) setVenueProfile(requested);
+  }, [featuredVenues, venueId]);
 
   useEffect(() => {
     if (!postId || !posts.length) return;
@@ -379,12 +399,13 @@ export function EventsScreen() {
     };
   }, [user, loadData, loadComments, commentFor]);
 
-  const openVenueOnMap = (venue: { name: string; latitude: number | null; longitude: number | null }) => {
+  const openVenueOnMap = (venue: { id?: number; name: string; latitude: number | null; longitude: number | null }) => {
     const params: Record<string, string> = {};
     if (venue.latitude != null && venue.longitude != null) {
       params.focusLat = String(venue.latitude);
       params.focusLng = String(venue.longitude);
       params.focusName = venue.name;
+      if ("id" in venue && venue.id != null) params.focusVenueId = String(venue.id);
     }
     router.push({ pathname: "/(tabs)/map", params });
   };
@@ -1079,29 +1100,39 @@ export function EventsScreen() {
       <SecureMediaViewer uri={fullVenueImage} onClose={() => setFullVenueImage(null)} secure={false} />
 
       <Modal visible={Boolean(venueProfile)} animationType="slide" onRequestClose={() => setVenueProfile(null)}>
-        <View style={{ flex: 1, backgroundColor: colors.background, padding: 20, paddingTop: 56 }}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ height: 250, backgroundColor: colors.surface }}>
           {venueProfile?.admin_photo_url ? (
             <Pressable onPress={() => setFullVenueImage(venueProfile.admin_photo_url)}>
               <ExpoImage
                 source={{ uri: venueProfile.admin_photo_url }}
-                style={{ width: "100%", height: 220, borderRadius: 16 }}
+                style={{ width: "100%", height: 250 }}
                 contentFit="cover"
                 cachePolicy="memory-disk"
               />
             </Pressable>
-          ) : null}
-          <Text style={{ color: colors.foreground, fontSize: 24, fontWeight: "800", marginTop: 16 }}>
+          ) : <View style={{ flex: 1, backgroundColor: colors.primary }} />}
+          <Pressable onPress={() => setVenueProfile(null)} accessibilityLabel="Cerrar perfil del local" style={{ position: "absolute", top: 52, left: 18, minWidth: 44, minHeight: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: "#00000088" }}><MaterialIcons name="arrow-back" size={22} color="#FFFFFF" /></Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 110 }}>
+          <Text style={{ color: colors.foreground, fontSize: 27, fontWeight: "900", marginTop: 2 }}>
             {venueProfile?.name}
           </Text>
-          <Text style={{ color: colors.muted, marginTop: 8, lineHeight: 20 }}>
+          <Text style={{ color: colors.muted, marginTop: 7, lineHeight: 20 }}>
             {venueProfile?.address || venueProfile?.city || "Dirección por confirmar"}
           </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+            <View style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, backgroundColor: `${colors.primary}18` }}><Text style={{ color: colors.primary, fontWeight: "900", fontSize: 12 }}>{venueProfile?.venue_status === "open" ? "Abierto ahora" : venueProfile?.venue_status === "closed" ? "Cerrado ahora" : "Horario pendiente"}</Text></View>
+            {venueProfile?.rating != null ? <View style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, backgroundColor: colors.surface }}><Text style={{ color: colors.foreground, fontWeight: "900", fontSize: 12 }}>★ {venueProfile.rating.toFixed(1)}</Text></View> : null}
+          </View>
+          {venueProfile?.active_promotion ? <View style={{ marginTop: 16, borderRadius: 18, padding: 15, backgroundColor: `${colors.primary}16`, borderWidth: 1, borderColor: `${colors.primary}44` }}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: "900", textTransform: "uppercase" }}>Oferta activa</Text><Text style={{ color: colors.foreground, fontSize: 17, fontWeight: "900", marginTop: 5 }}>{venueProfile.active_promotion}</Text></View> : null}
+          {venueProfile?.opening_hours ? <View style={{ marginTop: 14, borderRadius: 18, padding: 15, backgroundColor: colors.surface }}><Text style={{ color: colors.muted, fontSize: 12, fontWeight: "800" }}>HORARIO</Text><Text style={{ color: colors.foreground, fontSize: 16, fontWeight: "800", marginTop: 5 }}>{venueProfile.opening_hours}</Text></View> : null}
           {venueProfile?.description ? (
-            <Text style={{ color: colors.foreground, marginTop: 16, lineHeight: 22 }}>
+            <View style={{ marginTop: 14, borderRadius: 18, padding: 15, backgroundColor: colors.surface }}><Text style={{ color: colors.muted, fontSize: 12, fontWeight: "800" }}>SOBRE EL LOCAL</Text><Text style={{ color: colors.foreground, marginTop: 7, lineHeight: 22 }}>
               {venueProfile.description}
-            </Text>
+            </Text></View>
           ) : null}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 18 }}>
+          <View style={{ marginTop: 14, borderRadius: 18, padding: 15, backgroundColor: colors.surface }}><Text style={{ color: colors.muted, fontSize: 12, fontWeight: "800" }}>CONTACTO Y REDES</Text><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
             {normalizeVenueUrl(venueProfile?.website_url) ? (
               <VenueContactButton
                 label="Web"
@@ -1142,23 +1173,19 @@ export function EventsScreen() {
                 onPress={() => void Linking.openURL(normalizeWhatsAppUrl(venueProfile?.whatsapp_number)!)}
               />
             ) : null}
-          </View>
+          </View></View>
           <Pressable
             onPress={() => {
               const v = venueProfile;
               setVenueProfile(null);
               if (v) openVenueOnMap(v);
             }}
-            style={{
-              marginTop: 24,
-              borderRadius: 14,
-              backgroundColor: colors.primary,
-              paddingVertical: 14,
-              alignItems: "center",
-            }}
+            style={{ marginTop: 14, borderRadius: 16, backgroundColor: colors.surface, paddingVertical: 14, alignItems: "center", borderWidth: 1, borderColor: colors.border }}
           >
-            <Text style={{ color: colors.background, fontWeight: "700" }}>Ubicar en Mapa</Text>
+            <Text style={{ color: colors.foreground, fontWeight: "800" }}>Ubicar en el mapa</Text>
           </Pressable>
+          </ScrollView>
+          <View style={{ position: "absolute", left: 20, right: 20, bottom: 18 }}><Pressable onPress={() => router.push("/(tabs)")} accessibilityRole="button" accessibilityLabel="Hacer check-in en este local" style={{ minHeight: 54, borderRadius: 17, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 8 }}><Text style={{ color: colors.onPrimary, fontWeight: "900", fontSize: 16 }}>Hacer Check-in</Text></Pressable></View>
         </View>
       </Modal>
 

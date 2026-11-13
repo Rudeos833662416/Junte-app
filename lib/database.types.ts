@@ -435,6 +435,11 @@ export type Database = {
           instagram_url: string | null
           tiktok_url: string | null
           whatsapp_number: string | null
+          category: string
+          opening_hours: string | null
+          venue_status: string
+          rating: number | null
+          active_promotion: string | null
         }
         Insert: {
           id?: number
@@ -456,6 +461,11 @@ export type Database = {
           instagram_url?: string | null
           tiktok_url?: string | null
           whatsapp_number?: string | null
+          category?: string
+          opening_hours?: string | null
+          venue_status?: string
+          rating?: number | null
+          active_promotion?: string | null
         }
         Update: {
           id?: number
@@ -477,6 +487,11 @@ export type Database = {
           instagram_url?: string | null
           tiktok_url?: string | null
           whatsapp_number?: string | null
+          category?: string
+          opening_hours?: string | null
+          venue_status?: string
+          rating?: number | null
+          active_promotion?: string | null
         }
         Relationships: []
       }

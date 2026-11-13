@@ -40,6 +40,11 @@ type FormState = {
   instagram: string;
   tiktok: string;
   whatsapp: string;
+  category: string;
+  openingHours: string;
+  status: string;
+  rating: string;
+  promotion: string;
 };
 
 const emptyForm = (): FormState => ({
@@ -55,6 +60,11 @@ const emptyForm = (): FormState => ({
   instagram: "",
   tiktok: "",
   whatsapp: "",
+  category: "bar",
+  openingHours: "",
+  status: "unknown",
+  rating: "",
+  promotion: "",
 });
 
 function formFromVenue(venue: Venue): FormState {
@@ -71,6 +81,11 @@ function formFromVenue(venue: Venue): FormState {
     instagram: venue.instagram_url ?? "",
     tiktok: venue.tiktok_url ?? "",
     whatsapp: venue.whatsapp_number ?? "",
+    category: venue.category ?? "bar",
+    openingHours: venue.opening_hours ?? "",
+    status: venue.venue_status ?? "unknown",
+    rating: venue.rating != null ? String(venue.rating) : "",
+    promotion: venue.active_promotion ?? "",
   };
 }
 
@@ -180,6 +195,14 @@ export default function AdminVenuesScreen() {
     return parsed;
   };
 
+  const parseRating = () => {
+    const parsed = form.rating.trim() === "" ? null : Number(form.rating);
+    if (parsed != null && (!Number.isFinite(parsed) || parsed < 0 || parsed > 5)) {
+      throw new Error("La calificación debe estar entre 0 y 5");
+    }
+    return parsed;
+  };
+
   const saveEdit = async () => {
     if (!editingId) return;
     if (!form.name.trim()) {
@@ -204,6 +227,11 @@ export default function AdminVenuesScreen() {
         latitude: lat,
         longitude: lng,
         admin_rank: parseRank(),
+        category: form.category,
+        opening_hours: form.openingHours.trim() || null,
+        venue_status: form.status,
+        rating: parseRating(),
+        active_promotion: form.promotion.trim() || null,
       });
       setStatusMsg("Local actualizado");
       setEditingId(null);
@@ -238,6 +266,11 @@ export default function AdminVenuesScreen() {
         latitude: lat,
         longitude: lng,
         admin_rank: parseRank(),
+        category: form.category,
+        opening_hours: form.openingHours.trim() || null,
+        venue_status: form.status,
+        rating: parseRating(),
+        active_promotion: form.promotion.trim() || null,
       });
       setStatusMsg("Local creado");
       setCreating(false);
@@ -350,6 +383,26 @@ export default function AdminVenuesScreen() {
         multiline
         style={{ ...inputStyle, minHeight: 72, textAlignVertical: "top" }}
       />
+      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Categoría del pin</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+        {[['bar', 'Bar'], ['club', 'Discoteca'], ['event', 'Evento'], ['cafe', 'Café'], ['restaurant', 'Restaurante'], ['other', 'Otro']].map(([value, label]) => (
+          <Pressable key={value} onPress={() => setField("category", value)} accessibilityRole="radio" accessibilityState={{ selected: form.category === value }} style={{ minHeight: 44, paddingHorizontal: 12, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: form.category === value ? colors.primary : colors.background, borderWidth: 1, borderColor: form.category === value ? colors.primary : colors.border }}>
+            <Text style={{ color: form.category === value ? colors.onPrimary : colors.foreground, fontWeight: "800", fontSize: 12 }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Horario visible</Text>
+      <TextInput value={form.openingHours} onChangeText={(v) => setField("openingHours", v)} placeholder="18:00–02:00" placeholderTextColor={colors.muted} style={inputStyle} />
+      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Estado actual</Text>
+      <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+        {[['open', 'Abierto'], ['closed', 'Cerrado'], ['unknown', 'Sin horario']].map(([value, label]) => (
+          <Pressable key={value} onPress={() => setField("status", value)} accessibilityRole="radio" accessibilityState={{ selected: form.status === value }} style={{ flex: 1, minHeight: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: form.status === value ? colors.primary : colors.background }}><Text style={{ color: form.status === value ? colors.onPrimary : colors.foreground, fontWeight: "800", fontSize: 12 }}>{label}</Text></Pressable>
+        ))}
+      </View>
+      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Calificación (0–5)</Text>
+      <TextInput value={form.rating} onChangeText={(v) => setField("rating", v)} placeholder="4.8" keyboardType="decimal-pad" placeholderTextColor={colors.muted} style={inputStyle} />
+      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Promoción activa</Text>
+      <TextInput value={form.promotion} onChangeText={(v) => setField("promotion", v)} placeholder="2x1 en cócteles" placeholderTextColor={colors.muted} style={inputStyle} />
       <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>Dirección (autocompletar)</Text>
       <AddressAutocomplete
         value={form.address}
