@@ -58,7 +58,7 @@ function VenueContactButton({
   onPress,
 }: {
   label: string;
-  icon: "facebook" | "instagram" | "music-note" | "whatsapp" | "web";
+  icon: "facebook" | "instagram" | "tiktok" | "whatsapp" | "web";
   color: string;
   onPress: () => void;
 }) {
@@ -82,7 +82,11 @@ function VenueContactButton({
         opacity: pressed ? 0.72 : 1,
       })}
     >
-      <MaterialCommunityIcons name={icon} size={19} color={color} />
+      {icon === "tiktok" ? (
+        <MaterialIcons name="tiktok" size={19} color={color} />
+      ) : (
+        <MaterialCommunityIcons name={icon} size={19} color={color} />
+      )}
       <Text style={{ color, fontWeight: "800", fontSize: 12 }}>{label}</Text>
     </Pressable>
   );
@@ -1125,7 +1129,7 @@ export function EventsScreen() {
             {normalizeVenueUrl(venueProfile?.tiktok_url) ? (
               <VenueContactButton
                 label="TikTok"
-                icon="music-note"
+                icon="tiktok"
                 color={colors.foreground}
                 onPress={() => void Linking.openURL(normalizeVenueUrl(venueProfile?.tiktok_url)!)}
               />
