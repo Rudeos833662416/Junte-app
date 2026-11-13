@@ -176,8 +176,9 @@ export default function AdminVenuesScreen() {
   };
 
   const parseCoords = () => {
-    const lat = form.latitude.trim() === "" ? null : Number(form.latitude);
-    const lng = form.longitude.trim() === "" ? null : Number(form.longitude);
+    const parseCoordinate = (value: string) => value.trim() === "" ? null : Number(value.trim().replace(",", "."));
+    const lat = parseCoordinate(form.latitude);
+    const lng = parseCoordinate(form.longitude);
     if (lat != null && (!Number.isFinite(lat) || lat < -90 || lat > 90)) {
       throw new Error("Latitud inválida (−90 a 90)");
     }

@@ -1115,7 +1115,7 @@ export function EventsScreen() {
           ) : <View style={{ flex: 1, backgroundColor: colors.primary }} />}
           <Pressable onPress={() => setVenueProfile(null)} accessibilityLabel="Cerrar perfil del local" style={{ position: "absolute", top: 52, left: 18, minWidth: 44, minHeight: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: "#00000088" }}><MaterialIcons name="arrow-back" size={22} color="#FFFFFF" /></Pressable>
           </View>
-          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 110 }}>
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 28 }}>
           <Text style={{ color: colors.foreground, fontSize: 27, fontWeight: "900", marginTop: 2 }}>
             {venueProfile?.name}
           </Text>
@@ -1176,18 +1176,7 @@ export function EventsScreen() {
               />
             ) : null}
           </View></View>
-          <Pressable
-            onPress={() => {
-              const v = venueProfile;
-              setVenueProfile(null);
-              if (v) openVenueOnMap(v);
-            }}
-            style={{ marginTop: 14, borderRadius: 16, backgroundColor: colors.surface, paddingVertical: 14, alignItems: "center", borderWidth: 1, borderColor: colors.border }}
-          >
-            <Text style={{ color: colors.foreground, fontWeight: "800" }}>Ubicar en el mapa</Text>
-          </Pressable>
           </ScrollView>
-          <View style={{ position: "absolute", left: 20, right: 20, bottom: 18 }}><Pressable onPress={() => router.push("/(tabs)")} accessibilityRole="button" accessibilityLabel="Hacer check-in en este local" style={{ minHeight: 54, borderRadius: 17, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 8 }}><Text style={{ color: colors.onPrimary, fontWeight: "900", fontSize: 16 }}>Hacer Check-in</Text></Pressable></View>
         </View>
       </Modal>
 

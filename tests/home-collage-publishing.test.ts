@@ -34,7 +34,8 @@ describe("home collage publishing and realtime venues", () => {
   });
 
   it("uses neutral locality labels and handles venue events distinctly", () => {
-    expect(map).toContain('administrative.locality", elementType: "labels.text.fill"');
+    expect(map).toContain('featureType: "poi"');
+    expect(map).not.toContain('featureType: "road", elementType: "labels.text.fill"');
     expect(map).toContain('event: "INSERT"');
     expect(map).toContain('event: "UPDATE"');
     expect(map).toContain('event: "DELETE"');

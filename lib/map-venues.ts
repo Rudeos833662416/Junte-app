@@ -26,6 +26,51 @@ export const VENUE_CATEGORY_LABELS: Record<VenueCategory, string> = {
   other: "Otros",
 };
 
+export function normalizeMapVenue(row: {
+  id?: number | string | null;
+  name?: string | null;
+  category?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  address?: string | null;
+  city?: string | null;
+  admin_photo_url?: string | null;
+  rating?: number | string | null;
+  opening_hours?: string | null;
+  venue_status?: string | null;
+  active_promotion?: string | null;
+}): MapVenue | null {
+  const latitude = Number(row.latitude);
+  const longitude = Number(row.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  const category = VENUE_CATEGORIES.includes(row.category as VenueCategory) ? row.category as VenueCategory : "other";
+  const status = row.venue_status === "open" || row.venue_status === "closed" ? row.venue_status : "unknown";
+  const rating = row.rating == null || row.rating === "" ? null : Number(row.rating);
+  return {
+    id: Number(row.id),
+    name: row.name?.trim() || "Local",
+    category,
+    latitude,
+    longitude,
+    address: row.address ?? null,
+    city: row.city ?? null,
+    admin_photo_url: row.admin_photo_url ?? null,
+    rating: Number.isFinite(rating) ? rating : null,
+    opening_hours: row.opening_hours ?? null,
+    status,
+    active_promotion: row.active_promotion ?? null,
+  };
+}
+
+export function venueCategoryIcon(category: VenueCategory) {
+  if (category === "club") return "nightlife" as const;
+  if (category === "event") return "event" as const;
+  if (category === "cafe") return "local-cafe" as const;
+  if (category === "restaurant") return "restaurant" as const;
+  if (category === "other") return "place" as const;
+  return "local-bar" as const;
+}
+
 export function filterMapVenues(venues: MapVenue[], category: VenueCategory) {
   return category === "all" ? venues : venues.filter((venue) => venue.category === category);
 }
