@@ -12,7 +12,7 @@ import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
 import { Image as ExpoImage } from "expo-image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Linking, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import MapView, { Circle, Marker, PROVIDER_GOOGLE, type Region } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -32,10 +32,11 @@ const CLEAN_MAP_STYLE = [
 
 function venueColor(category: VenueCategory) {
   if (category === "club") return "#A855F7";
-  if (category === "event") return "#FC4C02";
-  if (category === "cafe") return "#D97706";
+  if (category === "event") return "#F43F5E";
+  if (category === "cafe") return "#14B8A6";
   if (category === "restaurant") return "#EF4444";
-  return "#FC4C02";
+  if (category === "bar") return "#F59E0B";
+  return "#64748B";
 }
 
 export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenProps) {
@@ -71,8 +72,9 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   const mapVenueFromRow = useCallback((venue: any): MapVenue | null => normalizeMapVenue(venue), []);
   const loadVenues = useCallback(async () => {
     const { data, error } = await supabase.from("venues").select("id, name, category, latitude, longitude, address, city, admin_photo_url, rating, opening_hours, venue_status, active_promotion").not("latitude", "is", null).not("longitude", "is", null).limit(300);
-    if (error) { console.warn("Venue pins unavailable:", error.message); return; }
+    if (error) { console.warn("Venue pins unavailable:", error.message); return false; }
     setVenues((data ?? []).map(mapVenueFromRow).filter((venue): venue is MapVenue => Boolean(venue)));
+    return true;
   }, [mapVenueFromRow]);
   const visibleVenues = useMemo(() => filterMapVenues(venues, category), [category, venues]);
 
@@ -90,16 +92,30 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
     if (!error) { setIsActive(Boolean(data)); const venue = data?.venues as { latitude?: number | null; longitude?: number | null } | null; if (venue?.latitude != null && venue?.longitude != null) setCoordinates({ latitude: venue.latitude, longitude: venue.longitude }); }
   }, [user]);
 
+  const refreshMap = useCallback(async () => {
+    setIsRefreshing(true);
+    setErrorMessage(null);
+    try {
+      await Promise.all([loadVenues(), loadFriendMarkers(), loadTopVenues(), loadActiveState()]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadActiveState, loadFriendMarkers, loadTopVenues, loadVenues]);
+
   useEffect(() => {
-    void loadVenues(); void loadFriendMarkers(); void loadTopVenues(); void loadActiveState();
+    void refreshMap();
     const channel = supabase.channel(`junta2-map-${user?.id ?? "public"}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "venues" }, ({ new: row }) => setVenues((current) => { const next = mapVenueFromRow(row); return next ? [...current.filter((venue) => venue.id !== next.id), next] : current; }))
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "venues" }, ({ new: row }) => setVenues((current) => { const next = mapVenueFromRow(row); return next ? [...current.filter((venue) => venue.id !== next.id), next] : current.filter((venue) => venue.id !== row.id); }))
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "venues" }, ({ old: row }) => setVenues((current) => current.filter((venue) => venue.id !== row.id)))
-      .on("postgres_changes", { event: "*", schema: "public", table: "venues" }, () => { if (venueReconcileTimerRef.current) clearTimeout(venueReconcileTimerRef.current); venueReconcileTimerRef.current = setTimeout(() => { void loadVenues(); void loadTopVenues(); }, 350); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "checkins" }, () => { void loadFriendMarkers(); void loadActiveState(); }).subscribe();
+      .on("postgres_changes", { event: "*", schema: "public", table: "venues" }, (payload) => {
+        const row = payload.eventType === "DELETE" ? payload.old : payload.new;
+        if (payload.eventType === "DELETE") setVenues((current) => current.filter((venue) => venue.id !== row.id));
+        else setVenues((current) => { const next = mapVenueFromRow(row); return next ? [...current.filter((venue) => venue.id !== next.id), next] : current; });
+        if (venueReconcileTimerRef.current) clearTimeout(venueReconcileTimerRef.current);
+        venueReconcileTimerRef.current = setTimeout(() => { void loadVenues(); void loadTopVenues(); }, 350);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "checkins" }, () => { void loadFriendMarkers(); void loadActiveState(); })
+      .subscribe((status) => { if (status === "SUBSCRIBED") void refreshMap(); });
     return () => { if (venueReconcileTimerRef.current) clearTimeout(venueReconcileTimerRef.current); void supabase.removeChannel(channel); };
-  }, [loadActiveState, loadFriendMarkers, loadTopVenues, loadVenues, mapVenueFromRow, revision, user?.id]);
+  }, [loadActiveState, loadFriendMarkers, loadTopVenues, loadVenues, mapVenueFromRow, refreshMap, revision, user?.id]);
 
   const applyLocation = useCallback((location: Location.LocationObject) => { const next = { latitude: location.coords.latitude, longitude: location.coords.longitude }; setCoordinates(next); if (canSyncLocationRef.current && user) void syncProfileLocation(user.id, next.latitude, next.longitude); setErrorMessage(null); }, [user]);
   const startTracking = useCallback(async () => {
@@ -122,12 +138,17 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   const distanceLabel = selectedVenue && coordinates ? formatVenueDistance(distanceInKm(coordinates, selectedVenue)) : "Distancia no disponible";
   const openVenueProfile = () => { if (!selectedVenue) return; router.push({ pathname: "/(tabs)/events", params: { venueId: String(selectedVenue.id) } }); };
   const statusText = hotZoneCount === 1 ? "1 amigo con brindis activo" : hotZoneCount > 1 ? `${hotZoneCount} amigos con brindis activo` : "Mapa en tiempo real";
+  const refreshPanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.2,
+    onPanResponderRelease: (_, gesture) => { if (gesture.dy > 48 && !isRefreshing) void refreshMap(); },
+  }), [isRefreshing, refreshMap]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.abyss }]}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
       <MapView ref={mapRef} style={StyleSheet.absoluteFill} provider={useGoogleProvider ? PROVIDER_GOOGLE : undefined} initialRegion={coordinates ? mapRegionFor(coordinates) : undefined} initialCamera={coordinates ? cameraFor(coordinates, is3D) : undefined} mapType={isRealistic ? "satellite" : "standard"} customMapStyle={isRealistic ? undefined : CLEAN_MAP_STYLE} pitchEnabled rotateEnabled showsBuildings={false} showsPointsOfInterest={false} showsCompass={false} showsUserLocation={false} showsMyLocationButton={false} loadingEnabled={false} onMapReady={() => setMapReady(true)}>
-        {visibleVenues.map((venue) => <Marker key={`venue-${venue.id}`} coordinate={{ latitude: venue.latitude, longitude: venue.longitude }} onPress={() => setSelectedVenue(venue)} anchor={{ x: 0.5, y: 0.92 }} tracksViewChanges={false} accessibilityLabel={`Local ${venue.name}, ${VENUE_CATEGORY_LABELS[venue.category]}`}><View style={[styles.venuePin, { backgroundColor: venueColor(venue.category) }]}><MaterialIcons name={venueCategoryIcon(venue.category)} size={19} color="#FFFFFF" /></View></Marker>)}
+        {visibleVenues.map((venue) => <Marker key={`venue-${venue.id}`} coordinate={{ latitude: venue.latitude, longitude: venue.longitude }} onPress={() => setSelectedVenue(venue)} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={true} accessibilityLabel={`Local ${venue.name}, ${VENUE_CATEGORY_LABELS[venue.category]}`}><View style={styles.pinWrap}><View style={[styles.venuePin, { backgroundColor: venueColor(venue.category) }]}><MaterialIcons name={venueCategoryIcon(venue.category)} size={18} color="#FFFFFF" /></View><View style={[styles.pinTail, { borderTopColor: venueColor(venue.category) }]} /></View></Marker>)}
         {isActive && coordinates ? <Marker key="my-active-checkin" coordinate={coordinates} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges><View style={styles.beerMarker}><BebeConmigoCan width={44} height={68} /></View></Marker> : null}
         {topVenues.filter((venue) => !venues.some((item) => item.id === venue.id)).map((venue) => <Marker key={`top-venue-${venue.id}`} coordinate={{ latitude: venue.latitude, longitude: venue.longitude }} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}><View style={styles.starMarker}><MaterialIcons name="star" size={34} color="#F4C542" /><Text style={styles.starMarkerRank}>{venue.admin_rank}</Text></View></Marker>)}
         {hotZoneCenter && hotZoneCount > 0 ? <><Circle center={hotZoneCenter} radius={hotZoneRadius} fillColor="rgba(239, 68, 68, 0.18)" strokeColor="rgba(248, 113, 113, 0.82)" strokeWidth={2} zIndex={1} /><Marker coordinate={hotZoneCenter} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={2}><View style={styles.hotZoneLabel}><Text style={styles.hotZoneLabelText}>{hotZoneCount} Brindis</Text></View></Marker></> : null}
@@ -137,6 +158,7 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
       <View style={styles.headerWrap}>
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}><Text style={styles.headerTitle}>Descubre cerca</Text><Pressable accessibilityRole="button" accessibilityLabel={isRealistic ? "Cambiar a mapa estilizado" : "Cambiar a mapa satélite"} onPress={() => setIsRealistic((current) => !current)} style={styles.headerAction}><MaterialIcons name={isRealistic ? "map" : "satellite"} size={22} color="#FFFFFF" /></Pressable></View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>{VENUE_CATEGORIES.map((item) => <Pressable key={item} onPress={() => setCategory(item)} accessibilityRole="button" accessibilityState={{ selected: category === item }} style={[styles.filterChip, category === item && styles.filterChipActive]}><Text style={[styles.filterText, category === item && styles.filterTextActive]}>{VENUE_CATEGORY_LABELS[item]}</Text></Pressable>)}</ScrollView>
+        <View {...refreshPanResponder.panHandlers} style={styles.refreshGesture}><View style={styles.refreshHandle} />{isRefreshing ? <ActivityIndicator size="small" color="#FFFFFF" /> : null}</View>
       </View>
       {hotZoneCount > 0 ? <View style={[styles.liveChip, { top: insets.top + 150 }]}><View style={[styles.liveDot, { backgroundColor: colors.success }]} /><Text style={styles.liveChipText}>{statusText}</Text></View> : null}
 
@@ -161,10 +183,14 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: "#FC4C02", borderColor: "#FC4C02" },
   filterText: { color: "#D1D5DB", fontWeight: "800", fontSize: 12 },
   filterTextActive: { color: "#FFFFFF" },
+  refreshGesture: { height: 24, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
+  refreshHandle: { width: 34, height: 4, borderRadius: 2, backgroundColor: "#FFFFFF55" },
   liveChip: { position: "absolute", left: 16, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: "#FFFFFF22", backgroundColor: "rgba(3, 8, 18, 0.88)" },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   liveChipText: { color: "#F7FBFF", fontSize: 12, fontWeight: "700" },
-  venuePin: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "#FFFFFF", shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 5, shadowOffset: { width: 0, height: 3 }, elevation: 7 },
+  pinWrap: { width: 46, height: 54, alignItems: "center" },
+  venuePin: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "#FFFFFF", shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 5, shadowOffset: { width: 0, height: 3 }, elevation: 7 },
+  pinTail: { width: 0, height: 0, borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 11, borderLeftColor: "transparent", borderRightColor: "transparent" },
   beerMarker: { width: 38, height: 58, alignItems: "center", justifyContent: "center", shadowColor: "#000000", shadowOpacity: 0.55, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 7 },
   starMarker: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   starMarkerRank: { position: "absolute", color: "#07111F", fontSize: 11, fontWeight: "900", top: 16 },

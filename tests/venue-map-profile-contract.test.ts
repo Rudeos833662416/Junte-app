@@ -37,4 +37,11 @@ describe("venue map and profile contract", () => {
     expect(mapSource).toContain('featureType: "poi"');
     expect(mapSource).toContain('showsPointsOfInterest={false}');
   });
+
+  it("keeps custom venue pins renderable on Android and exposes pull-to-refresh feedback", () => {
+    expect(mapSource).toContain("tracksViewChanges={true}");
+    expect(mapSource).toContain("PanResponder.create");
+    expect(mapSource).toContain("onPanResponderRelease");
+    expect(mapSource).toContain('.subscribe((status) =>');
+  });
 });

@@ -33,11 +33,11 @@ describe("home collage publishing and realtime venues", () => {
     expect(migration).toContain("supabase_realtime");
   });
 
-  it("uses neutral locality labels and handles venue events distinctly", () => {
+  it("uses neutral locality labels and handles all venue events through one reconciled stream", () => {
     expect(map).toContain('featureType: "poi"');
     expect(map).not.toContain('featureType: "road", elementType: "labels.text.fill"');
-    expect(map).toContain('event: "INSERT"');
-    expect(map).toContain('event: "UPDATE"');
-    expect(map).toContain('event: "DELETE"');
+    expect(map).toContain('event: "*"');
+    expect(map).toContain('payload.eventType === "DELETE"');
+    expect(map).toContain('.subscribe((status) =>');
   });
 });
