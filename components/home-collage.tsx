@@ -1,21 +1,16 @@
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
+import { DEFAULT_HOME_COLLAGE_SETTINGS, HomeCollageSettings, normalizeHomeCollageSettings } from "@/lib/home-collage-settings";
+import { useThemeContext } from "@/lib/theme-provider";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image as ExpoImage } from "expo-image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, StyleSheet, View, useWindowDimensions } from "react-native";
-import { useThemeContext } from "@/lib/theme-provider";
 
-type CollageImage = {
-  id: string;
-  image_url: string;
-  alt_text: string;
-  sort_order: number;
-};
-
-const FADE_MS = 2300;
-const HOLD_MS = 6500;
+type CollageImage = { id: string; image_url: string; alt_text: string; sort_order: number };
 const SLOT_COUNT = 4;
+const imagesTable = () => supabase.from("home_collage_images" as never) as any;
+const settingsTable = () => supabase.from("home_collage_settings" as never) as any;
 
 function groupsOfFour(images: CollageImage[]) {
   if (!images.length) return [];
@@ -39,7 +34,7 @@ function CollageLayer({ images, opacity, gap }: { images: CollageImage[]; opacit
             accessibilityLabel={image.alt_text}
             cachePolicy="memory-disk"
             contentFit="cover"
-            transition={450}
+            transition={350}
             style={styles.tile}
           />
         ))}
@@ -53,83 +48,78 @@ export function HomeCollage() {
   const { colorScheme } = useThemeContext();
   const { width } = useWindowDimensions();
   const [images, setImages] = useState<CollageImage[]>([]);
+  const [settings, setSettings] = useState<HomeCollageSettings>(DEFAULT_HOME_COLLAGE_SETTINGS);
   const [activeGroup, setActiveGroup] = useState(0);
   const [loading, setLoading] = useState(true);
   const transition = useRef(new Animated.Value(0)).current;
-  const groups = useMemo(() => groupsOfFour(images), [images]);
+  const groups = useMemo(() => {
+    const source = settings.shuffle_enabled ? [...images].sort((a, b) => a.id.localeCompare(b.id)) : images;
+    return groupsOfFour(source);
+  }, [images, settings.shuffle_enabled]);
   const gap = Math.max(4, Math.round(width * 0.012));
-  const imageOpacity = colorScheme === "dark" ? 0.25 : 0.13;
-  const veil = colorScheme === "dark" ? "rgba(10,10,10,0.12)" : "rgba(255,241,208,0.28)";
+  const effectiveOverlay = colorScheme === "dark" && settings.overlay_color.toUpperCase() === "#FFF1D0" ? "#0A0A0A" : settings.overlay_color;
+  const themeVeil = colorScheme === "dark" ? 0.08 : 0.16;
+  const brightnessVeil = settings.brightness < 0 ? "#0A0A0A" : "#FFFFFF";
+  const brightnessOpacity = Math.abs(settings.brightness) * 0.65;
 
-  const loadImages = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("home_collage_images" as never)
-      .select("id, image_url, alt_text, sort_order")
-      .eq("is_active", true)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
-    if (!error) setImages((data ?? []) as unknown as CollageImage[]);
+  const load = useCallback(async () => {
+    const [{ data: imageData }, { data: settingsData }] = await Promise.all([
+      imagesTable().select("id, image_url, alt_text, sort_order").eq("is_active", true).order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
+      settingsTable().select("image_opacity, brightness, contrast, overlay_color, overlay_opacity, fade_duration_ms, hold_duration_ms, transition_type, shuffle_enabled, autoplay_enabled").eq("id", true).maybeSingle(),
+    ]);
+    setImages((imageData ?? []) as CollageImage[]);
+    setSettings(normalizeHomeCollageSettings(settingsData));
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    void loadImages();
+    void load();
     const channel = supabase
-      .channel("home-collage-images")
-      .on("postgres_changes", { event: "*", schema: "public", table: "home_collage_images" }, () => void loadImages())
+      .channel("home-collage-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "home_collage_images" }, () => void load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "home_collage_settings" }, () => void load())
       .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [loadImages]);
+    return () => void supabase.removeChannel(channel);
+  }, [load]);
 
   useEffect(() => {
     setActiveGroup((current) => (groups.length ? current % groups.length : 0));
   }, [groups.length]);
 
   useEffect(() => {
-    if (groups.length <= 1) return;
+    if (groups.length <= 1 || !settings.autoplay_enabled) return;
     const timer = setInterval(() => {
       transition.setValue(0);
-      Animated.timing(transition, {
-        toValue: 1,
-        duration: FADE_MS,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
+      if (settings.transition_type === "instant") {
+        setActiveGroup((current) => (current + 1) % groups.length);
+        return;
+      }
+      Animated.timing(transition, { toValue: 1, duration: settings.fade_duration_ms, useNativeDriver: true }).start(({ finished }) => {
         if (finished) {
           setActiveGroup((current) => (current + 1) % groups.length);
           transition.setValue(0);
         }
       });
-    }, HOLD_MS);
+    }, settings.hold_duration_ms);
     return () => {
       clearInterval(timer);
       transition.stopAnimation();
     };
-  }, [groups.length, transition]);
+  }, [groups.length, settings.autoplay_enabled, settings.fade_duration_ms, settings.hold_duration_ms, settings.transition_type, transition]);
 
   if (loading || !groups.length) return null;
   const nextGroup = (activeGroup + 1) % groups.length;
 
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]}>
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: imageOpacity }]}>
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: settings.image_opacity }]}>
         <CollageLayer images={groups[activeGroup]} opacity={1} gap={gap} />
-        {groups.length > 1 ? <CollageLayer images={groups[nextGroup]} opacity={transition} gap={gap} /> : null}
+        {groups.length > 1 && settings.transition_type === "crossfade" ? <CollageLayer images={groups[nextGroup]} opacity={transition} gap={gap} /> : null}
       </View>
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: veil }]} />
-      <LinearGradient
-        pointerEvents="none"
-        colors={[colors.background, "transparent"]}
-        locations={[0, 0.42]}
-        style={styles.topGradient}
-      />
-      <LinearGradient
-        pointerEvents="none"
-        colors={["transparent", colors.background]}
-        locations={[0.52, 1]}
-        style={styles.bottomGradient}
-      />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: effectiveOverlay, opacity: Math.min(0.9, settings.overlay_opacity + settings.contrast + themeVeil) }]} />
+      {brightnessOpacity > 0 ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: brightnessVeil, opacity: brightnessOpacity }]} /> : null}
+      <LinearGradient pointerEvents="none" colors={[colors.background, "transparent"]} locations={[0, 0.42]} style={styles.topGradient} />
+      <LinearGradient pointerEvents="none" colors={["transparent", colors.background]} locations={[0.52, 1]} style={styles.bottomGradient} />
     </View>
   );
 }
