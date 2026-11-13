@@ -36,7 +36,7 @@ describe("Home collage", () => {
   it("supports multiple uploads and theme-safe visual controls", () => {
     expect(admin).toContain("allowsMultipleSelection: true");
     expect(admin).toContain("Eliminar seleccionadas");
-    expect(admin).toContain("Guardar apariencia");
+    expect(admin).toContain("Publicar cambios");
     expect(collage).toContain("normalizeHomeCollageSettings");
     expect(collage).toContain("colorScheme");
     expect(settingsMigration).toContain("home_collage_settings");

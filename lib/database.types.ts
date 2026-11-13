@@ -527,6 +527,7 @@ export type Database = {
         Returns: Json
       }
       deactivate_my_checkin: { Args: { p_checkin_id: number }; Returns: undefined }
+      publish_home_collage: { Args: { p_theme: string }; Returns: undefined }
       get_visible_profiles: {
         Args: { p_ids: string[] }
         Returns: { id: string; name: string | null; username?: string | null; avatar_url?: string | null }[]

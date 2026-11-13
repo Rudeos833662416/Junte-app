@@ -30,7 +30,7 @@ const CLEAN_MAP_STYLE = [
   { featureType: "landscape", elementType: "labels", stylers: [{ visibility: "off" }] },
   { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9CA3AF" }] },
   { featureType: "road", elementType: "labels.text.stroke", stylers: [{ color: "#101010" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#FC4C02" }] },
+  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#D1D5DB" }] },
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#0C2533" }] },
   { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#111827" }] },
   { featureType: "road", elementType: "geometry", stylers: [{ color: "#263244" }] },
@@ -54,6 +54,7 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   const { revision } = useAppRefresh();
   const mapRef = useRef<MapView | null>(null);
   const subscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const venueReconcileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canSyncLocationRef = useRef(false);
   const didCenterInitiallyRef = useRef(false);
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
@@ -74,11 +75,15 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   const [is3D, setIs3D] = useState(false);
   const [isRealistic, setIsRealistic] = useState(false);
 
+  const mapVenueFromRow = useCallback((venue: any): MapVenue | null => {
+    if (venue?.latitude == null || venue?.longitude == null) return null;
+    return { ...venue, category: (venue.category || "bar") as VenueCategory, latitude: Number(venue.latitude), longitude: Number(venue.longitude), status: (venue.venue_status || "unknown") as MapVenue["status"] } as MapVenue;
+  }, []);
   const loadVenues = useCallback(async () => {
     const { data, error } = await supabase.from("venues").select("id, name, category, latitude, longitude, address, city, admin_photo_url, rating, opening_hours, venue_status, active_promotion").not("latitude", "is", null).not("longitude", "is", null).limit(300);
     if (error) { console.warn("Venue pins unavailable:", error.message); return; }
-    setVenues((data ?? []).filter((venue) => venue.latitude != null && venue.longitude != null).map((venue) => ({ ...venue, category: (venue.category || "bar") as VenueCategory, latitude: Number(venue.latitude), longitude: Number(venue.longitude), status: (venue.venue_status || "unknown") as MapVenue["status"] })) as MapVenue[]);
-  }, []);
+    setVenues((data ?? []).map(mapVenueFromRow).filter((venue): venue is MapVenue => Boolean(venue)));
+  }, [mapVenueFromRow]);
   const visibleVenues = useMemo(() => filterMapVenues(venues, category), [category, venues]);
 
   const loadTopVenues = useCallback(async () => {
@@ -97,9 +102,14 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
 
   useEffect(() => {
     void loadVenues(); void loadFriendMarkers(); void loadTopVenues(); void loadActiveState();
-    const channel = supabase.channel(`junta2-map-${user?.id ?? "public"}`).on("postgres_changes", { event: "*", schema: "public", table: "venues" }, () => { void loadVenues(); void loadTopVenues(); }).on("postgres_changes", { event: "*", schema: "public", table: "checkins" }, () => { void loadFriendMarkers(); void loadActiveState(); }).subscribe();
-    return () => void supabase.removeChannel(channel);
-  }, [loadActiveState, loadFriendMarkers, loadTopVenues, loadVenues, revision, user?.id]);
+    const channel = supabase.channel(`junta2-map-${user?.id ?? "public"}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "venues" }, ({ new: row }) => setVenues((current) => { const next = mapVenueFromRow(row); return next ? [...current.filter((venue) => venue.id !== next.id), next] : current; }))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "venues" }, ({ new: row }) => setVenues((current) => { const next = mapVenueFromRow(row); return next ? [...current.filter((venue) => venue.id !== next.id), next] : current.filter((venue) => venue.id !== row.id); }))
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "venues" }, ({ old: row }) => setVenues((current) => current.filter((venue) => venue.id !== row.id)))
+      .on("postgres_changes", { event: "*", schema: "public", table: "venues" }, () => { if (venueReconcileTimerRef.current) clearTimeout(venueReconcileTimerRef.current); venueReconcileTimerRef.current = setTimeout(() => { void loadVenues(); void loadTopVenues(); }, 350); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "checkins" }, () => { void loadFriendMarkers(); void loadActiveState(); }).subscribe();
+    return () => { if (venueReconcileTimerRef.current) clearTimeout(venueReconcileTimerRef.current); void supabase.removeChannel(channel); };
+  }, [loadActiveState, loadFriendMarkers, loadTopVenues, loadVenues, mapVenueFromRow, revision, user?.id]);
 
   const applyLocation = useCallback((location: Location.LocationObject) => { const next = { latitude: location.coords.latitude, longitude: location.coords.longitude }; setCoordinates(next); if (canSyncLocationRef.current && user) void syncProfileLocation(user.id, next.latitude, next.longitude); setErrorMessage(null); }, [user]);
   const startTracking = useCallback(async () => {
@@ -129,7 +139,7 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
       <MapView ref={mapRef} style={StyleSheet.absoluteFill} provider={useGoogleProvider ? PROVIDER_GOOGLE : undefined} initialRegion={coordinates ? mapRegionFor(coordinates) : undefined} initialCamera={coordinates ? cameraFor(coordinates, is3D) : undefined} mapType={isRealistic ? "satellite" : "standard"} customMapStyle={isRealistic ? undefined : CLEAN_MAP_STYLE} pitchEnabled rotateEnabled showsBuildings={false} showsPointsOfInterest={false} showsCompass={false} showsUserLocation={false} showsMyLocationButton={false} loadingEnabled={false} onMapReady={() => setMapReady(true)}>
         {visibleVenues.map((venue) => <Marker key={`venue-${venue.id}`} coordinate={venue} onPress={() => setSelectedVenue(venue)} anchor={{ x: 0.5, y: 0.92 }} tracksViewChanges={false} accessibilityLabel={`Local ${venue.name}`}><View style={[styles.venuePin, { backgroundColor: venueColor(venue.category) }]}><MaterialIcons name={venue.category === "cafe" ? "local-cafe" : venue.category === "club" ? "nightlife" : venue.category === "event" ? "event" : "local-bar"} size={19} color="#FFFFFF" /></View></Marker>)}
         {isActive && coordinates ? <Marker key="my-active-checkin" coordinate={coordinates} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges><View style={styles.beerMarker}><BebeConmigoCan width={44} height={68} /></View></Marker> : null}
-        {topVenues.map((venue) => <Marker key={`top-venue-${venue.id}`} coordinate={{ latitude: venue.latitude, longitude: venue.longitude }} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}><View style={styles.starMarker}><MaterialIcons name="star" size={34} color="#F4C542" /><Text style={styles.starMarkerRank}>{venue.admin_rank}</Text></View></Marker>)}
+        {topVenues.filter((venue) => !venues.some((item) => item.id === venue.id)).map((venue) => <Marker key={`top-venue-${venue.id}`} coordinate={{ latitude: venue.latitude, longitude: venue.longitude }} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}><View style={styles.starMarker}><MaterialIcons name="star" size={34} color="#F4C542" /><Text style={styles.starMarkerRank}>{venue.admin_rank}</Text></View></Marker>)}
         {hotZoneCenter && hotZoneCount > 0 ? <><Circle center={hotZoneCenter} radius={hotZoneRadius} fillColor="rgba(239, 68, 68, 0.18)" strokeColor="rgba(248, 113, 113, 0.82)" strokeWidth={2} zIndex={1} /><Marker coordinate={hotZoneCenter} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={2}><View style={styles.hotZoneLabel}><Text style={styles.hotZoneLabelText}>{hotZoneCount} Brindis</Text></View></Marker></> : null}
         {friendMarkers.map((friend) => <Marker key={`${friend.id}-${friend.userId}`} coordinate={{ latitude: friend.latitude, longitude: friend.longitude }} title={friend.name} description={`${friend.venueName} · check-in activo`} tracksViewChanges={false}><View style={styles.beerMarker}><BebeConmigoCan width={44} height={68} /></View></Marker>)}
       </MapView>
