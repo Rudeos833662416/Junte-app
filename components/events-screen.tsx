@@ -140,9 +140,6 @@ export function EventsScreen() {
   const [captionDraft, setCaptionDraft] = useState("");
   const deletedPostIdsRef = useRef(new Set<string>());
   const [featuredVenues, setFeaturedVenues] = useState<FeaturedVenue[]>([]);
-  const featuredVenuesLoop = featuredVenues.length > 1
-    ? [...featuredVenues, ...featuredVenues, ...featuredVenues]
-    : featuredVenues;
   const venueCarouselRef = useRef<ScrollView>(null);
   const venueCarouselIndex = useRef(0);
   const venueCarouselPaused = useRef(false);
@@ -311,6 +308,7 @@ export function EventsScreen() {
         const { data: venueRows } = await supabase
           .from("venues")
           .select("id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url, category, opening_hours, venue_status, rating, active_promotion")
+          .neq("source", "device")
           .not("admin_rank", "is", null)
           .order("admin_rank", { ascending: true })
           .limit(5);
@@ -319,6 +317,7 @@ export function EventsScreen() {
           const { data: requestedVenue } = await supabase
             .from("venues")
             .select("id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url, category, opening_hours, venue_status, rating, active_promotion")
+            .neq("source", "device")
             .eq("id", Number(venueId))
             .maybeSingle();
           if (requestedVenue) setVenueProfile(requestedVenue as FeaturedVenue);
@@ -392,6 +391,9 @@ export function EventsScreen() {
         void loadData({ silent: true });
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, () => {
+        void loadData({ silent: true });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "venues" }, () => {
         void loadData({ silent: true });
       })
       .subscribe();
@@ -727,9 +729,9 @@ export function EventsScreen() {
           snapToInterval={CARD_W + CARD_GAP}
           snapToAlignment="start"
         >
-          {featuredVenuesLoop.map((venue, loopIndex) => (
+          {featuredVenues.map((venue) => (
             <View
-              key={`${venue.id}-${loopIndex}`}
+              key={venue.id}
               style={{
                 width: CARD_W,
                 borderRadius: 20,

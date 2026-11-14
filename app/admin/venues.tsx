@@ -20,6 +20,7 @@ import { supabase } from "@/lib/supabase";
 import {
   createVenueAdmin,
   deleteVenueAdmin,
+  deleteVenuesAdmin,
   updateVenueAdmin,
   uploadVenuePhoto,
 } from "@/lib/events-admin";
@@ -100,6 +101,7 @@ export default function AdminVenuesScreen() {
   const [form, setForm] = useState<FormState>(emptyForm());
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [selectedVenueIds, setSelectedVenueIds] = useState<number[]>([]);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -121,6 +123,7 @@ export default function AdminVenuesScreen() {
         .select(
           "id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url",
         )
+        .neq("source", "device")
         .order("admin_rank", { ascending: true, nullsFirst: false })
         .limit(100);
       if (error) {
@@ -129,13 +132,16 @@ export default function AdminVenuesScreen() {
           .select(
             "id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url",
           )
+          .neq("source", "device")
           .order("admin_rank", { ascending: true, nullsFirst: false })
           .limit(100);
         if (fallback.error) throw fallback.error;
         setVenues((fallback.data ?? []) as unknown as Venue[]);
+        setSelectedVenueIds([]);
         return;
       }
       setVenues((data ?? []) as unknown as Venue[]);
+      setSelectedVenueIds((current) => current.filter((id) => (data ?? []).some((venue) => venue.id === id)));
     } catch (err) {
       reportError(err, { screen: "admin/venues" });
       Alert.alert("Error", err instanceof Error ? err.message : "No se pudo cargar");
@@ -312,6 +318,31 @@ export default function AdminVenuesScreen() {
         },
       ],
     );
+  };
+
+  const toggleVenueSelection = (venueId: number) => {
+    setSelectedVenueIds((current) => current.includes(venueId) ? current.filter((id) => id !== venueId) : [...current, venueId]);
+  };
+
+  const confirmDeleteSelected = () => {
+    if (!selectedVenueIds.length) return;
+    Alert.alert("Eliminar locales", `¿Eliminar por completo ${selectedVenueIds.length} locales seleccionados? Esta acción no se puede deshacer.`, [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Eliminar", style: "destructive", onPress: () => void (async () => {
+        setSaving(true);
+        try {
+          await deleteVenuesAdmin(selectedVenueIds);
+          setSelectedVenueIds([]);
+          setStatusMsg("Locales eliminados");
+          await load();
+        } catch (err) {
+          reportError(err, { action: "deleteVenues" });
+          Alert.alert("No se pudieron eliminar", err instanceof Error ? err.message : "Error");
+        } finally {
+          setSaving(false);
+        }
+      })() },
+    ]);
   };
 
   const pickPhoto = async (venueId: number) => {
@@ -545,17 +576,10 @@ export default function AdminVenuesScreen() {
           </Pressable>
           <Text className="text-2xl font-bold text-foreground">Admin · Locales</Text>
         </View>
-        <Pressable
-          onPress={startCreate}
-          style={{
-            borderRadius: 999,
-            backgroundColor: colors.primary,
-            paddingHorizontal: 14,
-            paddingVertical: 8,
-          }}
-        >
-          <Text style={{ color: colors.background, fontWeight: "700", fontSize: 13 }}>+ Nuevo</Text>
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {selectedVenueIds.length ? <Pressable onPress={confirmDeleteSelected} disabled={saving} style={{ borderRadius: 999, backgroundColor: "#ef4444", paddingHorizontal: 12, paddingVertical: 8, opacity: saving ? 0.6 : 1 }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 12 }}>Eliminar seleccionados</Text></Pressable> : null}
+          <Pressable onPress={startCreate} style={{ borderRadius: 999, backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8 }}><Text style={{ color: colors.background, fontWeight: "700", fontSize: 13 }}>+ Nuevo</Text></Pressable>
+        </View>
       </View>
 
       {statusMsg ? (
@@ -616,6 +640,9 @@ export default function AdminVenuesScreen() {
               )}
               <View style={{ padding: 12 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Pressable onPress={() => toggleVenueSelection(item.id)} accessibilityRole="checkbox" accessibilityState={{ checked: selectedVenueIds.includes(item.id) }} accessibilityLabel={`Seleccionar local ${item.name}`} style={{ width: 44, height: 44, marginRight: 6, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: selectedVenueIds.includes(item.id) ? `${colors.primary}22` : colors.background }}>
+                    <Text style={{ color: selectedVenueIds.includes(item.id) ? colors.primary : colors.muted, fontSize: 20, fontWeight: "900" }}>{selectedVenueIds.includes(item.id) ? "✓" : "○"}</Text>
+                  </Pressable>
                   <Text style={{ flex: 1, color: colors.foreground, fontWeight: "700", fontSize: 16 }}>
                     {item.name}
                   </Text>

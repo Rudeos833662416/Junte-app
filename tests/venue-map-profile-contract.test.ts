@@ -50,4 +50,20 @@ describe("venue map and profile contract", () => {
     expect(mapSource).toContain("router.setParams");
     expect(mapSource).toContain("focusVenueId: undefined");
   });
+
+  it("keeps pin taps immediate and excludes device GPS venues from admin-facing data", () => {
+    expect(mapSource).toContain("handleVenuePress");
+    expect(mapSource).toContain("width: 64");
+    expect(mapSource).toContain('.neq("source", "device")');
+    expect(readFileSync(resolve(root, "app/admin/venues.tsx"), "utf8")).toContain('.neq("source", "device")');
+  });
+
+  it("supports selecting and deleting several real venues from admin", () => {
+    const adminSource = readFileSync(resolve(root, "app/admin/venues.tsx"), "utf8");
+    const helperSource = readFileSync(resolve(root, "lib/events-admin.ts"), "utf8");
+    expect(adminSource).toContain("selectedVenueIds");
+    expect(adminSource).toContain("Eliminar seleccionados");
+    expect(helperSource).toContain("deleteVenuesAdmin");
+    expect(helperSource).toContain('.in("id", ids)');
+  });
 });

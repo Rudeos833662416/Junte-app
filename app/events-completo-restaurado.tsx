@@ -167,7 +167,7 @@ export default function EventsScreen() {
     const loadVersion = ++loadVersionRef.current;
     if (!hasLoadedRef.current) setLoading(true);
     const [{ data: venueRows }, { data: postRows, error: postsError }, { data: adminRow }] = await Promise.all([
-      supabase.from("venues").select("id, name, address, description, city, latitude, longitude, admin_rank, admin_photo_url").not("admin_rank", "is", null).order("admin_rank", { ascending: true }).limit(5),
+      supabase.from("venues").select("id, name, address, description, city, latitude, longitude, admin_rank, admin_photo_url").neq("source", "device").not("admin_rank", "is", null).order("admin_rank", { ascending: true }).limit(5),
       supabase.from("official_posts").select("id, media_url, media_type, caption, created_at, created_by, media_width, media_height").is("deleted_at", null).order("created_at", { ascending: false }).limit(50),
       supabase.from("profiles").select("is_admin").eq("id", user.id).maybeSingle(),
     ]);
@@ -432,7 +432,7 @@ export default function EventsScreen() {
       const latitude = place?.latitude ?? selectedVenue.latitude ?? null;
       const longitude = place?.longitude ?? selectedVenue.longitude ?? null;
       const city = place?.city ?? selectedVenue.city ?? null;
-      const { data: rankedRows, error: rankedError } = await supabase.from("venues").select("id, admin_rank").not("admin_rank", "is", null).order("admin_rank", { ascending: true });
+      const { data: rankedRows, error: rankedError } = await supabase.from("venues").select("id, admin_rank").neq("source", "device").not("admin_rank", "is", null).order("admin_rank", { ascending: true });
       if (rankedError) throw rankedError;
       const movingId = selectedVenue.id === -1 ? null : selectedVenue.id;
       const ordered = (rankedRows ?? []).filter((row) => row.id !== movingId).sort((a, b) => (a.admin_rank ?? 99) - (b.admin_rank ?? 99)).map((row) => row.id as number);

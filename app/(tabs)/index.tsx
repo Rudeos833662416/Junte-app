@@ -82,7 +82,7 @@ export default function HomeScreen() {
         setActiveCheckin({
           id: checkinData.id,
           venueId: checkinData.venue_id,
-          venueName: venueInfo?.name ?? "Ubicación GPS actual",
+          venueName: venueInfo?.name === "Ubicación GPS actual" ? "Lugar compartido" : (venueInfo?.name ?? "Lugar compartido"),
           createdAt: checkinData.created_at,
         });
       } else {
@@ -228,7 +228,7 @@ export default function HomeScreen() {
       setActiveCheckin({
         id: result.id,
         venueId: result.venue_id,
-        venueName: result.venue_name,
+      venueName: result.venue_name === "Ubicación GPS actual" ? "Lugar compartido" : result.venue_name,
         createdAt: result.created_at,
       });
 
@@ -241,7 +241,7 @@ export default function HomeScreen() {
         });
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
-      Alert.alert("Brindis activo", "Tu ubicación GPS actual quedó registrada.");
+      Alert.alert("Brindis activo", "Tu brindis quedó registrado y se mostrará según la audiencia elegida.");
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "No se pudo brindar.");
     } finally {

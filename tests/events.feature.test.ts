@@ -83,4 +83,10 @@ describe("Navegación y consistencia visual", () => {
     expect(authorMigrationSource).toContain("auth.users");
     expect(authorMigrationSource).toContain("avatar_url");
   });
+
+  it("uses a finite venue carousel and excludes GPS-only venues", () => {
+    expect(eventsSource).toContain("featuredVenues.map((venue)");
+    expect(eventsSource).not.toContain("featuredVenuesLoop");
+    expect(eventsSource).toContain('.neq("source", "device")');
+  });
 });

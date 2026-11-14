@@ -80,6 +80,13 @@ export async function deleteVenueAdmin(venueId: number) {
   if (error) throw error;
 }
 
+export async function deleteVenuesAdmin(venueIds: number[]) {
+  const ids = [...new Set(venueIds)].filter((id) => Number.isFinite(id));
+  if (!ids.length) return;
+  const { error } = await supabase.from("venues").delete().in("id", ids).neq("source", "device");
+  if (error) throw error;
+}
+
 export async function createVenueAdmin(params: {
   name: string;
   address?: string | null;

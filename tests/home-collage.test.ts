@@ -22,7 +22,7 @@ describe("Home collage", () => {
     expect(settings).toContain("fade_duration_ms: 2300");
     expect(settings).toContain("hold_duration_ms: 6500");
     expect(collage).toContain("ExpoImage.prefetch");
-    expect(collage).toContain("setImages((current) => imageData?.length ?");
+    expect(collage).toContain("setImages((imageData ?? []) as CollageImage[])");
     expect(collage).toContain("removeChannel");
   });
 
@@ -43,5 +43,11 @@ describe("Home collage", () => {
     expect(collage).toContain("colorScheme");
     expect(settingsMigration).toContain("home_collage_settings");
     expect(settingsMigration).toContain("public.is_admin()");
+  });
+
+  it("clears deleted images while retaining the current frame on query errors", () => {
+    expect(collage).toContain("imageError");
+    expect(collage).toContain("setImages((imageData ?? []) as CollageImage[])");
+    expect(collage).toContain("if (!imageError)");
   });
 });

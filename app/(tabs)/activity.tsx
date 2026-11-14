@@ -96,7 +96,7 @@ export default function ActivityScreen() {
           ? supabase.rpc("get_visible_profiles", { p_ids: actorIds })
           : Promise.resolve({ data: [] as { id: string; name: string | null; avatar_url: string | null }[] }),
         venueIds.length
-          ? supabase.from("venues").select("id, name").in("id", venueIds)
+          ? supabase.from("venues").select("id, name").in("id", venueIds).neq("source", "device")
           : Promise.resolve({ data: [] as { id: number; name: string }[] }),
       ]);
       const profileMap = new Map(
