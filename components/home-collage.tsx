@@ -57,14 +57,20 @@ export function HomeCollage() {
   const brightnessOpacity = Math.abs(settings.brightness) * 0.65;
 
   const load = useCallback(async () => {
-    const [{ data: imageData }, { data: settingsData }] = await Promise.all([
+  const [{ data: imageData }, { data: settingsData }] = await Promise.all([
       imagesTable().select("id, image_url, alt_text, sort_order, theme, is_published").eq("theme", selectedTheme).eq("is_published", readMode).eq("is_active", true).order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       settingsTable().select("image_opacity, brightness, contrast, overlay_color, overlay_opacity, fade_duration_ms, hold_duration_ms, transition_type, shuffle_enabled, autoplay_enabled").eq("theme", selectedTheme).eq("is_published", readMode).maybeSingle(),
-    ]);
-    setImages((imageData ?? []) as CollageImage[]);
-    setSettings(normalizeHomeCollageSettings(settingsData));
+  ]);
+    setImages((current) => imageData?.length ? imageData as CollageImage[] : current);
+    if (settingsData) setSettings(normalizeHomeCollageSettings(settingsData));
     setLoading(false);
   }, [readMode, selectedTheme]);
+
+  useEffect(() => {
+    setImages([]);
+    setSettings(DEFAULT_HOME_COLLAGE_SETTINGS);
+    setLoading(true);
+  }, [selectedTheme]);
 
   useEffect(() => {
     let cancelled = false;

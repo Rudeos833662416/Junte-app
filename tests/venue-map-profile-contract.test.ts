@@ -44,4 +44,10 @@ describe("venue map and profile contract", () => {
     expect(mapSource).toContain("onPanResponderRelease");
     expect(mapSource).toContain('.subscribe((status) =>');
   });
+
+  it("clears focus params when the venue preview is dismissed", () => {
+    expect(mapSource).toContain("dismissVenuePreview");
+    expect(mapSource).toContain("router.setParams");
+    expect(mapSource).toContain("focusVenueId: undefined");
+  });
 });
