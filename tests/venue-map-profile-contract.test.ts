@@ -39,7 +39,8 @@ describe("venue map and profile contract", () => {
   });
 
   it("keeps custom venue pins renderable on Android and exposes pull-to-refresh feedback", () => {
-    expect(mapSource).toContain("tracksViewChanges={true}");
+    expect(mapSource).toContain("tracksViewChanges={false}");
+    expect(mapSource).toContain("onSelect={() => handleVenuePress(venue)}");
     expect(mapSource).toContain("PanResponder.create");
     expect(mapSource).toContain("onPanResponderRelease");
     expect(mapSource).toContain('.subscribe((status) =>');
@@ -65,5 +66,14 @@ describe("venue map and profile contract", () => {
     expect(adminSource).toContain("Eliminar seleccionados");
     expect(helperSource).toContain("deleteVenuesAdmin");
     expect(helperSource).toContain('.in("id", ids)');
+  });
+
+  it("keeps the create form inside the admin list scroll container", () => {
+    const adminSource = readFileSync(resolve(root, "app/admin/venues.tsx"), "utf8");
+    expect(adminSource).toContain("ListHeaderComponent");
+    expect(adminSource).toContain("renderForm(\"create\")");
+    expect(adminSource).toContain("KeyboardAvoidingView");
+    expect(adminSource).toContain('keyboardShouldPersistTaps="handled"');
+    expect(adminSource).not.toContain("{creating ? renderForm(\"create\") : null}\n\n      <FlatList");
   });
 });

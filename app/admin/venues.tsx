@@ -3,11 +3,13 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Pressable,
   Text,
   TextInput,
   View,
   Linking,
+  Platform,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
@@ -567,41 +569,31 @@ export default function AdminVenuesScreen() {
 
   return (
     <ScreenContainer className="p-4">
-      <View className="mb-3 flex-row items-center justify-between">
-        <View className="flex-row items-center gap-3">
-          <Pressable onPress={() => router.back()}>
-            <Text className="text-2xl" style={{ color: colors.primary }}>
-              ‹
-            </Text>
-          </Pressable>
-          <Text className="text-2xl font-bold text-foreground">Admin · Locales</Text>
-        </View>
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          {selectedVenueIds.length ? <Pressable onPress={confirmDeleteSelected} disabled={saving} style={{ borderRadius: 999, backgroundColor: "#ef4444", paddingHorizontal: 12, paddingVertical: 8, opacity: saving ? 0.6 : 1 }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 12 }}>Eliminar seleccionados</Text></Pressable> : null}
-          <Pressable onPress={startCreate} style={{ borderRadius: 999, backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8 }}><Text style={{ color: colors.background, fontWeight: "700", fontSize: 13 }}>+ Nuevo</Text></Pressable>
-        </View>
-      </View>
-
-      {statusMsg ? (
-        <View
-          style={{
-            marginBottom: 10,
-            borderRadius: 12,
-            backgroundColor: `${colors.primary}18`,
-            paddingHorizontal: 12,
-            paddingVertical: 8,
-          }}
-        >
-          <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 13 }}>{statusMsg}</Text>
-        </View>
-      ) : null}
-
-      {creating ? renderForm("create") : null}
-
-      <FlatList
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <FlatList
         data={venues}
         keyExtractor={(item) => String(item.id)}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         contentContainerStyle={{ paddingBottom: 48, gap: 12, paddingTop: creating ? 12 : 0 }}
+        ListHeaderComponent={
+          <>
+            <View className="mb-3 flex-row items-center justify-between">
+              <View className="flex-row items-center gap-3">
+                <Pressable onPress={() => router.back()}>
+                  <Text className="text-2xl" style={{ color: colors.primary }}>‹</Text>
+                </Pressable>
+                <Text className="text-2xl font-bold text-foreground">Admin · Locales</Text>
+              </View>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {selectedVenueIds.length ? <Pressable onPress={confirmDeleteSelected} disabled={saving} style={{ borderRadius: 999, backgroundColor: "#ef4444", paddingHorizontal: 12, paddingVertical: 8, opacity: saving ? 0.6 : 1 }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 12 }}>Eliminar seleccionados</Text></Pressable> : null}
+                <Pressable onPress={startCreate} style={{ borderRadius: 999, backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8 }}><Text style={{ color: colors.background, fontWeight: "700", fontSize: 13 }}>+ Nuevo</Text></Pressable>
+              </View>
+            </View>
+            {statusMsg ? <View style={{ marginBottom: 10, borderRadius: 12, backgroundColor: `${colors.primary}18`, paddingHorizontal: 12, paddingVertical: 8 }}><Text style={{ color: colors.primary, fontWeight: "600", fontSize: 13 }}>{statusMsg}</Text></View> : null}
+            {creating ? renderForm("create") : null}
+          </>
+        }
         ListEmptyComponent={<Text className="text-muted">No hay locales todavía.</Text>}
         renderItem={({ item }) => {
           const rankColor =
@@ -723,7 +715,8 @@ export default function AdminVenuesScreen() {
             </View>
           );
         }}
-      />
+        />
+      </KeyboardAvoidingView>
     </ScreenContainer>
   );
 }
