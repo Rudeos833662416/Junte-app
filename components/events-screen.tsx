@@ -309,8 +309,8 @@ export function EventsScreen() {
           .from("venues")
           .select("id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url, category, opening_hours, venue_status, rating, active_promotion")
           .neq("source", "device")
-          .not("admin_rank", "is", null)
-          .order("admin_rank", { ascending: true })
+          .order("admin_rank", { ascending: true, nullsFirst: false })
+          .order("id", { ascending: false })
           .limit(5);
         setFeaturedVenues((venueRows ?? []) as FeaturedVenue[]);
         if (venueId) {

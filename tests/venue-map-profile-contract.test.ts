@@ -39,7 +39,8 @@ describe("venue map and profile contract", () => {
   });
 
   it("keeps custom venue pins renderable on Android and exposes pull-to-refresh feedback", () => {
-    expect(mapSource).toContain("tracksViewChanges={false}");
+    expect(mapSource).toContain("trackVenueViews");
+    expect(mapSource).toContain("setTrackVenueViews(false)");
     expect(mapSource).toContain("onSelect={() => handleVenuePress(venue)}");
     expect(mapSource).toContain("PanResponder.create");
     expect(mapSource).toContain("onPanResponderRelease");
@@ -75,5 +76,11 @@ describe("venue map and profile contract", () => {
     expect(adminSource).toContain("KeyboardAvoidingView");
     expect(adminSource).toContain('keyboardShouldPersistTaps="handled"');
     expect(adminSource).not.toContain("{creating ? renderForm(\"create\") : null}\n\n      <FlatList");
+  });
+
+  it("shows newly created admin venues in Events even without a Top rank", () => {
+    expect(profileSource).toContain('.neq("source", "device")');
+    expect(profileSource).not.toContain('.not("admin_rank", "is", null)');
+    expect(profileSource).toContain('nullsFirst: false');
   });
 });

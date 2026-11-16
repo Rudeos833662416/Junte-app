@@ -67,6 +67,7 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [trackVenueViews, setTrackVenueViews] = useState(true);
   const [is3D, setIs3D] = useState(false);
   const [isRealistic, setIsRealistic] = useState(false);
 
@@ -78,6 +79,13 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
     return true;
   }, [mapVenueFromRow]);
   const visibleVenues = useMemo(() => filterMapVenues(venues, category), [category, venues]);
+
+  useEffect(() => {
+    if (!visibleVenues.length) return;
+    setTrackVenueViews(true);
+    const timer = setTimeout(() => setTrackVenueViews(false), 750);
+    return () => clearTimeout(timer);
+  }, [visibleVenues]);
 
   const loadTopVenues = useCallback(async () => {
     const { data } = await supabase.from("venues").select("id, name, latitude, longitude, admin_rank").neq("source", "device").not("admin_rank", "is", null).not("latitude", "is", null).not("longitude", "is", null).order("admin_rank", { ascending: true }).limit(5);
@@ -165,7 +173,7 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
     <View style={[styles.root, { backgroundColor: colors.abyss }]}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
       <MapView ref={mapRef} style={StyleSheet.absoluteFill} provider={useGoogleProvider ? PROVIDER_GOOGLE : undefined} initialRegion={coordinates ? mapRegionFor(coordinates) : undefined} initialCamera={coordinates ? cameraFor(coordinates, is3D) : undefined} mapType={isRealistic ? "satellite" : "standard"} customMapStyle={isRealistic ? undefined : CLEAN_MAP_STYLE} pitchEnabled rotateEnabled showsBuildings={false} showsPointsOfInterest={false} showsCompass={false} showsUserLocation={false} showsMyLocationButton={false} loadingEnabled={false} onMapReady={() => setMapReady(true)}>
-        {visibleVenues.map((venue) => <Marker key={`venue-${venue.id}`} coordinate={{ latitude: venue.latitude, longitude: venue.longitude }} onPress={() => handleVenuePress(venue)} onSelect={() => handleVenuePress(venue)} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={false} zIndex={10} accessibilityLabel={`Local ${venue.name}, ${VENUE_CATEGORY_LABELS[venue.category]}`}><View style={styles.pinHitbox}><View style={styles.pinWrap}><View style={[styles.venuePin, { backgroundColor: venueColor(venue.category) }]}><MaterialIcons name={venueCategoryIcon(venue.category)} size={18} color="#FFFFFF" /></View><View style={[styles.pinTail, { borderTopColor: venueColor(venue.category) }]} /></View></View></Marker>)}
+        {visibleVenues.map((venue) => <Marker key={`venue-${venue.id}`} coordinate={{ latitude: venue.latitude, longitude: venue.longitude }} onPress={() => handleVenuePress(venue)} onSelect={() => handleVenuePress(venue)} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={trackVenueViews} zIndex={10} accessibilityLabel={`Local ${venue.name}, ${VENUE_CATEGORY_LABELS[venue.category]}`}><View style={styles.pinHitbox}><View style={styles.pinWrap}><View style={[styles.venuePin, { backgroundColor: venueColor(venue.category) }]}><MaterialIcons name={venueCategoryIcon(venue.category)} size={18} color="#FFFFFF" /></View><View style={[styles.pinTail, { borderTopColor: venueColor(venue.category) }]} /></View></View></Marker>)}
         {isActive && coordinates ? <Marker key="my-active-checkin" coordinate={coordinates} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges><View style={styles.beerMarker}><BebeConmigoCan width={44} height={68} /></View></Marker> : null}
         {topVenues.filter((venue) => !venues.some((item) => item.id === venue.id)).map((venue) => <Marker key={`top-venue-${venue.id}`} coordinate={{ latitude: venue.latitude, longitude: venue.longitude }} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}><View style={styles.starMarker}><MaterialIcons name="star" size={34} color="#F4C542" /><Text style={styles.starMarkerRank}>{venue.admin_rank}</Text></View></Marker>)}
         {hotZoneCenter && hotZoneCount > 0 ? <><Circle center={hotZoneCenter} radius={hotZoneRadius} fillColor="rgba(239, 68, 68, 0.18)" strokeColor="rgba(248, 113, 113, 0.82)" strokeWidth={2} zIndex={1} /><Marker coordinate={hotZoneCenter} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={2}><View style={styles.hotZoneLabel}><Text style={styles.hotZoneLabelText}>{hotZoneCount} Brindis</Text></View></Marker></> : null}
