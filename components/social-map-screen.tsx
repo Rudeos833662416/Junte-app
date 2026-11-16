@@ -65,6 +65,7 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   const [permission, setPermission] = useState<Location.PermissionStatus | "checking">("checking");
   const [servicesEnabled, setServicesEnabled] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [venuesError, setVenuesError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [trackVenueViews, setTrackVenueViews] = useState(true);
@@ -74,7 +75,8 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   const mapVenueFromRow = useCallback((venue: any): MapVenue | null => normalizeMapVenue(venue), []);
   const loadVenues = useCallback(async () => {
     const { data, error } = await supabase.from("venues").select("id, name, category, latitude, longitude, address, city, admin_photo_url, rating, opening_hours, venue_status, active_promotion").neq("source", "device").not("latitude", "is", null).not("longitude", "is", null).limit(300);
-    if (error) { console.warn("Venue pins unavailable:", error.message); return false; }
+    if (error) { console.warn("Venue pins unavailable:", error.message); setVenuesError("La conexión no permitió cargar los locales."); return false; }
+    setVenuesError(null);
     setVenues((data ?? []).map(mapVenueFromRow).filter((venue): venue is MapVenue => Boolean(venue)));
     return true;
   }, [mapVenueFromRow]);
@@ -128,13 +130,24 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   }, [loadActiveState, loadFriendMarkers, loadTopVenues, loadVenues, mapVenueFromRow, refreshMap, revision, user?.id]);
 
   const applyLocation = useCallback((location: Location.LocationObject) => { const next = { latitude: location.coords.latitude, longitude: location.coords.longitude }; setCoordinates(next); if (canSyncLocationRef.current && user) void syncProfileLocation(user.id, next.latitude, next.longitude); setErrorMessage(null); }, [user]);
-  const startTracking = useCallback(async () => {
+  const startTracking = useCallback(async (allowPrompt = false) => {
     if (Platform.OS === "web") { setPermission(Location.PermissionStatus.DENIED); setErrorMessage("La ubicación real solo está disponible en la aplicación móvil."); return; }
     setIsRefreshing(true); setErrorMessage(null); subscriptionRef.current?.remove(); subscriptionRef.current = null;
     try {
       const enabled = await Location.hasServicesEnabledAsync(); setServicesEnabled(enabled); if (!enabled) { setErrorMessage("Activa el servicio de ubicación del teléfono para continuar."); return; }
       if (user) { const { data: privacy } = await supabase.from("profiles").select("is_public, discoverable_nearby, location_sharing").eq("id", user.id).maybeSingle(); canSyncLocationRef.current = Boolean(privacy?.is_public && privacy?.discoverable_nearby && privacy?.location_sharing); }
-      const currentPermission = await Location.getForegroundPermissionsAsync(); const permissionResult = currentPermission.status === Location.PermissionStatus.GRANTED ? currentPermission : await Location.requestForegroundPermissionsAsync(); setPermission(permissionResult.status); if (permissionResult.status !== Location.PermissionStatus.GRANTED) { setErrorMessage("Permite la ubicación mientras usas Junta2 para mostrarte en el mapa."); return; }
+      const currentPermission = await Location.getForegroundPermissionsAsync();
+      const permissionResult = currentPermission.status === Location.PermissionStatus.GRANTED
+        ? currentPermission
+        : currentPermission.status === Location.PermissionStatus.UNDETERMINED && !allowPrompt
+          ? currentPermission
+          : await Location.requestForegroundPermissionsAsync();
+      setPermission(permissionResult.status);
+      if (permissionResult.status === Location.PermissionStatus.UNDETERMINED) {
+        setErrorMessage("Confirma primero el consentimiento de ubicación para activar el mapa.");
+        return;
+      }
+      if (permissionResult.status !== Location.PermissionStatus.GRANTED) { setErrorMessage("Permite la ubicación mientras usas Junta2 para mostrarte en el mapa."); return; }
       applyLocation(await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true })); subscriptionRef.current = await Location.watchPositionAsync(LOCATION_OPTIONS, applyLocation);
     } catch (error) { setErrorMessage(error instanceof Error ? error.message : "No pudimos obtener tu ubicación."); } finally { setIsRefreshing(false); }
   }, [applyLocation, user]);
@@ -186,13 +199,34 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
         <View {...refreshPanResponder.panHandlers} style={styles.refreshGesture}><View style={styles.refreshHandle} />{isRefreshing ? <ActivityIndicator size="small" color="#FFFFFF" /> : null}</View>
       </View>
       {hotZoneCount > 0 ? <View style={[styles.liveChip, { top: insets.top + 150 }]}><View style={[styles.liveDot, { backgroundColor: colors.success }]} /><Text style={styles.liveChipText}>{statusText}</Text></View> : null}
+      {venuesError ? <View style={[styles.venuesError, { top: insets.top + 160 }]}><Text style={styles.venuesErrorText}>{venuesError}</Text><Pressable onPress={() => void refreshMap()} accessibilityRole="button" accessibilityLabel="Reintentar cargar locales" style={styles.venuesRetry}><Text style={styles.venuesRetryText}>Reintentar</Text></Pressable></View> : null}
 
       {selectedVenue ? <Pressable onPress={openVenueProfile} accessibilityRole="button" accessibilityLabel={`Abrir perfil de ${selectedVenue.name}`} style={[styles.previewCard, { bottom: insets.bottom + 92, backgroundColor: colors.surface }]}>
         {selectedVenue.admin_photo_url ? <ExpoImage source={{ uri: selectedVenue.admin_photo_url }} cachePolicy="memory-disk" contentFit="cover" style={styles.previewImage} /> : <View style={[styles.previewImage, styles.previewPlaceholder, { backgroundColor: venueColor(selectedVenue.category) }]}><MaterialIcons name="place" size={34} color="#FFFFFF" /></View>}
         <View style={styles.previewContent}><View style={styles.previewTitleRow}><Text numberOfLines={1} style={[styles.previewTitle, { color: colors.foreground }]}>{selectedVenue.name}</Text><Pressable onPress={(event) => { event.stopPropagation(); dismissVenuePreview(); }} accessibilityRole="button" accessibilityLabel="Cerrar vista previa" hitSlop={8}><MaterialIcons name="close" size={20} color={colors.muted} /></Pressable></View><Text style={[styles.previewMeta, { color: colors.muted }]}>{venueStatusLabel(selectedVenue.status)} · {distanceLabel}</Text><Text style={[styles.previewMeta, { color: colors.muted }]}>{selectedVenue.rating != null ? `★ ${selectedVenue.rating.toFixed(1)}` : "Sin calificación"}{selectedVenue.opening_hours ? ` · ${selectedVenue.opening_hours}` : ""}</Text>{selectedVenue.active_promotion ? <View style={styles.promoBadge}><Text style={styles.promoText}>{selectedVenue.active_promotion}</Text></View> : null}<Text style={[styles.openHint, { color: colors.primary }]}>Ver perfil del local →</Text></View>
       </Pressable> : null}
 
-      {!coordinates ? <View style={[styles.permissionCard, { bottom: insets.bottom + 32 }]}><IconSymbol name="location.fill" size={30} color={colors.primary} /><Text style={styles.permissionTitle}>Activa tu mapa en vivo</Text><Text style={styles.permissionBody}>{errorMessage ?? "Permite la ubicación para centrar el mapa y mostrar distancias."}</Text><Pressable onPress={() => (permission === Location.PermissionStatus.DENIED || servicesEnabled === false ? void Linking.openSettings() : void startTracking())} style={styles.permissionButton}><Text style={styles.permissionButtonText}>{permission === Location.PermissionStatus.DENIED || servicesEnabled === false ? "Abrir ajustes" : "Permitir ubicación"}</Text></Pressable></View> : <View style={[styles.controls, { bottom: insets.bottom + 22 }]}><Pressable accessibilityRole="button" accessibilityLabel={is3D ? "Cambiar a vista 2D" : "Cambiar a vista 3D"} onPress={() => { const next = !is3D; setIs3D(next); if (coordinates) void mapRef.current?.animateCamera(cameraFor(coordinates, next), { duration: 420 }); }} style={styles.floatingButton}><Text style={styles.controlText}>{is3D ? "3D" : "2D"}</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Centrar mapa en mi ubicación" onPress={() => coordinates ? mapRef.current?.animateCamera(cameraFor(coordinates, is3D), { duration: 420 }) : void startTracking()} style={styles.floatingButton}>{isRefreshing ? <ActivityIndicator color="#FFFFFF" /> : <IconSymbol name="location.fill" size={25} color="#FFFFFF" />}</Pressable></View>}
+      {!coordinates ? (
+        <View style={[styles.permissionCard, { bottom: insets.bottom + 32 }]}>
+          <IconSymbol name="location.fill" size={30} color={colors.primary} />
+          <Text style={styles.permissionTitle}>Activa tu mapa en vivo</Text>
+          <Text style={styles.permissionBody}>{errorMessage ?? "Permite la ubicación para centrar el mapa y mostrar distancias."}</Text>
+          <Pressable
+            onPress={() => {
+              if (permission === Location.PermissionStatus.DENIED || servicesEnabled === false) void Linking.openSettings();
+              else void startTracking(true);
+            }}
+            style={styles.permissionButton}
+          >
+            <Text style={styles.permissionButtonText}>{permission === Location.PermissionStatus.DENIED || servicesEnabled === false ? "Abrir ajustes" : "Permitir ubicación"}</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={[styles.controls, { bottom: insets.bottom + 22 }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={is3D ? "Cambiar a vista 2D" : "Cambiar a vista 3D"} onPress={() => { const next = !is3D; setIs3D(next); if (coordinates) void mapRef.current?.animateCamera(cameraFor(coordinates, next), { duration: 420 }); }} style={styles.floatingButton}><Text style={styles.controlText}>{is3D ? "3D" : "2D"}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Centrar mapa en mi ubicación" onPress={() => { if (coordinates) void mapRef.current?.animateCamera(cameraFor(coordinates, is3D), { duration: 420 }); else void startTracking(true); }} style={styles.floatingButton}>{isRefreshing ? <ActivityIndicator color="#FFFFFF" /> : <IconSymbol name="location.fill" size={25} color="#FFFFFF" />}</Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -213,6 +247,10 @@ const styles = StyleSheet.create({
   liveChip: { position: "absolute", left: 16, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: "#FFFFFF22", backgroundColor: "rgba(3, 8, 18, 0.88)" },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   liveChipText: { color: "#F7FBFF", fontSize: 12, fontWeight: "700" },
+  venuesError: { position: "absolute", left: 16, right: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14, borderWidth: 1, borderColor: "#FFB4A0", backgroundColor: "rgba(45, 12, 8, 0.94)" },
+  venuesErrorText: { flex: 1, color: "#FFF7F5", fontSize: 12, fontWeight: "700" },
+  venuesRetry: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
+  venuesRetryText: { color: "#FFB39B", fontSize: 12, fontWeight: "900" },
   pinHitbox: { width: 64, height: 70, alignItems: "center", justifyContent: "flex-start" },
   pinWrap: { width: 46, height: 54, alignItems: "center" },
   venuePin: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "#FFFFFF", shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 5, shadowOffset: { width: 0, height: 3 }, elevation: 7 },

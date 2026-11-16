@@ -6,7 +6,7 @@ import { BrandBackdrop } from "@/components/brand-backdrop";
 import { useThemeContext } from "@/lib/theme-provider";
 import { useState } from "react";
 import * as WebBrowser from "expo-web-browser";
-import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 if (Platform.OS === "web") {
   WebBrowser.maybeCompleteAuthSession();
@@ -104,7 +104,8 @@ export default function LoginScreen() {
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]} className="px-6">
       <BrandBackdrop>
-      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingVertical: 40, justifyContent: "center" }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingVertical: 40, paddingBottom: 56, justifyContent: "center" }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View className="items-center">
           <Image
             source={colorScheme === "light" ? require("@/assets/brand/wordmark-light.png") : require("@/assets/brand/wordmark-dark.png")}
@@ -236,6 +237,7 @@ export default function LoginScreen() {
           </Pressable>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
       </BrandBackdrop>
     </ScreenContainer>
   );

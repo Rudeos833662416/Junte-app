@@ -66,6 +66,7 @@ function UnreadBadge() {
 function LocationConsentPrompt() {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
+  const { refreshNow } = useAppRefresh();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -81,6 +82,7 @@ function LocationConsentPrompt() {
     if (requestPermission) await Location.requestForegroundPermissionsAsync();
     await AsyncStorage.setItem(`skynight-location-consent:${user.id}`, requestPermission ? "accepted" : "declined");
     setVisible(false);
+    refreshNow();
   };
 
   return (

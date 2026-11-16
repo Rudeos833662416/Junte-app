@@ -11,6 +11,9 @@ const screens = [
 const friendsSource = readFileSync("app/(tabs)/friends.tsx", "utf8");
 const scannerSource = readFileSync("app/scan-qr.tsx", "utf8");
 const mapRouteSource = readFileSync("app/(tabs)/map.tsx", "utf8");
+const mapScreenSource = readFileSync("components/social-map-screen.tsx", "utf8");
+const eventsSource = readFileSync("components/events-screen.tsx", "utf8");
+const tabsLayoutSource = readFileSync("app/(tabs)/_layout.tsx", "utf8");
 const activitySource = readFileSync("app/(tabs)/activity.tsx", "utf8");
 const loginSource = readFileSync("app/login.tsx", "utf8");
 const callbackSource = readFileSync("app/auth/callback.tsx", "utf8");
@@ -42,10 +45,25 @@ describe("contratos UX transversales", () => {
 		expect(scannerSource).toContain('parsed.protocol === "socialsip:"');
 	});
 
-	it("expone la pantalla funcional del mapa en la ruta activa", () => {
-		expect(mapRouteSource).toContain("SocialMapScreen");
-		expect(mapRouteSource).not.toContain("NativeMap");
-	});
+		it("expone la pantalla funcional del mapa en la ruta activa", () => {
+			expect(mapRouteSource).toContain("SocialMapScreen");
+			expect(mapRouteSource).not.toContain("NativeMap");
+			expect(mapRouteSource).not.toContain("useGoogleProvider");
+			expect(mapScreenSource).toContain("La conexión no permitió cargar los locales");
+			expect(mapScreenSource).toContain("Reintentar");
+		});
+
+		it("protege login y modales contra teclado y safe areas de iOS", () => {
+			expect(loginSource).toContain("KeyboardAvoidingView");
+			expect(eventsSource).toContain("useSafeAreaInsets");
+			expect(eventsSource).toContain("insets.top");
+			expect(eventsSource).toContain("insets.bottom");
+		});
+
+		it("evita que el consentimiento y el mapa soliciten ubicación al mismo tiempo", () => {
+			expect(tabsLayoutSource).toContain("refreshNow");
+			expect(mapScreenSource).toContain("PermissionStatus.UNDETERMINED");
+		});
 
 	it("protege mutaciones de solicitudes y conserva datos ante errores", () => {
 		expect(friendsSource).toContain("respondingRequestId");

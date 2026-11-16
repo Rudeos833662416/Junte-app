@@ -39,6 +39,7 @@ import {
   Linking,
   type ViewToken,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -117,12 +118,14 @@ type FeaturedVenue = {
 
 export function EventsScreen() {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth({ autoFetch: true });
   const { postId: requestedPostId, venueId: requestedVenueId } = useLocalSearchParams<{ postId?: string; venueId?: string }>();
   const postId = typeof requestedPostId === "string" ? requestedPostId : undefined;
   const venueId = typeof requestedVenueId === "string" ? requestedVenueId : undefined;
   const [posts, setPosts] = useState<OfficialPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [commentFor, setCommentFor] = useState<string | null>(null);
   const [comments, setComments] = useState<CommentRow[]>([]);
@@ -233,8 +236,9 @@ export function EventsScreen() {
       if (!user) return;
       const silent = Boolean(opts?.silent);
       if (!silent) setLoading(true);
+      if (!silent) setLoadError(null);
       try {
-        const [{ data: postRows }, { data: adminRow }] = await Promise.all([
+        const [postsResult, adminResult] = await Promise.all([
           supabase
             .from("official_posts")
             .select(
@@ -245,6 +249,10 @@ export function EventsScreen() {
             .limit(50),
           supabase.from("profiles").select("is_admin").eq("id", user.id).maybeSingle(),
         ]);
+        if (postsResult.error) throw postsResult.error;
+        if (adminResult.error) throw adminResult.error;
+        const postRows = postsResult.data;
+        const adminRow = adminResult.data;
         const rawPosts = ((postRows ?? []) as unknown as (Omit<
           OfficialPost,
           "likeCount" | "commentCount" | "liked" | "authorName" | "authorAvatarUrl"
@@ -305,25 +313,28 @@ export function EventsScreen() {
           }),
         );
         setIsAdmin(Boolean(adminRow?.is_admin));
-        const { data: venueRows } = await supabase
+        const { data: venueRows, error: venuesError } = await supabase
           .from("venues")
           .select("id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url, category, opening_hours, venue_status, rating, active_promotion")
           .neq("source", "device")
           .order("admin_rank", { ascending: true, nullsFirst: false })
           .order("id", { ascending: false })
           .limit(5);
+        if (venuesError) throw venuesError;
         setFeaturedVenues((venueRows ?? []) as FeaturedVenue[]);
         if (venueId) {
-          const { data: requestedVenue } = await supabase
+          const { data: requestedVenue, error: requestedVenueError } = await supabase
             .from("venues")
             .select("id, name, address, description, city, website_url, facebook_url, instagram_url, tiktok_url, whatsapp_number, latitude, longitude, admin_rank, admin_photo_url, category, opening_hours, venue_status, rating, active_promotion")
             .neq("source", "device")
             .eq("id", Number(venueId))
             .maybeSingle();
+          if (requestedVenueError) throw requestedVenueError;
           if (requestedVenue) setVenueProfile(requestedVenue as FeaturedVenue);
         }
       } catch (err) {
         reportError(err, { screen: "events", action: "loadData" });
+        if (!silent) setLoadError("No se pudo actualizar Eventos. Conservamos el contenido anterior; inténtalo de nuevo.");
       } finally {
         if (!silent) setLoading(false);
       }
@@ -693,6 +704,18 @@ export function EventsScreen() {
         />
       ) : null}
 
+      {loadError ? (
+        <View
+          accessibilityRole="alert"
+          style={{ marginBottom: 10, borderRadius: 14, borderWidth: 1, borderColor: `${colors.error}66`, backgroundColor: `${colors.error}12`, padding: 12 }}
+        >
+          <Text style={{ color: colors.foreground, fontSize: 13, lineHeight: 18 }}>{loadError}</Text>
+          <Pressable onPress={() => void loadData()} accessibilityRole="button" accessibilityLabel="Reintentar cargar Eventos" style={{ minHeight: 44, justifyContent: "center" }}>
+            <Text style={{ color: colors.primary, fontWeight: "800" }}>Reintentar</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <FlatList
         ref={postsListRef}
         data={posts}
@@ -933,7 +956,7 @@ export function EventsScreen() {
           behavior="padding"
           keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 24}
         >
-          <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 48 }}>
+          <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: insets.top + 16 }}>
             {commentsLoading && comments.length === 0 ? (
               <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
             ) : (
@@ -1051,7 +1074,7 @@ export function EventsScreen() {
                 flexDirection: "row",
                 gap: 8,
                 alignItems: "flex-end",
-                paddingBottom: Platform.OS === "android" ? 12 : 8,
+                paddingBottom: Math.max(insets.bottom, 12),
                 borderTopWidth: 1,
                 borderTopColor: colors.border,
                 paddingTop: 10,
@@ -1104,7 +1127,7 @@ export function EventsScreen() {
 
       <Modal visible={Boolean(venueProfile)} animationType="slide" onRequestClose={() => setVenueProfile(null)}>
         <View style={{ flex: 1, backgroundColor: colors.background }}>
-          <View style={{ height: 250, backgroundColor: colors.surface }}>
+          <View style={{ height: 250 + insets.top, paddingTop: insets.top, backgroundColor: colors.surface }}>
           {venueProfile?.admin_photo_url ? (
             <Pressable onPress={() => setFullVenueImage(venueProfile.admin_photo_url)}>
               <ExpoImage
@@ -1115,7 +1138,7 @@ export function EventsScreen() {
               />
             </Pressable>
           ) : <View style={{ flex: 1, backgroundColor: colors.primary }} />}
-          <Pressable onPress={() => setVenueProfile(null)} accessibilityLabel="Cerrar perfil del local" style={{ position: "absolute", top: 52, left: 18, minWidth: 44, minHeight: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: "#00000088" }}><MaterialIcons name="arrow-back" size={22} color="#FFFFFF" /></Pressable>
+          <Pressable onPress={() => setVenueProfile(null)} accessibilityRole="button" accessibilityLabel="Cerrar perfil del local" style={{ position: "absolute", top: insets.top + 8, left: 18, minWidth: 44, minHeight: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: "#00000088" }}><MaterialIcons name="arrow-back" size={22} color="#FFFFFF" /></Pressable>
           </View>
           <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 28 }}>
           <Text style={{ color: colors.foreground, fontSize: 27, fontWeight: "900", marginTop: 2 }}>
