@@ -144,6 +144,7 @@ Deno.serve(async (request) => {
     });
     if (blockedError) return Response.json({ skipped: true, reason: "blocked_relationship_guard_unavailable" }, { status: 503 });
     if (blocked === true) return Response.json({ skipped: true, reason: "blocked_relationship" });
+    if (actorId === recipientId) return Response.json({ skipped: true, reason: "self_activity" });
     const isFriendActivity = activityType === "check_in" || activityType === "check_out";
     const isFriendRequest = activityType === "friend_request"; const isStoryReaction = activityType === "reaction_story"; const isDirectMessage = activityType === "direct_message"; const isOfficialPost = activityType === "official_post"; const isNewStory = activityType === "story_new"; const isCommentReply = activityType === "comment_reply";
     if (activityType === "check_in" && activity.checkin_id != null) {
