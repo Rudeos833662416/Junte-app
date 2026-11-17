@@ -41,6 +41,7 @@
 
 - La función remota fue reemplazada por la lógica versionada y ahora consulta `installation_id` y envía a todas las instalaciones elegibles, sin agrupación `latestByPlatform`.
 - La función conserva el guard `self_activity`, la deduplicación por `(delivery_key, token_id)`, recibos Expo y eliminación de tokens `DeviceNotRegistered`.
+- La auditoría de Fase 3 encontró dos triggers `AFTER INSERT` sobre `checkins`: `checkin_activity_after_insert` y `trigger_on_checkin_created`. El segundo llamaba a `handle_new_checkin()` e insertaba actividades sin `checkin_id`, duplicando la actividad canónica.
 
 ## 3. Diagnóstico priorizado
 
@@ -97,6 +98,8 @@
 - Conservar la deduplicación de entregas como segunda barrera, no como sustituto de la deduplicación de actividades.
 
 **Criterio:** una acción de usuario produce una actividad lógica y como máximo una notificación por instalación elegible.
+
+**Estado:** migración 0054 aplicada. `checkins` ahora tiene un único trigger productor, `checkin_activity_after_insert`, que ejecuta `create_checkin_activity()` con `on conflict (recipient_id, checkin_id, type) do nothing`. Las actividades históricas no se borraron; su limpieza requiere una decisión separada sobre retención.
 
 ### Fase 4 — Cola durable y rendimiento
 
