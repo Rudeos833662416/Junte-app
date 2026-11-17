@@ -3,11 +3,13 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import { supabase } from "@/lib/supabase";
 
 export const PUSH_CHANNEL_ID = "friend-activity-v4";
 const EAS_PROJECT_ID_FALLBACK = "a595b360-16d9-40e4-9df4-7a3630257f39";
 const PUSH_DIAGNOSTIC_KEY = "junte-push-diagnostic-v1";
+const PUSH_INSTALLATION_KEY = "junte-push-installation-id-v1";
 
 export type PushDiagnostic = {
   ok: boolean;
@@ -26,6 +28,23 @@ async function savePushDiagnostic(userId: string | null | undefined, diagnostic:
   } catch (error) {
     console.warn("[push][diagnostic] could not persist diagnostic:", error instanceof Error ? error.message : error);
   }
+}
+
+function newInstallationId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `install-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+async function getPushInstallationId() {
+  const secureValue = await SecureStore.getItemAsync(PUSH_INSTALLATION_KEY).catch(() => null);
+  if (secureValue) return secureValue;
+  const asyncValue = await AsyncStorage.getItem(PUSH_INSTALLATION_KEY).catch(() => null);
+  const installationId = asyncValue || newInstallationId();
+  await Promise.allSettled([
+    SecureStore.setItemAsync(PUSH_INSTALLATION_KEY, installationId),
+    AsyncStorage.setItem(PUSH_INSTALLATION_KEY, installationId),
+  ]);
+  return installationId;
 }
 
 export async function getPushRegistrationDiagnostic(userId?: string | null): Promise<PushDiagnostic | null> {
@@ -189,15 +208,16 @@ export async function registerForPushNotificationsAsync(userId?: string | null) 
 
     const payload = {
       user_id: uid,
+      installation_id: await getPushInstallationId(),
       expo_push_token: token,
       fcm_token: fcmToken,
       platform: Platform.OS === "ios" ? "ios" : "android",
       updated_at: new Date().toISOString(),
     };
     stage = "supabase";
-    let error = (await supabase.from("push_tokens").upsert(payload, { onConflict: "user_id,platform" })).error;
+    let error = (await supabase.from("push_tokens").upsert(payload, { onConflict: "installation_id" })).error;
     if (error) {
-      console.warn("[push] upsert user_id,platform failed:", error.message);
+      console.warn("[push] upsert installation_id failed:", error.message);
       error = (await supabase.from("push_tokens").upsert(payload, { onConflict: "expo_push_token" })).error;
     }
     if (error) {

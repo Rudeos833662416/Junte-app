@@ -2,7 +2,7 @@
 
 **Proyecto:** Junta2 / Supabase `cymhbwgxmezrwofkbdqz`  
 **Fecha de auditoría:** 2026-11-17  
-**Alcance:** solo diagnóstico y diseño. No se modificó código ni producción durante esta auditoría.
+**Alcance:** diagnóstico, implementación y verificación incremental. Fases 1 y 2 aplicadas; Fases 3–5 siguen pendientes.
 
 ## 1. Qué hace hoy el sistema
 
@@ -18,9 +18,9 @@
 
 - El proyecto Supabase está **ACTIVE_HEALTHY**.
 - Hay **6 tokens Android**; todos tienen token Expo y FCM. El token más reciente fue actualizado durante la auditoría.
-- `push_tokens` tiene columnas `id`, `user_id`, `expo_push_token`, `platform`, `updated_at` y `fcm_token`; no tiene `created_at`.
-- Existen índices únicos por `expo_push_token`, `(user_id, platform)` y `fcm_token`.
-- La clave `(user_id, platform)` permite como máximo un Android por usuario. Si el mismo usuario inicia sesión en dos teléfonos/emuladores Android, un dispositivo puede reemplazar al otro.
+- `push_tokens` tiene además `installation_id`; la migración 0053 rellenó los 6 registros existentes con identificadores `legacy-*` y creó el índice único `push_tokens_installation_unique`.
+- Se mantienen índices únicos por `expo_push_token` y `fcm_token`; se eliminó el índice único `(user_id, platform)`.
+- El cliente genera/recupera un identificador estable con `expo-secure-store` y hace upsert por instalación, con fallback de compatibilidad por token Expo.
 
 ### Actividades y duplicados
 
@@ -31,7 +31,7 @@
 
 ### Edge Function y latencia
 
-- `notify-activity` está activa en Supabase, versión **50**, con `verify_jwt=false` porque la invoca `pg_net` desde PostgreSQL.
+- `notify-activity` está activa en Supabase, versión **53**, con `verify_jwt=false`, igual que el contrato histórico requerido por `pg_net`; la función valida estrictamente el payload y usa `service_role` solo en el servidor.
 - En las últimas 24 horas se registraron **217 ejecuciones** de `notify-activity` con HTTP 200.
 - Latencia observada: promedio **2248 ms**, p50 **2216 ms**, p95 **3754 ms**, máximo **4199 ms**.
 - Hubo eventos `Shutdown / EarlyDrop` del runtime de la función. No prueban por sí solos una pérdida, pero obligan a comprobar reintentos y a no depender de que cada llamada HTTP termine en el mismo proceso.
@@ -39,10 +39,8 @@
 
 ### Divergencia GitHub–Supabase
 
-- La fuente local `supabase/functions/notify-activity/index.ts` y la función desplegada no son idénticas.
-- La versión desplegada contiene el guardado `self_activity`, pero la fuente local inspeccionada no contiene ese mismo guard explícito.
-- La fuente local incluye lógica de recibos Expo y eliminación de `DeviceNotRegistered`; la versión desplegada inspeccionada no muestra esa limpieza de recibos.
-- Esta divergencia es un riesgo operativo: un despliegue desde GitHub puede reintroducir auto-notificaciones o dejar tokens muertos acumulándose.
+- La función remota fue reemplazada por la lógica versionada y ahora consulta `installation_id` y envía a todas las instalaciones elegibles, sin agrupación `latestByPlatform`.
+- La función conserva el guard `self_activity`, la deduplicación por `(delivery_key, token_id)`, recibos Expo y eliminación de tokens `DeviceNotRegistered`.
 
 ## 3. Diagnóstico priorizado
 
@@ -77,7 +75,7 @@
 - Añadir un contrato automatizado que compare reglas críticas: guard de auto-notificación, clave lógica, selección de tokens, limpieza de inválidos y respuesta de errores.
 - Mantener autenticación cerrada en funciones de usuario; `notify-activity` debe conservar el mecanismo interno necesario para `pg_net`, pero validar estrictamente el payload y limitarlo a la ruta interna.
 
-**Criterio:** GitHub, migración y función remota comparten la misma huella/versionado.
+**Criterio:** GitHub, migración y función remota comparten la misma lógica de entrega. **Cumplido para la versión desplegada 53; la huella exacta del archivo minificado queda como mejora operativa.**
 
 ### Fase 2 — Tokens y dispositivos
 
@@ -86,6 +84,8 @@
 - Mantener un único token por instalación; al actualizar, reemplazar solo esa instalación.
 - Eliminar tokens con `DeviceNotRegistered`/errores permanentes de Expo o FCM.
 - Ejecutar una limpieza controlada de tokens antiguos solo después de definir el umbral de inactividad.
+
+**Estado:** implementación y migración aplicadas; falta la prueba controlada con dos dispositivos y definir `last_seen_at`/umbral de inactividad.
 
 **Criterio:** dos Android del mismo usuario reciben una prueba sin pisarse; un token inválido desaparece automáticamente.
 

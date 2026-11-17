@@ -322,6 +322,7 @@ export type Database = {
         Row: {
           id: number
           user_id: string
+          installation_id: string
           expo_push_token: string
           platform: string | null
           created_at: string
@@ -331,6 +332,7 @@ export type Database = {
         Insert: {
           id?: number
           user_id: string
+          installation_id: string
           expo_push_token: string
           platform?: string | null
           created_at?: string
@@ -340,6 +342,7 @@ export type Database = {
         Update: {
           id?: number
           user_id?: string
+          installation_id?: string
           expo_push_token?: string
           platform?: string | null
           created_at?: string

@@ -8,6 +8,7 @@ const onboardingSource = readFileSync(resolve(process.cwd(), "components/permiss
 const layoutSource = readFileSync(resolve(process.cwd(), "app/_layout.tsx"), "utf8");
 const migrationSource = readFileSync(resolve(process.cwd(), "supabase/migrations/0042_friend_controls_and_push_guards.sql"), "utf8");
 const chatMigrationSource = readFileSync(resolve(process.cwd(), "supabase/migrations/0045_notification_chat_link.sql"), "utf8");
+const deviceMigrationSource = readFileSync(resolve(process.cwd(), "supabase/migrations/0053_push_token_installations.sql"), "utf8");
 
 describe("contrato de entrega push", () => {
   it("persiste un diagnóstico por etapa y expone cómo recuperar el último error", () => {
@@ -73,6 +74,16 @@ describe("contrato de entrega push", () => {
     expect(functionSource).toContain('onConflict: "delivery_key,token_id"');
     expect(chatMigrationSource).toContain("direct_message_id");
     expect(chatMigrationSource).toContain("new.id");
+  });
+
+  it("registra cada instalación y entrega a todos sus dispositivos activos", () => {
+    expect(clientSource).toContain("installation_id");
+    expect(clientSource).toContain("SecureStore.getItemAsync");
+    expect(clientSource).toContain('onConflict: "installation_id"');
+    expect(functionSource).toContain("installation_id");
+    expect(functionSource).not.toContain("latestByPlatform");
+    expect(deviceMigrationSource).toContain("drop index if exists public.push_tokens_user_platform_unique");
+    expect(deviceMigrationSource).toContain("push_tokens_installation_unique");
   });
 
   it("expone desbloqueo persistente y un único acceso para conectar por QR", () => {

@@ -159,15 +159,14 @@ Deno.serve(async (request) => {
       const { data: pendingMessages, error: pendingError } = await supabase.from("activities").select("id").eq("recipient_id", recipientId).eq("actor_id", actorId).eq("type", "direct_message").is("read_at", null).neq("id", activity.id).limit(1);
       if (!pendingError && pendingMessages?.length) return Response.json({ skipped: true, reason: "chat_notification_already_pending" });
     }
-    const [{ data: tokens }, { data: actor }] = await Promise.all([supabase.from("push_tokens").select("id, expo_push_token, fcm_token, platform, updated_at").eq("user_id", recipientId), supabase.from("profiles").select("name, username, avatar_url").eq("id", actorId).maybeSingle()]);
+    const [{ data: tokens }, { data: actor }] = await Promise.all([supabase.from("push_tokens").select("id, installation_id, expo_push_token, fcm_token, platform, updated_at").eq("user_id", recipientId), supabase.from("profiles").select("name, username, avatar_url").eq("id", actorId).maybeSingle()]);
     const actorName = cleanText(actor?.name) || cleanText(actor?.username) || "Un usuario"; const avatarUrl = cleanText(actor?.avatar_url) || null;
     const body = isDirectMessage ? activity.body ?? activity.message ?? "Te envió un mensaje" : isFriendRequest ? "Te envió una solicitud de amistad" : isStoryReaction ? `Reaccionó a tu Estado ${activity.reaction_emoji ?? "💬"}` : isOfficialPost ? activity.message ?? "La cuenta oficial publicó contenido nuevo en Eventos" : isNewStory ? `${actorName} acaba de subir una historia nueva` : isCommentReply ? `${actorName} respondió a tu comentario` : isFriendActivity ? await checkInBody(activity, actorName) : "Terminó su visita. Toca para reaccionar.";
     const categoryId = isDirectMessage ? "CHAT_MESSAGE_V2" : isFriendRequest ? "FRIEND_REQUEST" : isFriendActivity ? "BRINDAR_ACTIVITY" : isOfficialPost ? "OFFICIAL_POST" : isNewStory ? "STORY_ACTIVITY" : "FRIEND_ACTIVITY";
     const logicalActivityKey = isFriendActivity ? [activityType, activity.checkin_id ?? "unknown", recipientId, actorId].join(":") : isDirectMessage ? [activityType, activity.direct_message_id ?? activity.id ?? activity.created_at ?? "unknown", recipientId].join(":") : isNewStory ? [activityType, activity.story_id ?? activity.id ?? activity.created_at ?? "unknown", recipientId].join(":") : [activityType, activity.id ?? activity.official_post_id ?? activity.created_at ?? "unknown", recipientId].join(":");
-    const latestByPlatform = new Map<string, any>();
-    for (const token of tokens ?? []) { if (!token.expo_push_token || token.id == null) continue; const platform = cleanText(token.platform) || "unknown"; const previous = latestByPlatform.get(platform); if (!previous || String(token.updated_at ?? "") > String(previous.updated_at ?? "")) latestByPlatform.set(platform, token); }
+    const eligibleTokens = (tokens ?? []).filter((token) => token.id != null && token.installation_id && token.expo_push_token);
     const claimedTokens: any[] = [];
-    for (const token of latestByPlatform.values()) {
+    for (const token of eligibleTokens) {
       try {
         const { data: claim, error: claimError } = await supabase.from("activity_push_deliveries").insert({ delivery_key: logicalActivityKey, token_id: token.id }, { onConflict: "delivery_key,token_id", ignoreDuplicates: true }).select("token_id").maybeSingle();
         if (claimError) console.error("Push deduplication unavailable; delivery skipped:", claimError.message); else if (claim) claimedTokens.push(token);
