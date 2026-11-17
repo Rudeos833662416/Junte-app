@@ -16,6 +16,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
 import { Image } from "expo-image";
+import { setActiveChatId } from "@/lib/push-notifications";
 
 type Message = {
   id: string;
@@ -114,8 +115,9 @@ export default function ChatScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setActiveChatId(otherId ?? null);
       void loadMessages();
-      return undefined;
+      return () => setActiveChatId(null);
     }, [loadMessages]),
   );
 

@@ -41,7 +41,7 @@ describe("contrato de entrega push", () => {
     expect(functionSource).toContain("title:");
     expect(functionSource).toContain("body,");
     expect(functionSource).toContain('sound: "default"');
-    expect(functionSource).toContain('channelId: "friend-activity-v4"');
+    expect(functionSource).toContain("channelId,");
     expect(functionSource).toContain("categoryId");
     expect(functionSource).not.toContain('...(isInteractive ? { _contentAvailable: true, data }');
     expect(functionSource).toContain("richContent");

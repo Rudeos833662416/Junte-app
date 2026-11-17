@@ -185,6 +185,10 @@ function AuthGate() {
         const reaction = reactionFromNotificationAction(response.actionIdentifier);
         if (data.activityId && reaction) void saveNotificationReaction(data.activityId, reaction, user.id);
 
+        if (response.actionIdentifier === "ACCEPT_FRIEND" || response.actionIdentifier === "REJECT_FRIEND") {
+          void Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => undefined);
+        }
+
         // El toque normal sobre una solicitud no debe dejar al usuario en Amigos:
         // lleva directamente al perfil de quien envió la solicitud.
         if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {

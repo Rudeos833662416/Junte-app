@@ -7,9 +7,15 @@ import * as SecureStore from "expo-secure-store";
 import { supabase } from "@/lib/supabase";
 
 export const PUSH_CHANNEL_ID = "friend-activity-v4";
+export const CHAT_PUSH_CHANNEL_ID = "direct-messages-v1";
 const EAS_PROJECT_ID_FALLBACK = "a595b360-16d9-40e4-9df4-7a3630257f39";
 const PUSH_DIAGNOSTIC_KEY = "junte-push-diagnostic-v1";
 const PUSH_INSTALLATION_KEY = "junte-push-installation-id-v1";
+let activeChatId: string | null = null;
+
+export function setActiveChatId(chatId: string | null) {
+  activeChatId = chatId;
+}
 
 export type PushDiagnostic = {
   ok: boolean;
@@ -86,12 +92,17 @@ export function setupNotificationHandler() {
   if (!canUseNativeNotifications()) return;
   try {
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
+      handleNotification: async (notification) => {
+        const data = notification.request.content.data as { screen?: string; senderId?: string; chatId?: string };
+        const incomingChatId = data.chatId ?? data.senderId;
+        const isActiveChat = data.screen === "chat" && Boolean(incomingChatId && incomingChatId === activeChatId);
+        return {
+        shouldShowBanner: !isActiveChat,
+        shouldShowList: !isActiveChat,
         shouldPlaySound: true,
         shouldSetBadge: true,
-      }),
+        };
+      },
     });
   } catch (error) {
     console.warn("[push] Notification handler unavailable:", error instanceof Error ? error.message : error);
@@ -107,6 +118,16 @@ export async function ensureAndroidNotificationChannel() {
       vibrationPattern: [0, 250, 120, 250],
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       sound: "default",
+    });
+    await Notifications.setNotificationChannelAsync(CHAT_PUSH_CHANNEL_ID, {
+      name: "Mensajes directos",
+      description: "Mensajes nuevos de tus conversaciones",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 120, 250],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      sound: "default",
+      enableVibrate: true,
+      enableLights: true,
     });
   } catch (error) {
     console.warn("[push] Android channel unavailable:", error instanceof Error ? error.message : error);
