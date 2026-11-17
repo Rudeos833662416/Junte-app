@@ -12,6 +12,7 @@ import { Animated, StyleSheet, View, useWindowDimensions } from "react-native";
 type CollageTheme = "light" | "dark";
 type CollageImage = { id: string; image_url: string; alt_text: string; sort_order: number; theme: CollageTheme; is_published: boolean };
 const SLOT_COUNT = 4;
+const MAX_INCOMING_WAIT_MS = 4000;
 const PREVIEW_KEY = "junta2_collage_preview_theme";
 const imagesTable = () => supabase.from("home_collage_images" as never) as any;
 const settingsTable = () => supabase.from("home_collage_settings" as never) as any;
@@ -27,9 +28,60 @@ function groupsOfFour(images: CollageImage[]) {
   return groups;
 }
 
-function CollageLayer({ images, opacity, gap }: { images: CollageImage[]; opacity: Animated.Value | number; gap: number }) {
+function CollageLayer({
+  images,
+  opacity,
+  gap,
+  backgroundColor,
+  onReady,
+}: {
+  images: CollageImage[];
+  opacity: Animated.Value | number;
+  gap: number;
+  backgroundColor: string;
+  onReady?: () => void;
+}) {
+  const imageSignature = images.map((image) => `${image.id}:${image.image_url}`).join("|");
+  const signatureRef = useRef(imageSignature);
+  const layerGenerationRef = useRef(0);
+  const readySlotsRef = useRef(new Set<number>());
+  const reportedReady = useRef(false);
+  if (signatureRef.current !== imageSignature) {
+    signatureRef.current = imageSignature;
+    layerGenerationRef.current += 1;
+    readySlotsRef.current.clear();
+    reportedReady.current = false;
+  }
+  const generation = layerGenerationRef.current;
+  const onTileReady = useCallback((slot: number) => {
+    if (generation !== layerGenerationRef.current) return;
+    readySlotsRef.current.add(slot);
+    if (!reportedReady.current && readySlotsRef.current.size >= images.length) {
+      reportedReady.current = true;
+      onReady?.();
+    }
+  }, [generation, images.length, onReady]);
+
+  useEffect(() => {
+    readySlotsRef.current.clear();
+    reportedReady.current = false;
+  }, [imageSignature]);
+
   return <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity }]}>
-    <View style={[styles.grid, { gap }]}>{images.map((image, index) => <ExpoImage key={`${image.id}-${index}`} source={{ uri: image.image_url }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" cachePolicy="memory-disk" contentFit="cover" transition={220} style={styles.tile} />)}</View>
+    <View style={[styles.grid, { gap }]}>
+      {images.map((image, index) => <ExpoImage
+        key={`slot-${index}`}
+        source={{ uri: image.image_url }}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        cachePolicy="memory-disk"
+        contentFit="cover"
+        transition={0}
+        onLoad={() => onTileReady(index)}
+        onError={() => onTileReady(index)}
+        style={[styles.tile, { backgroundColor }]}
+      />)}
+    </View>
   </Animated.View>;
 }
 
@@ -46,7 +98,8 @@ export function HomeCollage() {
   const [activeGroup, setActiveGroup] = useState(0);
   const [loading, setLoading] = useState(true);
   const transition = useRef(new Animated.Value(0)).current;
-  const groupsRef = useRef<CollageImage[][]>([]);
+  const incomingReadyKeyRef = useRef<string | null>(null);
+  const incomingExpectedKeyRef = useRef<string | null>(null);
   const generationRef = useRef(0);
   const groups = useMemo(() => groupsOfFour(settings.shuffle_enabled ? [...images].sort((a, b) => a.id.localeCompare(b.id)) : images), [images, settings.shuffle_enabled]);
   const gap = Math.max(4, Math.round(width * 0.012));
@@ -56,11 +109,16 @@ export function HomeCollage() {
   const brightnessVeil = settings.brightness < 0 ? "#0A0A0A" : "#FFFFFF";
   const brightnessOpacity = Math.abs(settings.brightness) * 0.65;
 
+  const incomingGroupKey = (group: CollageImage[]) => group.map((image) => `${image.id}:${image.image_url}`).join("|");
+  const markIncomingReady = useCallback((key: string) => {
+    if (key === incomingExpectedKeyRef.current) incomingReadyKeyRef.current = key;
+  }, []);
+
   const load = useCallback(async () => {
     const [{ data: imageData, error: imageError }, { data: settingsData, error: settingsError }] = await Promise.all([
       imagesTable().select("id, image_url, alt_text, sort_order, theme, is_published").eq("theme", selectedTheme).eq("is_published", readMode).eq("is_active", true).order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       settingsTable().select("image_opacity, brightness, contrast, overlay_color, overlay_opacity, fade_duration_ms, hold_duration_ms, transition_type, shuffle_enabled, autoplay_enabled").eq("theme", selectedTheme).eq("is_published", readMode).maybeSingle(),
-  ]);
+    ]);
     if (!imageError) setImages((imageData ?? []) as CollageImage[]);
     if (!settingsError && settingsData) setSettings(normalizeHomeCollageSettings(settingsData));
     setLoading(false);
@@ -94,43 +152,54 @@ export function HomeCollage() {
   }, [load, selectedTheme, transition]);
 
   useEffect(() => {
-    groupsRef.current = groups;
     setActiveGroup((current) => groups.length ? Math.min(current, groups.length - 1) : 0);
-  }, [groups]);
+    const next = groups.length ? groups[(activeGroup + 1) % groups.length] : [];
+    incomingExpectedKeyRef.current = incomingGroupKey(next);
+    incomingReadyKeyRef.current = null;
+  }, [activeGroup, groups]);
 
   useEffect(() => {
     if (groups.length <= 1 || !settings.autoplay_enabled || settings.transition_type === "instant") return;
     const generation = ++generationRef.current;
     let holdTimer: ReturnType<typeof setTimeout> | undefined;
     let fadeTimer: ReturnType<typeof setTimeout> | undefined;
+    let readyTimer: ReturnType<typeof setTimeout> | undefined;
+    const startFade = (next: number) => {
+      transition.setValue(0);
+      Animated.timing(transition, { toValue: 1, duration: Math.max(1800, Math.min(3500, settings.fade_duration_ms)), useNativeDriver: true }).start(({ finished }) => {
+        if (!finished || generation !== generationRef.current) return;
+        setActiveGroup(next);
+        transition.setValue(0);
+        fadeTimer = setTimeout(schedule, 0);
+      });
+    };
+    const waitForIncoming = (next: number, expectedKey: string, startedAt: number) => {
+      if (generation !== generationRef.current) return;
+      if (incomingReadyKeyRef.current === expectedKey) { startFade(next); return; }
+      if (Date.now() - startedAt >= MAX_INCOMING_WAIT_MS) { schedule(); return; }
+      readyTimer = setTimeout(() => waitForIncoming(next, expectedKey, startedAt), 50);
+    };
     const schedule = () => {
       holdTimer = setTimeout(() => {
         if (generation !== generationRef.current) return;
         const next = (activeGroup + 1) % groups.length;
         const nextUrls = groups[next].map((image) => image.image_url);
-        void ExpoImage.prefetch(nextUrls).finally(() => {
-          if (generation !== generationRef.current) return;
-          transition.setValue(0);
-          Animated.timing(transition, { toValue: 1, duration: Math.max(1800, Math.min(3500, settings.fade_duration_ms)), useNativeDriver: true }).start(({ finished }) => {
-            if (!finished || generation !== generationRef.current) return;
-            setActiveGroup(next);
-            transition.setValue(0);
-            fadeTimer = setTimeout(schedule, 0);
-          });
-        });
+        const expectedKey = incomingGroupKey(groups[next]);
+        void ExpoImage.prefetch(nextUrls).finally(() => waitForIncoming(next, expectedKey, Date.now()));
       }, settings.hold_duration_ms);
     };
     schedule();
-    return () => { generationRef.current += 1; if (holdTimer) clearTimeout(holdTimer); if (fadeTimer) clearTimeout(fadeTimer); transition.stopAnimation(); };
-  }, [activeGroup, groups.length, settings.autoplay_enabled, settings.fade_duration_ms, settings.hold_duration_ms, settings.transition_type, transition]);
+    return () => { generationRef.current += 1; if (holdTimer) clearTimeout(holdTimer); if (fadeTimer) clearTimeout(fadeTimer); if (readyTimer) clearTimeout(readyTimer); transition.stopAnimation(); };
+  }, [activeGroup, groups, settings.autoplay_enabled, settings.fade_duration_ms, settings.hold_duration_ms, settings.transition_type, transition]);
 
   if (loading || !groups.length) return null;
   const visibleLayer = groups[activeGroup] ?? groups[0];
   const incomingLayer = groups[(activeGroup + 1) % groups.length] ?? visibleLayer;
+  const incomingLayerKey = incomingGroupKey(incomingLayer);
   return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]}>
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: settings.image_opacity }]}>
-      <CollageLayer images={visibleLayer} opacity={1} gap={gap} />
-      {groups.length > 1 && settings.transition_type === "crossfade" ? <CollageLayer images={incomingLayer} opacity={transition} gap={gap} /> : null}
+      <CollageLayer images={visibleLayer} opacity={1} gap={gap} backgroundColor={colors.background} />
+      {groups.length > 1 && settings.transition_type === "crossfade" ? <CollageLayer images={incomingLayer} opacity={transition} gap={gap} backgroundColor={colors.background} onReady={() => markIncomingReady(incomingLayerKey)} /> : null}
     </View>
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: effectiveOverlay, opacity: Math.min(0.9, settings.overlay_opacity + settings.contrast + themeVeil) }]} />
     {brightnessOpacity > 0 ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: brightnessVeil, opacity: brightnessOpacity }]} /> : null}

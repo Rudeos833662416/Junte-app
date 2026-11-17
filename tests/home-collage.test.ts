@@ -26,6 +26,15 @@ describe("Home collage", () => {
     expect(collage).toContain("removeChannel");
   });
 
+  it("keeps stable tile buffers and waits for every incoming tile", () => {
+    expect(collage).toContain("key={`slot-${index}`}");
+    expect(collage).toContain("transition={0}");
+    expect(collage).toContain("onReady");
+    expect(collage).toContain("onError={() => onTileReady(index)}");
+    expect(collage).toContain("readySlots");
+    expect(collage).toContain("MAX_INCOMING_WAIT_MS");
+  });
+
   it("protects admin management in both UI contract and database", () => {
     expect(admin).toContain("is_admin");
     expect(admin).toContain("ImagePicker.launchImageLibraryAsync");
