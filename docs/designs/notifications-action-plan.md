@@ -8,7 +8,7 @@
 
 1. El cliente registra un token Expo y, cuando Android lo permite, un token FCM en `public.push_tokens`.
 2. Las actividades se crean mediante triggers SQL para mensajes directos, solicitudes, check-ins, publicaciones oficiales, historias y respuestas.
-3. `activities_push_after_insert` llama a `net.http_post` por cada fila hacia `notify-activity`.
+3. `activities_push_after_insert` inserta una fila idempotente en `notification_outbox`; un job `pg_cron` despacha lotes hacia `notify-activity`.
 4. `notify-activity` consulta tokens, reclama una fila en `activity_push_deliveries`, envía por Expo o FCM y devuelve un JSON.
 5. Las acciones de respuesta usan `notification_action_tokens` con leases para evitar doble procesamiento.
 
@@ -110,6 +110,8 @@
 
 **Criterio:** p95 de encolado bajo y p95 de aceptación del proveedor objetivo menor a 1 segundo en prueba normal; los picos no bloquean la creación de actividades.
 
+**Estado:** migración 0055 aplicada. `notification_outbox` tiene estados `queued`, `processing`, `dispatched` y `failed`, contador de intentos, `next_attempt_at`, lease recuperable y clave única por actividad. El job `dispatch-tragos-sociales-notification-outbox` procesa hasta 25 filas por minuto con backoff hasta 8 intentos.
+
 ### Fase 5 — Proveedores y experiencia del cliente
 
 - Separar métricas Expo y FCM.
@@ -119,6 +121,8 @@
 - Mostrar en diagnóstico interno: permiso, token guardado, última sincronización, último error y dispositivo.
 
 **Criterio:** prueba matriz: app abierta, segundo plano, cerrada, red lenta, token inválido, dos dispositivos, mensajes consecutivos y solicitud de amistad.
+
+**Estado:** contratos de payload, canales, categorías, rutas y dos dispositivos están cubiertos por tests locales. Falta ejecutar la matriz física en un APK nuevo con teléfono y emulador; no se declara completada sin esa evidencia.
 
 ## 5. Orden recomendado de implementación
 
