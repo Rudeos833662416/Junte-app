@@ -42,13 +42,28 @@ describe("mejoras confirmadas en la grabación", () => {
 		expect(stories).toContain("onBlur={() => setIsPaused(false)}");
 	});
 
-	it("protege el compositor y el visor frente a los cuatro casos de uso reales", () => {
-		expect(stories).toContain('onRequestClose={() => setSelectedMedia(null)}');
-		expect(stories).toContain('IconSymbol name="chevron.left"');
-		expect(stories).toContain('className="mb-4 flex-1 w-full overflow-hidden rounded-2xl bg-black"');
-		expect(stories).toContain('colors={["rgba(0,0,0,0.72)", "rgba(0,0,0,0)"]}');
-		expect(stories).toContain('{!isChromeHidden ? <View style={{ position: "absolute", left: 16');
-	});
+		it("protege el compositor y el visor frente a los cuatro casos de uso reales", () => {
+			expect(stories).toContain('onRequestClose={() => setSelectedMedia(null)}');
+			expect(stories).toContain('IconSymbol name="chevron.left"');
+			expect(stories).toContain('style={{ flex: 1, backgroundColor: "#000000" }}');
+			expect(stories).toContain('colors={["rgba(0,0,0,0.62)", "rgba(0,0,0,0)"]}');
+			expect(stories).toContain('{!isChromeHidden ? <View style={{ position: "absolute", left: 16');
+		});
+
+		it("muestra la publicación multimedia de forma optimista y congela el temporizador durante la carga", () => {
+			expect(stories).toContain("optimisticStories");
+			expect(stories).toContain("isOptimistic: true");
+			expect(stories).toContain("setIsStoryMediaLoading(activeStory.media_type === \"video\")");
+			expect(stories).toContain("showViewers || isStoryMediaLoading");
+			expect(stories).toContain("Añade un comentario…");
+		});
+
+		it("limpia el optimista fallido y cierra el creador de texto con Atrás", () => {
+			expect(stories).toContain('if (showTextCreator) { setShowTextCreator(false); return true; }');
+			expect(stories).toContain('showTextCreator, showViewers');
+			expect(stories).toContain('setOptimisticStories((previous) => previous.filter((item) => item.id !== tempStory.id));');
+			expect(stories).toContain('group.stories.filter((story) => story.id !== tempStory.id)');
+		});
 
 	it("sincroniza vídeo, texto, audio, vistos y tiempo real de visualización", () => {
 		expect(stories).toContain("timeUpdate");

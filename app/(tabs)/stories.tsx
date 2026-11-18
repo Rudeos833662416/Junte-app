@@ -41,6 +41,7 @@ type StoryItem = {
   text_content?: string | null;
   text_background_color?: string | null;
   text_font_family?: string | null;
+  isOptimistic?: boolean;
 };
 
 type GroupedStoryUser = {
@@ -152,6 +153,7 @@ export default function StoriesScreen() {
     : null;
 
   const [selectedMedia, setSelectedMedia] = useState<SelectedMedia | null>(null);
+  const [optimisticStories, setOptimisticStories] = useState<StoryItem[]>([]);
   const [showTextCreator, setShowTextCreator] = useState(false);
   const [textDraft, setTextDraft] = useState("");
   const [textBackgroundColor, setTextBackgroundColor] = useState(TEXT_STORY_BACKGROUNDS[0]);
@@ -188,11 +190,12 @@ export default function StoriesScreen() {
       if (showViewers) { closeViewers(); return true; }
       if (activeGroupIndex !== null) { setActiveGroupIndex(null); return true; }
       if (selectedMedia) { setSelectedMedia(null); return true; }
+      if (showTextCreator) { setShowTextCreator(false); return true; }
       return false;
     };
     const subscription = BackHandler.addEventListener("hardwareBackPress", onBack);
     return () => subscription.remove();
-  }, [activeGroupIndex, selectedMedia, showViewers]);
+  }, [activeGroupIndex, selectedMedia, showTextCreator, showViewers]);
 
   useFocusEffect(
     useCallback(() => {
@@ -296,6 +299,13 @@ export default function StoriesScreen() {
         });
       }
 
+      const pendingOptimistic = optimisticStories.filter((optimistic) => !(selfList ?? []).some((real) => real.media_type === optimistic.media_type && real.caption === optimistic.caption && Math.abs(new Date(real.created_at).getTime() - new Date(optimistic.created_at).getTime()) < 10 * 60 * 1000));
+      if (pendingOptimistic.length) {
+        const optimisticSelf = groups.find((group) => group.isSelf);
+        if (optimisticSelf) optimisticSelf.stories = [...pendingOptimistic.filter((item) => !optimisticSelf.stories.some((story) => story.id === item.id)), ...optimisticSelf.stories];
+        else groups.unshift({ userId: user.id, userName: "Mi estado", avatarUrl: profileMap.get(user.id)?.avatarUrl || null, isSelf: true, stories: pendingOptimistic, latestCreatedAt: pendingOptimistic[0].created_at });
+      }
+      setOptimisticStories((previous) => previous.length === pendingOptimistic.length && previous.every((item, index) => item.id === pendingOptimistic[index]?.id) ? previous : pendingOptimistic);
       setGroupedStories(groups);
       const urlsToPrefetch = [...new Set(groups.flatMap((group) => group.stories.map((story) => story.media_url).filter((url): url is string => Boolean(url))))].slice(0, 30);
       void Promise.all(urlsToPrefetch.map((url) => RNImage.prefetch(url).catch(() => false)));
@@ -322,7 +332,7 @@ export default function StoriesScreen() {
       setIsLoading(false);
       fetchInFlightRef.current = false;
     }
-  }, [requestedUserId, router, user]);
+  }, [optimisticStories, requestedUserId, router, user]);
 
   const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await fetchStories(); } finally { setIsRefreshing(false); } }, [fetchStories]);
 
@@ -389,12 +399,39 @@ export default function StoriesScreen() {
 
   const publishStory = async () => {
     if (!user || !selectedMedia || isUploading) return;
+    const media = selectedMedia;
+    const selectedPrivacy = privacy;
+    const tempStory: StoryItem = {
+      id: -Date.now(),
+      user_id: user.id,
+      media_url: media.uri,
+      media_type: media.type,
+      audio_url: null,
+      audio_name: null,
+      caption: caption.trim() || null,
+      visibility: selectedPrivacy === "public" ? "public" : "friends",
+      privacy: selectedPrivacy,
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      user_name: "Mi estado",
+      isOptimistic: true,
+    };
+    setOptimisticStories((previous) => [tempStory, ...previous]);
+    setGroupedStories((previous) => {
+      const selfIndex = previous.findIndex((group) => group.isSelf);
+      if (selfIndex < 0) return [{ userId: user.id, userName: "Mi estado", avatarUrl: null, isSelf: true, stories: [tempStory], latestCreatedAt: tempStory.created_at }, ...previous];
+      return previous.map((group, index) => index === selfIndex && !group.stories.some((story) => story.id === tempStory.id) ? { ...group, stories: [tempStory, ...group.stories] } : group);
+    });
+    setSelectedMedia(null);
+    setCaption("");
+    setPrivacy("all_friends");
     try {
-      await enqueue({ userId: user.id, uri: selectedMedia.uri, mimeType: selectedMedia.mimeType, type: selectedMedia.type, caption, privacy });
-      setSelectedMedia(null);
-      setCaption("");
-      setPrivacy("all_friends");
+      await enqueue({ userId: user.id, uri: media.uri, mimeType: media.mimeType, type: media.type, caption: tempStory.caption ?? "", privacy: selectedPrivacy });
     } catch (err) {
+      setOptimisticStories((previous) => previous.filter((item) => item.id !== tempStory.id));
+      setGroupedStories((previous) => previous
+        .map((group) => group.isSelf ? { ...group, stories: group.stories.filter((story) => story.id !== tempStory.id) } : group)
+        .filter((group) => !group.isSelf || group.stories.length > 0));
       Alert.alert("No se pudo publicar", err instanceof Error ? err.message : "Inténtalo de nuevo.");
     }
   };
@@ -597,9 +634,9 @@ export default function StoriesScreen() {
 
   // Viewer timer logic
   useEffect(() => {
-    if (activeGroupIndex === null || isPaused || showViewers || activeStory?.media_type === "video") return;
+    if (activeGroupIndex === null || isPaused || showViewers || isStoryMediaLoading || activeStory?.media_type === "video") return;
     const interval = setInterval(() => {
-      if (showViewers) return;
+      if (showViewers || isStoryMediaLoading) return;
       setProgressTimer((prev) => {
         if (prev >= 1) {
           advanceActiveStory();
@@ -609,7 +646,7 @@ export default function StoriesScreen() {
       });
     }, 100);
     return () => clearInterval(interval);
-  }, [activeGroupIndex, activeStory?.media_type, advanceActiveStory, isPaused, showViewers]);
+  }, [activeGroupIndex, activeStory?.media_type, advanceActiveStory, isPaused, isStoryMediaLoading, showViewers]);
 
   useEffect(() => {
     const storyId = activeStory?.id;
@@ -710,9 +747,12 @@ export default function StoriesScreen() {
         </View>
 
         {/* Mi estado */}
-        <View className="mb-6 rounded-2xl border p-4 shadow-sm" style={{ backgroundColor: colors.surface, borderColor: `${colors.border}AA` }}>
+        {(() => {
+          const selfGroup = groupedStories.find((group) => group.isSelf);
+          const mergedSelfStories = [...optimisticStories, ...(selfGroup?.stories ?? []).filter((story) => !optimisticStories.some((optimistic) => optimistic.id === story.id))];
+          return <View className="mb-6 rounded-2xl border p-4 shadow-sm" style={{ backgroundColor: colors.surface, borderColor: `${colors.border}AA` }}>
           <Text className="mb-3 text-xs font-bold uppercase tracking-wider text-muted">Tu Estado</Text>
-          {groupedStories.find((g) => g.isSelf)?.stories.length ? (
+          {mergedSelfStories.length ? (
             <Pressable
               onPress={() => {
                 const idx = groupedStories.findIndex((g) => g.isSelf);
@@ -725,10 +765,10 @@ export default function StoriesScreen() {
               className="flex-row items-center justify-between"
             >
               <View className="flex-row items-center gap-3">
-                <SegmentedStoryRing stories={groupedStories.find((g) => g.isSelf)?.stories ?? []} avatarUrl={groupedStories.find((g) => g.isSelf)?.avatarUrl ?? null} colors={colors} viewedStoryIds={viewedStoryIds} />
+                <SegmentedStoryRing stories={mergedSelfStories} avatarUrl={selfGroup?.avatarUrl ?? null} colors={colors} viewedStoryIds={viewedStoryIds} />
                 <View>
                   <Text className="text-base font-bold text-foreground">Mi estado</Text>
-                  <Text className="text-xs text-muted">Pulsa para ver tus estados activos</Text>
+                  <Text className="text-xs text-muted">{isUploading ? uploadMessage || "Enviando actualización…" : "Pulsa para ver tus estados activos"}</Text>
                 </View>
               </View>
               <View className="flex-row items-center gap-2">
@@ -753,7 +793,8 @@ export default function StoriesScreen() {
               </View>
             </Pressable>
           )}
-        </View>
+        </View>;
+        })()}
 
         {activeUpload ? (
           <View className="mb-4 rounded-2xl border p-4" style={{ backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}55` }}>
@@ -771,7 +812,6 @@ export default function StoriesScreen() {
         ) : null}
 
         {/* Actualizaciones recientes */}
-        <Text className="mb-3 text-xs font-bold uppercase tracking-wider text-muted">Actualizaciones Recientes</Text>
         {isLoading ? (
           <View accessibilityLabel="Cargando estados" className="gap-3"><View className="h-20 rounded-2xl" style={{ backgroundColor: `${colors.border}55` }} /><View className="h-20 rounded-2xl" style={{ backgroundColor: `${colors.border}55` }} /></View>
         ) : loadError ? (
@@ -807,64 +847,23 @@ export default function StoriesScreen() {
         </View>
       </Modal>
 
-      {/* Modal Compositor / Previsualización antes de publicar */}
+      {/* Modal Compositor Inmersivo Estilo WhatsApp */}
       <Modal visible={Boolean(selectedMedia)} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setSelectedMedia(null)}>
-        <View className="flex-1" style={{ backgroundColor: colors.surface, paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 16) }}>
-          <View className="flex-1 px-5" style={{ backgroundColor: colors.surface }}>
-            <View className="mb-3 flex-row items-center gap-3">
-              <Pressable onPress={() => setSelectedMedia(null)} accessibilityRole="button" accessibilityLabel="Volver" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
-                <IconSymbol name="chevron.left" size={24} color={colors.foreground} />
-              </Pressable>
-              <Text className="text-lg font-bold text-foreground">Nuevo Estado</Text>
+        <View style={{ flex: 1, backgroundColor: "#000000" }}>
+          <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}>
+            {selectedMedia?.type === "image" ? <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" /> : selectedMedia ? <PreviewVideo uri={selectedMedia.uri} /> : null}
+          </View>
+          <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0.62)", "rgba(0,0,0,0)"]} style={{ position: "absolute", top: 0, left: 0, right: 0, height: 180 }} />
+          <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.84)"]} style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 240 }} />
+          <View style={{ paddingTop: Math.max(insets.top + 8, 20), paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Pressable onPress={() => setSelectedMedia(null)} accessibilityRole="button" accessibilityLabel="Volver" style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center" }}><IconSymbol name="chevron.left" size={24} color="#FFFFFF" /></Pressable>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              {([["all_friends", "Amigos"], ["close_friends", "Cercanos"], ["public", "Público"]] as const).map(([value, label]) => <Pressable key={value} onPress={() => setPrivacy(value)} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 18, backgroundColor: privacy === value ? colors.primary : "rgba(0,0,0,0.55)", borderWidth: 1, borderColor: privacy === value ? colors.primary : "rgba(255,255,255,0.22)" }}><Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>{label}</Text></Pressable>)}
             </View>
-
-            <View className="mb-4 flex-1 w-full overflow-hidden rounded-2xl bg-black">
-              {selectedMedia?.type === "image" ? <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} className="h-full w-full" contentFit="contain" cachePolicy="memory-disk" /> : selectedMedia ? <PreviewVideo uri={selectedMedia.uri} /> : null}
-            </View>
-
-            <TextInput
-              value={caption}
-              onChangeText={setCaption}
-              placeholder="Añade un comentario (opcional)…"
-              placeholderTextColor={colors.muted}
-              className="rounded-xl border px-4 py-3 text-foreground mb-3"
-              style={{ borderColor: colors.border, backgroundColor: colors.background }}
-            />
-
-            <Text className="mb-2 text-xs font-bold uppercase tracking-wider text-muted">Quién puede ver este Estado</Text>
-            <View className="mb-4 flex-row gap-2">
-              {([
-                ["all_friends", "Todos mis amigos"],
-                ["close_friends", "Amigos cercanos"],
-                ["public", "Público"],
-              ] as const).map(([value, label]) => (
-                <Pressable
-                  key={value}
-                  onPress={() => setPrivacy(value)}
-                  className="flex-1 rounded-xl border px-2 py-3 items-center"
-                  style={{
-                    borderColor: privacy === value ? colors.primary : colors.border,
-                    backgroundColor: privacy === value ? `${colors.primary}20` : colors.background,
-                  }}
-                >
-                  <Text className="text-center text-[11px] font-bold" style={{ color: privacy === value ? colors.primary : colors.muted }}>{label}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            {isUploading ? (
-              <View className="py-4 items-center">
-                <ActivityIndicator color={colors.primary} size="large" />
-                <Text className="mt-2 text-xs font-semibold text-foreground">{uploadMessage || "Subiendo…"}</Text>
-                <Pressable onPress={() => setSelectedMedia(null)} className="mt-4 rounded-xl border px-4 py-3" style={{ borderColor: colors.border }}>
-                  <Text className="text-sm font-bold text-foreground">Ocultar y seguir usando Junta2</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <Pressable onPress={() => void publishStory()} className="py-4 rounded-xl items-center" style={{ backgroundColor: colors.primary }}>
-                <Text className="font-bold" style={{ color: colors.onPrimary }}>Publicar Estado</Text>
-              </Pressable>
-            )}
+          </View>
+          <View style={{ marginTop: "auto", paddingHorizontal: 14, paddingBottom: Math.max(insets.bottom + 12, 24), paddingTop: 12, flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <TextInput value={caption} onChangeText={setCaption} placeholder="Añade un comentario…" placeholderTextColor="rgba(255,255,255,0.65)" style={{ flex: 1, minHeight: 48, borderRadius: 24, paddingHorizontal: 18, color: "#FFFFFF", fontSize: 15, backgroundColor: "rgba(28,28,30,0.88)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" }} />
+            <Pressable onPress={() => void publishStory()} disabled={isUploading} accessibilityRole="button" accessibilityLabel="Publicar estado" style={{ width: 50, height: 50, borderRadius: 25, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, opacity: isUploading ? 0.6 : 1 }}><IconSymbol name="paperplane.fill" size={21} color="#FFFFFF" /></Pressable>
           </View>
         </View>
       </Modal>
