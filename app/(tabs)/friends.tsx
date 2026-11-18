@@ -12,7 +12,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Image as ExpoImage } from "expo-image";
 import MessagesInboxScreen from "@/app/messages";
 import StoriesScreen from "@/app/(tabs)/stories";
-import { setCachedStoryGroups, type StoryItem } from "@/lib/stories-store";
+import { type StoryItem } from "@/lib/stories-store";
 
 type Friend = {
   id: string;
@@ -207,24 +207,6 @@ export default function FriendsScreen() {
       for (const checkin of (checkins ?? []) as CheckinRow[]) {
         if (!checkinByUser.has(checkin.user_id)) checkinByUser.set(checkin.user_id, checkin);
       }
-
-      const storyGroups = [...storyUserIds].map((userId) => {
-        const profile = (profiles ?? []).find((row) => row.id === userId) as ProfileRow | undefined;
-        const userStories = storyRows.filter((story) => story.user_id === userId).map((story) => ({
-          ...story,
-          user_name: getDisplayName(profile ?? { id: userId, name: null, email: null }) || "Usuario",
-          avatar_url: profile?.avatar_url ?? null,
-        }));
-        return {
-          userId,
-          userName: getDisplayName(profile ?? { id: userId, name: null, email: null }) || "Usuario",
-          avatarUrl: profile?.avatar_url ?? null,
-          isSelf: false,
-          stories: userStories,
-          latestCreatedAt: userStories[0]?.created_at ?? new Date().toISOString(),
-        };
-      });
-      setCachedStoryGroups(storyGroups);
 
       setFriends(
         ((profiles ?? []) as ProfileRow[])

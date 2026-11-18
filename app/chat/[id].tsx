@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,8 +15,10 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
+import { getCachedConversation, mergeCachedMessage, setCachedConversation } from "@/lib/chat-store";
 import { Image } from "expo-image";
 import { setActiveChatId } from "@/lib/push-notifications";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Message = {
   id: string;
@@ -43,16 +45,18 @@ function newClientMessageId() {
 export default function ChatScreen() {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
-  const { id: otherId } = useLocalSearchParams<{ id: string }>();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { id: otherIdParam, name: routeName, avatarUrl: routeAvatar } = useLocalSearchParams<{ id: string; name?: string; avatarUrl?: string }>();
+  const otherId = Array.isArray(otherIdParam) ? otherIdParam[0] : otherIdParam;
+  const initialName = Array.isArray(routeName) ? routeName[0] : routeName;
+  const initialAvatar = Array.isArray(routeAvatar) ? routeAvatar[0] : routeAvatar;
+  const insets = useSafeAreaInsets();
+  const [messages, setMessages] = useState<Message[]>(() => otherId ? getCachedConversation(otherId) as Message[] : []);
   const [draft, setDraft] = useState("");
-  const [otherName, setOtherName] = useState("Chat");
-  const [otherAvatar, setOtherAvatar] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [otherName, setOtherName] = useState(initialName || "Chat");
+  const [otherAvatar, setOtherAvatar] = useState<string | null>(initialAvatar || null);
+  const [loading, setLoading] = useState(() => !otherId || getCachedConversation(otherId).length === 0);
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const listRef = useRef<FlatList<Message>>(null);
-
   const markAsRead = useCallback(
     async (friendId: string) => {
       if (!user) return;
@@ -67,20 +71,22 @@ export default function ChatScreen() {
         console.warn("Could not mark messages as read:", error.message);
         return;
       }
-      setMessages((current) =>
-        current.map((message) =>
+      setMessages((current) => {
+        const next = current.map((message) =>
           message.sender_id === friendId && !message.read_at
             ? { ...message, read_at: readAt }
             : message,
-        ),
-      );
+        );
+        if (otherId) setCachedConversation(otherId, next);
+        return next;
+      });
     },
-    [user],
+    [otherId, user],
   );
 
   const loadMessages = useCallback(async () => {
     if (!user || !otherId) return;
-    setLoading(true);
+    if (getCachedConversation(otherId).length === 0) setLoading(true);
     setLoadError(null);
     try {
       const { data, error } = await supabase
@@ -89,13 +95,15 @@ export default function ChatScreen() {
         .or(
           `and(sender_id.eq.${user.id},recipient_id.eq.${otherId}),and(sender_id.eq.${otherId},recipient_id.eq.${user.id})`,
         )
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false });
       if (error) throw error;
       const confirmed = (data ?? []) as Message[];
       setMessages((current) => {
         const confirmedIds = new Set(confirmed.map((message) => message.client_message_id).filter(Boolean));
         const pending = current.filter((message) => message.pending && !confirmedIds.has(message.client_message_id));
-        return [...confirmed, ...pending];
+        const next = [...confirmed, ...pending].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+        setCachedConversation(otherId, next);
+        return next;
       });
       await markAsRead(otherId);
       const profile = await supabase
@@ -103,22 +111,22 @@ export default function ChatScreen() {
         .select("name, avatar_url")
         .eq("id", otherId)
         .maybeSingle();
-      setOtherName(profile.data?.name?.trim() || "Chat");
-      setOtherAvatar(profile.data?.avatar_url || null);
+      setOtherName(profile.data?.name?.trim() || initialName || "Chat");
+      setOtherAvatar(profile.data?.avatar_url || initialAvatar || null);
     } catch (error) {
       console.warn("Chat load failed:", error);
       setLoadError("No se pudo actualizar la conversación. Conservamos los mensajes anteriores; inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
-  }, [markAsRead, otherId, user]);
+  }, [initialAvatar, initialName, markAsRead, otherId, user]);
 
   useFocusEffect(
     useCallback(() => {
       setActiveChatId(otherId ?? null);
       void loadMessages();
       return () => setActiveChatId(null);
-    }, [loadMessages]),
+    }, [loadMessages, otherId]),
   );
 
   useEffect(() => {
@@ -127,18 +135,9 @@ export default function ChatScreen() {
 
     const upsertRow = (row: Message) => {
       setMessages((current) => {
-        if (current.some((item) => item.id === row.id)) return current;
-        if (
-          row.client_message_id &&
-          current.some((item) => item.client_message_id === row.client_message_id)
-        ) {
-          return current.map((item) =>
-            item.client_message_id === row.client_message_id
-              ? { ...row, pending: false }
-              : item,
-          );
-        }
-        return [...current, { ...row, pending: false }];
+        const next = mergeCachedMessage(current, { ...row, pending: false });
+        setCachedConversation(otherId, next);
+        return next as Message[];
       });
       if (row.sender_id === otherId) void markAsRead(otherId);
     };
@@ -193,7 +192,11 @@ export default function ChatScreen() {
 
     setDraft("");
     setSending(true);
-    setMessages((current) => [...current, optimistic]);
+    setMessages((current) => {
+      const next = [optimistic, ...current];
+      setCachedConversation(otherId, next);
+      return next;
+    });
 
     const { data, error } = await supabase
       .from("direct_messages")
@@ -213,20 +216,22 @@ export default function ChatScreen() {
         void loadMessages();
         return;
       }
-      setMessages((current) => current.filter((item) => item.client_message_id !== clientMessageId));
+      setMessages((current) => {
+        const next = current.filter((item) => item.client_message_id !== clientMessageId);
+        setCachedConversation(otherId, next);
+        return next;
+      });
       setDraft(body);
       Alert.alert("No se pudo enviar", "El mensaje quedó sin enviar. Comprueba tu conexión e inténtalo de nuevo.");
       return;
     }
 
     if (data) {
-      setMessages((current) =>
-        current.map((item) =>
-          item.client_message_id === clientMessageId
-            ? { ...(data as Message), pending: false }
-            : item,
-        ),
-      );
+      setMessages((current) => {
+        const next = mergeCachedMessage(current, { ...(data as Message), pending: false });
+        setCachedConversation(otherId, next);
+        return next as Message[];
+      });
     }
   };
 
@@ -261,6 +266,8 @@ export default function ChatScreen() {
                 style={{ width: 36, height: 36 }}
                 contentFit="cover"
                 cachePolicy="memory-disk"
+                transition={0}
+                recyclingKey={otherId}
               />
             ) : (
               <Text className="text-xs font-bold text-foreground">
@@ -282,11 +289,11 @@ export default function ChatScreen() {
           <>
           {loadError ? <View className="mb-3 rounded-xl border p-3" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}12` }}><Text className="text-sm text-foreground">{loadError}</Text><Pressable onPress={() => void loadMessages()} accessibilityRole="button" accessibilityLabel="Reintentar actualizar conversación" style={{ minHeight: 44, justifyContent: "center" }}><Text className="font-bold" style={{ color: colors.primary }}>Reintentar</Text></Pressable></View> : null}
           <FlatList
-            ref={listRef}
             data={messages}
+            inverted
             keyExtractor={(item) => item.id}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 12, flexGrow: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 2, paddingTop: 12, flexGrow: 1 }}
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center py-16">
                 <Text className="text-sm text-muted">Escribe el primer mensaje</Text>
@@ -328,7 +335,7 @@ export default function ChatScreen() {
           </>
         )}
 
-        <View className="mt-2 flex-row items-end gap-2">
+        <View style={{ paddingBottom: Math.max(insets.bottom, 8), paddingTop: 8 }} className="flex-row items-end gap-2">
           <TextInput
             accessibilityLabel="Mensaje"
             accessibilityHint="Escribe un mensaje para enviarlo a tu contacto"

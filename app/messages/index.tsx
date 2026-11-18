@@ -6,6 +6,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
+import { getCachedInbox, setCachedInbox, type CachedConversation } from "@/lib/chat-store";
 
 type MessageRow = {
   id: string;
@@ -16,25 +17,18 @@ type MessageRow = {
   read_at: string | null;
 };
 
-type Conversation = {
-  otherId: string;
-  name: string;
-  avatarUrl: string | null;
-  lastBody: string;
-  lastAt: string;
-  unread: number;
-};
+type Conversation = CachedConversation;
 
 export default function MessagesInboxScreen({ embedded = false }: { embedded?: boolean }) {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
-  const [loading, setLoading] = useState(true);
-  const [items, setItems] = useState<Conversation[]>([]);
+  const [items, setItems] = useState<Conversation[]>(() => getCachedInbox());
+  const [loading, setLoading] = useState(() => getCachedInbox().length === 0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
-    setLoading(true);
+    if (getCachedInbox().length === 0) setLoading(true);
     setLoadError(null);
     try {
       const { data, error } = await supabase
@@ -84,6 +78,7 @@ export default function MessagesInboxScreen({ embedded = false }: { embedded?: b
       const list = [...byOther.values()]
         .map((item) => ({ ...item, unread: unreadByOther.get(item.otherId) ?? 0 }))
         .sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+      setCachedInbox(list);
       setItems(list);
     } catch (err) {
       console.warn("Inbox load failed:", err);
@@ -137,7 +132,10 @@ export default function MessagesInboxScreen({ embedded = false }: { embedded?: b
           contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
           renderItem={({ item }) => (
             <Pressable
-              onPress={() => router.push(`/chat/${item.otherId}`)}
+              onPress={() => router.push({
+                pathname: "/chat/[id]",
+                params: { id: item.otherId, name: item.name, avatarUrl: item.avatarUrl ?? "" },
+              })}
               style={({ pressed }) => ({
                 borderRadius: 16,
                 borderWidth: 1,
@@ -167,6 +165,8 @@ export default function MessagesInboxScreen({ embedded = false }: { embedded?: b
                       style={{ width: 44, height: 44 }}
                       contentFit="cover"
                       cachePolicy="memory-disk"
+                      transition={0}
+                      recyclingKey={item.otherId}
                     />
                   ) : (
                     <Text className="text-sm font-bold text-foreground">

@@ -376,11 +376,12 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
 
       const groups: GroupedStoryUser[] = [];
       const selfList = map.get(user.id);
+      const resolvedSelfAvatar = profileMap.get(user.id)?.avatarUrl || selfAvatarUrl || null;
       if (selfList) {
         groups.push({
           userId: user.id,
           userName: "Mi estado",
-          avatarUrl: profileMap.get(user.id)?.avatarUrl || null,
+          avatarUrl: resolvedSelfAvatar,
           isSelf: true,
           stories: selfList,
           latestCreatedAt: selfList[0]?.created_at || new Date().toISOString(),
@@ -419,7 +420,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       if (pendingOptimistic.length) {
         const optimisticSelf = groups.find((group) => group.isSelf);
         if (optimisticSelf) optimisticSelf.stories = [...pendingOptimistic.filter((item) => !optimisticSelf.stories.some((story) => story.id === item.id)), ...optimisticSelf.stories];
-        else groups.unshift({ userId: user.id, userName: "Mi estado", avatarUrl: profileMap.get(user.id)?.avatarUrl || null, isSelf: true, stories: pendingOptimistic, latestCreatedAt: pendingOptimistic[0].created_at });
+        else groups.unshift({ userId: user.id, userName: "Mi estado", avatarUrl: resolvedSelfAvatar, isSelf: true, stories: pendingOptimistic, latestCreatedAt: pendingOptimistic[0].created_at });
       }
       setOptimisticStories((previous) => previous.length === pendingOptimistic.length && previous.every((item, index) => item.id === pendingOptimistic[index]?.id) ? previous : pendingOptimistic);
       setCachedStoryGroups(groups);
@@ -453,7 +454,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       setIsLoading(false);
       fetchInFlightRef.current = false;
     }
-  }, [embedded, optimisticStories, requestedUserId, router, user]);
+  }, [embedded, optimisticStories, requestedUserId, router, selfAvatarUrl, user]);
 
   const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await fetchStories(); } finally { setIsRefreshing(false); } }, [fetchStories]);
 
@@ -471,7 +472,6 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     const channel = supabase
       .channel(`tragos-sociales-stories-${user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "stories" }, scheduleStoriesRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "story_views" }, scheduleStoriesRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "story_reactions" }, scheduleStoriesRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleStoriesRefresh)
       .subscribe();
@@ -895,7 +895,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
               className="flex-row items-center justify-between"
             >
               <View className="flex-row items-center gap-3">
-                <SegmentedStoryRing stories={mergedSelfStories} avatarUrl={selfGroup?.avatarUrl ?? null} colors={colors} viewedStoryIds={viewedStoryIds} />
+                <SegmentedStoryRing stories={mergedSelfStories} avatarUrl={selfGroup?.avatarUrl ?? selfAvatarUrl ?? null} colors={colors} viewedStoryIds={viewedStoryIds} />
                 <View>
                   <Text className="text-base font-bold text-foreground">Mi estado</Text>
                   <Text className="text-xs text-muted">{isUploading ? uploadMessage || "Enviando actualización…" : "Pulsa para ver tus estados activos"}</Text>
