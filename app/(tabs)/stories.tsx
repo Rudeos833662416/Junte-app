@@ -59,6 +59,7 @@ const MAX_STORY_DURATION_SECONDS = 300;
 const STORY_VIDEO_DURATION_MESSAGE = "Las historias en vídeo pueden durar como máximo 5 minutos (300 segundos).";
 const TEXT_STORY_BACKGROUNDS = ["#FF6B00", "#1E88E5", "#8E24AA", "#00897B", "#D81B60", "#212121"];
 const TEXT_STORY_FONTS = ["System", "serif", "monospace"];
+const resolvedVideoCache = new Map<string, string>();
 
 function formatStoryAge(createdAt: string) {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000));
@@ -70,15 +71,17 @@ function formatStoryAge(createdAt: string) {
 }
 
 function StoryVideo({ uri, muted, paused, onReady, onTimeUpdate }: { uri: string; muted: boolean; paused: boolean; onReady: () => void; onTimeUpdate: (currentTime: number, duration: number) => void }) {
-  const [sourceUri, setSourceUri] = useState(uri);
+  const [sourceUri, setSourceUri] = useState(() => resolvedVideoCache.get(uri) ?? uri);
   const player = useVideoPlayer(sourceUri, (videoPlayer) => {
     videoPlayer.loop = true;
     videoPlayer.muted = muted;
     videoPlayer.timeUpdateEventInterval = 0.1;
   });
   useEffect(() => {
+    if (resolvedVideoCache.has(uri)) return;
     let cancelled = false;
     void resolveCachedVideoUri(uri).then((resolved) => {
+      resolvedVideoCache.set(uri, resolved);
       if (!cancelled) setSourceUri(resolved);
     });
     return () => {
@@ -154,6 +157,7 @@ export default function StoriesScreen() {
 
   const [selectedMedia, setSelectedMedia] = useState<SelectedMedia | null>(null);
   const [optimisticStories, setOptimisticStories] = useState<StoryItem[]>([]);
+  const [selfAvatarUrl, setSelfAvatarUrl] = useState<string | null>(null);
   const [showTextCreator, setShowTextCreator] = useState(false);
   const [textDraft, setTextDraft] = useState("");
   const [textBackgroundColor, setTextBackgroundColor] = useState(TEXT_STORY_BACKGROUNDS[0]);
@@ -261,6 +265,7 @@ export default function StoriesScreen() {
           { name: p.name?.trim() || "", avatarUrl: p.avatar_url },
         ]),
       );
+      setSelfAvatarUrl(profileMap.get(user.id)?.avatarUrl || null);
 
       const map = new Map<string, StoryItem[]>();
       for (const row of rows) {
@@ -310,7 +315,11 @@ export default function StoriesScreen() {
       const urlsToPrefetch = [...new Set(groups.flatMap((group) => group.stories.map((story) => story.media_url).filter((url): url is string => Boolean(url))))].slice(0, 30);
       void Promise.all(urlsToPrefetch.map((url) => RNImage.prefetch(url).catch(() => false)));
       const videosToWarm = [...new Set(groups.flatMap((group) => group.stories.filter((story) => story.media_type === "video").map((story) => story.media_url).filter((url): url is string => Boolean(url))))].slice(0, 6);
-      void Promise.all(videosToWarm.map((url) => resolveCachedVideoUri(url).catch(() => url)));
+      void Promise.all(videosToWarm.map(async (url) => {
+        const resolved = await resolveCachedVideoUri(url).catch(() => url);
+        resolvedVideoCache.set(url, resolved);
+        return resolved;
+      }));
       if (requestedUserId && requestedUserConsumedRef.current !== requestedUserId) {
         const requestedIndex = groups.findIndex((group) => group.userId === requestedUserId);
         if (requestedIndex >= 0) {
@@ -419,7 +428,7 @@ export default function StoriesScreen() {
     setOptimisticStories((previous) => [tempStory, ...previous]);
     setGroupedStories((previous) => {
       const selfIndex = previous.findIndex((group) => group.isSelf);
-      if (selfIndex < 0) return [{ userId: user.id, userName: "Mi estado", avatarUrl: null, isSelf: true, stories: [tempStory], latestCreatedAt: tempStory.created_at }, ...previous];
+      if (selfIndex < 0) return [{ userId: user.id, userName: "Mi estado", avatarUrl: selfAvatarUrl, isSelf: true, stories: [tempStory], latestCreatedAt: tempStory.created_at }, ...previous];
       return previous.map((group, index) => index === selfIndex && !group.stories.some((story) => story.id === tempStory.id) ? { ...group, stories: [tempStory, ...group.stories] } : group);
     });
     setSelectedMedia(null);
@@ -918,7 +927,7 @@ export default function StoriesScreen() {
               {flyingEmojis.map((item) => <Animated.Text key={item.id} style={{ position: "absolute", fontSize: 34, transform: [{ translateY: item.translateY }], opacity: item.opacity }}>{item.emoji}</Animated.Text>)}
             </View>
 
-            <View style={{ position: "absolute", top: 90, bottom: 150, left: 0, right: 0, zIndex: 2, flexDirection: "row" }}>
+            <View style={{ position: "absolute", top: 115, bottom: 150, left: 0, right: 0, zIndex: 2, flexDirection: "row" }}>
               <Pressable
                 onTouchStart={(event) => { setIsPaused(true); touchStartRef.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY, at: Date.now() }; }}
                 onTouchEnd={(event) => {

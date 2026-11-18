@@ -65,6 +65,15 @@ describe("mejoras confirmadas en la grabación", () => {
 			expect(stories).toContain('group.stories.filter((story) => story.id !== tempStory.id)');
 		});
 
+		it("conserva identidad y reproducción al repetir un vídeo", () => {
+			expect(stories).toContain("const resolvedVideoCache = new Map<string, string>()");
+			expect(stories).toContain("resolvedVideoCache.get(uri) ?? uri");
+			expect(stories).toContain("resolvedVideoCache.set(url, resolved)");
+			expect(stories).toContain("const [selfAvatarUrl, setSelfAvatarUrl]");
+			expect(stories).toContain("avatarUrl: selfAvatarUrl");
+			expect(stories).toContain('top: 115');
+		});
+
 	it("sincroniza vídeo, texto, audio, vistos y tiempo real de visualización", () => {
 		expect(stories).toContain("timeUpdate");
 		expect(stories).toContain("videoMuted");
