@@ -274,10 +274,13 @@ export async function saveNotificationReaction(activityId: string, reaction: str
   if (error) console.warn("Could not save notification reaction:", error.message);
 }
 
-export async function respondToFriendRequest(friendshipId: string, status: "accepted" | "blocked", userId: string) {
+export async function respondToFriendRequest(friendshipId: string, status: "accepted" | "rejected", userId: string) {
   const id = Number(friendshipId);
   if (!Number.isFinite(id)) return;
-  const { error } = await supabase.from("friendships").update({ status }).eq("id", id).eq("friend_id", userId).eq("status", "pending");
+  const query = status === "rejected"
+    ? supabase.from("friendships").delete().eq("id", id).eq("friend_id", userId).eq("status", "pending")
+    : supabase.from("friendships").update({ status }).eq("id", id).eq("friend_id", userId).eq("status", "pending");
+  const { error } = await query;
   if (error) console.warn("Could not respond to friend request:", error.message);
 }
 

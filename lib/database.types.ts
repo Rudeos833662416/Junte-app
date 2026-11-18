@@ -123,6 +123,8 @@ export type Database = {
           story_id: number | null
           kind: string
           reply_to_message_id: string | null
+          audio_path: string | null
+          duration_ms: number | null
           created_at: string
           read_at: string | null
           client_message_id: string | null
@@ -135,6 +137,8 @@ export type Database = {
           story_id?: number | null
           kind?: string
           reply_to_message_id?: string | null
+          audio_path?: string | null
+          duration_ms?: number | null
           created_at?: string
           read_at?: string | null
           client_message_id?: string | null
@@ -147,6 +151,8 @@ export type Database = {
           story_id?: number | null
           kind?: string
           reply_to_message_id?: string | null
+          audio_path?: string | null
+          duration_ms?: number | null
           created_at?: string
           read_at?: string | null
           client_message_id?: string | null

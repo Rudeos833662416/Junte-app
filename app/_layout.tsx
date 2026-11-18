@@ -209,7 +209,7 @@ function AuthGate() {
           void (async () => {
             const edge = await invokeNotificationAction({ actionToken, action: "friend_reject" });
             if (!edge.ok && data.friendshipId) {
-              await respondToFriendRequest(data.friendshipId, "blocked", user.id);
+              await respondToFriendRequest(data.friendshipId, "rejected", user.id);
             }
           })();
         }
@@ -258,7 +258,7 @@ function AuthGate() {
       appStateSubscription.remove();
       responseSubscription?.remove();
     };
-  }, [user?.id]);
+  }, [router, user]);
 
   if (loading) {
     return (

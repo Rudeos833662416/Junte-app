@@ -17,8 +17,18 @@ import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
 import { Image } from "expo-image";
 import { setActiveChatId } from "@/lib/push-notifications";
+import { friendlyChatError } from "@/lib/chat-errors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from "expo-audio";
+import { uploadUriToStorage } from "@/lib/media-upload";
 import {
   formatChatDateLabel,
   getCachedConversation,
@@ -40,7 +50,16 @@ type Message = {
   pending?: boolean;
   story_id?: number | null;
   kind?: string;
+  audio_path?: string | null;
+  audio_url?: string | null;
+  duration_ms?: number | null;
 };
+
+async function withSignedAudioUrl(message: Message) {
+  if (!message.audio_path || message.audio_url) return message;
+  const { data } = await supabase.storage.from("chat-audio").createSignedUrl(message.audio_path, 60 * 60 * 24);
+  return { ...message, audio_url: data?.signedUrl ?? null };
+}
 
 function newClientMessageId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -70,6 +89,12 @@ export default function ChatScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [isOtherOnline, setIsOtherOnline] = useState(false);
+  const [voiceSending, setVoiceSending] = useState(false);
+  const [playingAudioPath, setPlayingAudioPath] = useState<string | null>(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder, 250);
+  const audioPlayer = useAudioPlayer();
+  const audioPlayerStatus = useAudioPlayerStatus(audioPlayer);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingSendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -107,13 +132,13 @@ export default function ChatScreen() {
     try {
       const { data, error } = await supabase
         .from("direct_messages")
-        .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind")
+        .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, duration_ms")
         .or(
           `and(sender_id.eq.${user.id},recipient_id.eq.${otherId}),and(sender_id.eq.${otherId},recipient_id.eq.${user.id})`,
         )
         .order("created_at", { ascending: false });
       if (error) throw error;
-      const confirmed = (data ?? []) as Message[];
+      const confirmed = await Promise.all((data ?? []).map((row) => withSignedAudioUrl(row as Message)));
       setMessages((current) => {
         const confirmedIds = new Set(confirmed.map((message) => message.client_message_id).filter(Boolean));
         const pending = current.filter((message) => message.pending && !confirmedIds.has(message.client_message_id));
@@ -149,9 +174,10 @@ export default function ChatScreen() {
     if (!user || !otherId) return;
     const channel = supabase.channel(`direct-messages-${user.id}-${otherId}`);
 
-    const upsertRow = (row: Message) => {
+    const upsertRow = async (row: Message) => {
+      const hydrated = await withSignedAudioUrl(row);
       setMessages((current) => {
-        const next = mergeCachedMessage(current, { ...row, pending: false });
+        const next = mergeCachedMessage(current, { ...hydrated, pending: false });
         setCachedConversation(otherId, next);
         return next as Message[];
       });
@@ -168,7 +194,7 @@ export default function ChatScreen() {
       },
       (payload) => {
         const row = payload.new as Message;
-        if (row.sender_id === otherId) upsertRow(row);
+        if (row.sender_id === otherId) void upsertRow(row);
       },
     );
     channel.on(
@@ -181,7 +207,7 @@ export default function ChatScreen() {
       },
       (payload) => {
         const row = payload.new as Message;
-        if (row.recipient_id === otherId) upsertRow(row);
+        if (row.recipient_id === otherId) void upsertRow(row);
       },
     );
     channel.on(
@@ -192,7 +218,7 @@ export default function ChatScreen() {
         table: "direct_messages",
         filter: `recipient_id=eq.${user.id}`,
       },
-      (payload) => upsertRow(payload.new as Message),
+      (payload) => void upsertRow(payload.new as Message),
     );
     channel.on(
       "postgres_changes",
@@ -202,7 +228,7 @@ export default function ChatScreen() {
         table: "direct_messages",
         filter: `sender_id=eq.${user.id}`,
       },
-      (payload) => upsertRow(payload.new as Message),
+      (payload) => void upsertRow(payload.new as Message),
     );
     channel.subscribe();
     return () => {
@@ -249,6 +275,80 @@ export default function ChatScreen() {
     }, 80);
   };
 
+  const playVoiceMessage = (message: Message) => {
+    if (!message.audio_url) {
+      Alert.alert("Audio no disponible", "No se pudo obtener el audio privado de este mensaje.");
+      return;
+    }
+    if (playingAudioPath === message.audio_path && audioPlayerStatus.playing) {
+      audioPlayer.pause();
+      return;
+    }
+    setPlayingAudioPath(message.audio_path ?? message.id);
+    audioPlayer.replace(message.audio_url);
+    audioPlayer.play();
+  };
+
+  const toggleVoiceRecording = async () => {
+    if (!user || !otherId || voiceSending) return;
+    if (recorderState.isRecording) {
+      const durationMs = recorderState.durationMillis;
+      setVoiceSending(true);
+      try {
+        await recorder.stop();
+        const uri = recorder.uri;
+        if (!uri) throw new Error("La grabación no produjo un archivo de audio.");
+        const clientMessageId = newClientMessageId();
+        const audioPath = `${user.id}/${otherId}/${clientMessageId}.m4a`;
+        await uploadUriToStorage("chat-audio", audioPath, uri, "audio/mp4");
+        const { data: signedData, error: signedError } = await supabase.storage.from("chat-audio").createSignedUrl(audioPath, 60 * 60 * 24);
+        if (signedError) throw signedError;
+        const { data, error } = await supabase
+          .from("direct_messages")
+          .insert({
+            sender_id: user.id,
+            recipient_id: otherId,
+            body: "Nota de voz",
+            client_message_id: clientMessageId,
+            kind: "voice_note",
+            audio_path: audioPath,
+            duration_ms: Math.max(0, Math.round(durationMs)),
+          })
+          .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, duration_ms")
+          .single();
+        if (error) throw error;
+        if (data) {
+          setMessages((current) => {
+            const next = mergeCachedMessage(current, { ...(data as Message), audio_url: signedData?.signedUrl ?? null, pending: false });
+            setCachedConversation(otherId, next);
+            return next as Message[];
+          });
+        }
+      } catch (error) {
+        Alert.alert("No se pudo enviar el audio", friendlyChatError(error as { code?: string; message?: string }));
+      } finally {
+        setVoiceSending(false);
+      }
+      return;
+    }
+
+    const permission = await requestRecordingPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permiso de micrófono", "Activa el micrófono en los ajustes de Android para grabar notas de voz.");
+      return;
+    }
+    try {
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+    } catch (error) {
+      Alert.alert("No se pudo grabar", error instanceof Error ? error.message : "El micrófono no está disponible.");
+    }
+  };
+
+  useEffect(() => () => {
+    if (recorder.isRecording) void recorder.stop();
+  }, [recorder]);
+
   const sendMessage = async () => {
     const body = draft.trim();
     if (!user || !otherId || !body || sending) return;
@@ -282,7 +382,7 @@ export default function ChatScreen() {
         body,
         client_message_id: clientMessageId,
       })
-      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind")
+      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, duration_ms")
       .single();
 
     setSending(false);
@@ -299,7 +399,7 @@ export default function ChatScreen() {
       });
       setDraftState(body);
       setDraft(otherId, body);
-      Alert.alert("No se pudo enviar", "El mensaje quedó sin enviar. Comprueba tu conexión e inténtalo de nuevo.");
+      Alert.alert("No se pudo enviar", friendlyChatError(error));
       return;
     }
 
@@ -408,7 +508,25 @@ export default function ChatScreen() {
                       </Text>
                     </View>
                   ) : null}
-                  <Text style={{ color: mine ? colors.background : colors.foreground }}>{item.body}</Text>
+                  {item.kind === "voice_note" ? (
+                    <Pressable
+                      onPress={() => playVoiceMessage(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={audioPlayerStatus.playing && playingAudioPath === (item.audio_path ?? item.id) ? "Pausar nota de voz" : "Reproducir nota de voz"}
+                      style={{ minHeight: 40, minWidth: 150, flexDirection: "row", alignItems: "center", gap: 8 }}
+                    >
+                      <MaterialIcons
+                        name={audioPlayerStatus.playing && playingAudioPath === (item.audio_path ?? item.id) ? "pause" : "play-arrow"}
+                        size={24}
+                        color={mine ? colors.background : colors.primary}
+                      />
+                      <Text style={{ color: mine ? colors.background : colors.foreground, fontWeight: "700" }}>
+                        Nota de voz · {Math.max(1, Math.round((item.duration_ms ?? 0) / 1000))}s
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Text style={{ color: mine ? colors.background : colors.foreground }}>{item.body}</Text>
+                  )}
                   <View className="mt-1 flex-row items-center justify-end gap-1">
                     <Text style={{ fontSize: 10, color: mine ? `${colors.background}CC` : colors.muted }}>
                       {new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -430,13 +548,20 @@ export default function ChatScreen() {
           </>
         )}
 
-        <View style={{ paddingBottom: Math.max(insets.bottom, 8), paddingTop: 8 }} className="flex-row items-end gap-2">
+        <View style={{ paddingBottom: Math.max(insets.bottom, 8), paddingTop: 8 }}>
+          {recorderState.isRecording ? (
+            <Text className="mb-2 text-xs font-bold" style={{ color: colors.error }}>
+              Grabando nota de voz · {Math.max(1, Math.round(recorderState.durationMillis / 1000))}s · toca detener y enviar
+            </Text>
+          ) : null}
+          <View className="flex-row items-end gap-2">
           <TextInput
             accessibilityLabel="Mensaje"
-            accessibilityHint="Escribe un mensaje para enviarlo a tu contacto"
+            accessibilityHint={recorderState.isRecording ? "Grabando nota de voz" : "Escribe un mensaje para enviarlo a tu contacto"}
             value={draft}
             onChangeText={updateDraft}
-            placeholder="Mensaje…"
+            editable={!recorderState.isRecording}
+            placeholder={recorderState.isRecording ? "Grabando…" : "Mensaje…"}
             placeholderTextColor={colors.muted}
             multiline
             maxLength={2000}
@@ -455,9 +580,9 @@ export default function ChatScreen() {
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={draft.trim() ? "Enviar mensaje" : "Micrófono"}
-            onPress={() => void sendMessage()}
-            disabled={sending || !draft.trim()}
+            accessibilityLabel={draft.trim() ? "Enviar mensaje" : recorderState.isRecording ? "Detener y enviar nota de voz" : "Grabar nota de voz"}
+            onPress={() => (draft.trim() ? void sendMessage() : void toggleVoiceRecording())}
+            disabled={sending || voiceSending}
             style={({ pressed }) => ({
               borderRadius: 18,
               backgroundColor: colors.primary,
@@ -465,11 +590,12 @@ export default function ChatScreen() {
               height: 48,
               alignItems: "center",
               justifyContent: "center",
-              opacity: pressed || sending || !draft.trim() ? 0.55 : 1,
+              opacity: pressed || sending || voiceSending ? 0.55 : 1,
             })}
           >
-            <MaterialIcons name={draft.trim() ? "send" : "mic"} size={21} color={colors.background} />
+            <MaterialIcons name={draft.trim() ? "send" : recorderState.isRecording ? "stop" : "mic"} size={21} color={colors.background} />
           </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </ScreenContainer>

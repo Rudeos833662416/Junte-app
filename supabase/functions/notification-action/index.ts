@@ -80,13 +80,20 @@ Deno.serve(async (request) => {
         await releaseActionToken(claimedTokenId, claimedLeaseId);
         return Response.json({ error: "missing_friendship" }, { status: 400 });
       }
-      const status = action === "friend_accept" ? "accepted" : "blocked";
-      const { error } = await supabase
-        .from("friendships")
-        .update({ status })
-        .eq("id", token.friendship_id_bigint)
-        .eq("friend_id", token.user_id)
-        .eq("status", "pending");
+      const query = action === "friend_accept"
+        ? supabase
+            .from("friendships")
+            .update({ status: "accepted" })
+            .eq("id", token.friendship_id_bigint)
+            .eq("friend_id", token.user_id)
+            .eq("status", "pending")
+        : supabase
+            .from("friendships")
+            .delete()
+            .eq("id", token.friendship_id_bigint)
+            .eq("friend_id", token.user_id)
+            .eq("status", "pending");
+      const { error } = await query;
       if (error) {
         await releaseActionToken(claimedTokenId, claimedLeaseId);
         return Response.json({ error: error.message }, { status: 400 });

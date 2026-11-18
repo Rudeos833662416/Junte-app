@@ -11,6 +11,9 @@ export type CachedChatMessage = {
   pending?: boolean;
   story_id?: number | null;
   kind?: ChatMessageKind | string;
+  audio_path?: string | null;
+  duration_ms?: number | null;
+  audio_url?: string | null;
 };
 
 export type CachedConversation = {

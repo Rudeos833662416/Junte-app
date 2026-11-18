@@ -136,12 +136,15 @@ export default function FriendsScreen() {
     );
   }, [user]);
 
-  const respondToRequest = async (requestId: number, status: "accepted" | "blocked") => {
+  const respondToRequest = async (requestId: number, status: "accepted" | "rejected") => {
     if (respondingRequestId !== null) return;
     setRespondingRequestId(requestId);
     setRequestsError(null);
     try {
-      const { error } = await supabase.from("friendships").update({ status }).eq("id", requestId).eq("friend_id", user?.id ?? "");
+      const query = status === "rejected"
+        ? supabase.from("friendships").delete().eq("id", requestId).eq("friend_id", user?.id ?? "").eq("status", "pending")
+        : supabase.from("friendships").update({ status }).eq("id", requestId).eq("friend_id", user?.id ?? "").eq("status", "pending");
+      const { error } = await query;
       if (error) {
         setRequestsError("No se pudo actualizar la solicitud. Inténtalo de nuevo.");
         return;
@@ -481,7 +484,7 @@ export default function FriendsScreen() {
                     </Pressable>
                     <Pressable
                       disabled={respondingRequestId === request.id}
-                      onPress={() => void respondToRequest(request.id, "blocked")}
+                      onPress={() => void respondToRequest(request.id, "rejected")}
                       style={({ pressed }) => ({
                         flex: 1,
                         minHeight: 48,
