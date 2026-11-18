@@ -254,6 +254,18 @@ export default function StoriesScreen() {
   const videoAdvancedStoryRef = useRef<number | null>(null);
 
   useEffect(() => {
+    if (!user?.id) return;
+    void supabase
+      .from("profiles")
+      .select("avatar_url")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.avatar_url) setSelfAvatarUrl(data.avatar_url);
+      });
+  }, [user?.id]);
+
+  useEffect(() => {
     const onBack = () => {
       if (showViewers) { closeViewers(); return true; }
       if (activeGroupIndex !== null) { setActiveGroupIndex(null); return true; }
@@ -329,7 +341,8 @@ export default function StoriesScreen() {
           { name: p.name?.trim() || "", avatarUrl: p.avatar_url },
         ]),
       );
-      setSelfAvatarUrl(profileMap.get(user.id)?.avatarUrl || null);
+      const ownAvatarUrl = profileMap.get(user.id)?.avatarUrl;
+      if (ownAvatarUrl !== undefined) setSelfAvatarUrl(ownAvatarUrl || null);
 
       const map = new Map<string, StoryItem[]>();
       for (const row of rows) {
@@ -730,7 +743,8 @@ export default function StoriesScreen() {
     const storyId = activeStory?.id;
     if (!storyId) return;
     setShowViewers(false);
-    setIsStoryMediaLoading(activeStory.media_type === "video");
+    const isCachedVideo = activeStory.media_type === "video" && Boolean(activeStory.media_url && resolvedVideoCache.has(activeStory.media_url));
+    setIsStoryMediaLoading(activeStory.media_type === "video" && !isCachedVideo);
     setVideoMuted(false);
     videoAdvancedStoryRef.current = null;
     let cancelled = false;
@@ -945,7 +959,7 @@ export default function StoriesScreen() {
           <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}>
             {selectedMedia?.type === "image" ? <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" /> : selectedMedia ? <PreviewVideo uri={selectedMedia.uri} trimStart={trimRange.start} trimEnd={trimRange.end} onDuration={(duration) => { setVideoDuration(duration); setTrimRange((current) => ({ start: Math.min(current.start, Math.max(0, duration - 0.1)), end: Math.min(current.end, duration) })); }} /> : null}
           </View>
-          {selectedMedia?.type === "video" ? <View style={{ paddingHorizontal: 14 }}><TrimRangeControl duration={videoDuration} range={trimRange} colors={colors} onChange={setTrimRange} /></View> : null}
+          {selectedMedia?.type === "video" ? <View style={{ marginTop: Math.max(insets.top + 8, 20), paddingHorizontal: 14 }}><TrimRangeControl duration={videoDuration} range={trimRange} colors={colors} onChange={setTrimRange} /></View> : null}
           <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0.62)", "rgba(0,0,0,0)"]} style={{ position: "absolute", top: 0, left: 0, right: 0, height: 180 }} />
           <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.84)"]} style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 240 }} />
           <View style={{ paddingTop: Math.max(insets.top + 8, 20), paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>

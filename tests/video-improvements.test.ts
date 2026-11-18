@@ -53,7 +53,7 @@ describe("mejoras confirmadas en la grabación", () => {
 		it("muestra la publicación multimedia de forma optimista y congela el temporizador durante la carga", () => {
 			expect(stories).toContain("optimisticStories");
 			expect(stories).toContain("isOptimistic: true");
-			expect(stories).toContain("setIsStoryMediaLoading(activeStory.media_type === \"video\")");
+			expect(stories).toContain("setIsStoryMediaLoading(activeStory.media_type === \"video\" && !isCachedVideo)");
 			expect(stories).toContain("showViewers || isStoryMediaLoading");
 			expect(stories).toContain("Añade un comentario…");
 		});
@@ -96,6 +96,13 @@ describe("mejoras confirmadas en la grabación", () => {
 			expect(stories).toContain("}, [activeStory?.id]);");
 			expect(stories).toContain("setTimeout(() => setIsStoryMediaLoading(false), 1500)");
 			expect(stories).toContain("let cancelled = false;");
+		});
+
+		it("evita avatar tardío, solapamiento con el notch y placeholder de vídeo cacheado", () => {
+			expect(stories).toContain('.from("profiles")');
+			expect(stories).toContain('.select("avatar_url")');
+			expect(stories).toContain("Math.max(insets.top + 8, 20)");
+			expect(stories).toContain("resolvedVideoCache.has(activeStory.media_url)");
 		});
 
   it("cierra el visor al perder foco y consume el deep link una sola vez", () => {
