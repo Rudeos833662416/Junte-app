@@ -39,11 +39,25 @@ describe("contratos UX transversales", () => {
     }
 	});
 
-	it("mantiene un único contrato QR de perfil", () => {
-		expect(friendsSource).toContain("socialsip://profile/");
-		expect(friendsSource).not.toContain("tragos://profile/");
-		expect(scannerSource).toContain('parsed.protocol === "socialsip:"');
-	});
+		it("mantiene un único contrato QR de perfil", () => {
+			expect(friendsSource).toContain("socialsip://profile/");
+			expect(friendsSource).not.toContain("tragos://profile/");
+			expect(scannerSource).toContain('parsed.protocol === "socialsip:"');
+		});
+
+		it("organiza Amigos en cuatro destinos y reserva los FAB para la pestaña Amigos", () => {
+			expect(friendsSource).toContain('accessibilityLabel="Abrir chat"');
+			expect(friendsSource).toContain('accessibilityLabel="Abrir Estados"');
+			expect(friendsSource).toContain('accessibilityLabel="Ver personas cercanas"');
+			expect(friendsSource).toContain('friendsSection === "friends"');
+			expect(friendsSource).toContain('position: "absolute", right: 16, bottom: 18');
+		});
+
+		it("mantiene Chat y Estados centralizados en Amigos", () => {
+			const profileSource = readFileSync("app/profile/[id].tsx", "utf8");
+			expect(profileSource).not.toContain("markAsRead(profile.id)");
+			expect(profileSource).not.toContain(">Chat</Text>");
+		});
 
 		it("expone la pantalla funcional del mapa en la ruta activa", () => {
 			expect(mapRouteSource).toContain("SocialMapScreen");

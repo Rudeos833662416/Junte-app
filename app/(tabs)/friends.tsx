@@ -380,24 +380,6 @@ export default function FriendsScreen() {
             <Text className="text-sm text-muted">
               {friendsInBars > 0 ? `${friendsInBars} amigos en bares` : "Todavía no tienes amigos en bares"}
             </Text>
-            <Pressable
-              onPress={() => setIsQrVisible(true)}
-              accessibilityLabel="Conectar con QR"
-              style={({ pressed }) => ({
-                marginTop: 14,
-                minHeight: 52,
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                borderRadius: 16,
-                backgroundColor: colors.primary,
-                opacity: pressed ? 0.84 : 1,
-              })}
-            >
-              <IconSymbol name="qrcode" size={21} color={colors.background} />
-              <Text className="text-sm font-bold text-background">Conectar con QR</Text>
-            </Pressable>
           </View>
 
           <View className="mb-4 flex-row rounded-xl border p-1" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
@@ -411,10 +393,26 @@ export default function FriendsScreen() {
                 style={{ flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingVertical: 10, backgroundColor: friendsSection === section ? colors.primary : "transparent" }}
               >
                 <Text style={{ color: friendsSection === section ? colors.background : colors.foreground, fontWeight: "700" }}>
-                  {section === "friends" ? "Mis amigos" : `Solicitudes${pendingRequests.length ? ` (${pendingRequests.length})` : ""}`}
+                  {section === "friends" ? "Amigos" : `Solicitudes${pendingRequests.length ? ` (${pendingRequests.length})` : ""}`}
                 </Text>
               </Pressable>
             ))}
+            <Pressable
+              onPress={() => router.push("/messages")}
+              accessibilityRole="tab"
+              accessibilityLabel="Abrir chat"
+              style={{ flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingVertical: 10 }}
+            >
+              <Text style={{ color: colors.foreground, fontWeight: "700" }}>Chat</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push("/(tabs)/stories")}
+              accessibilityRole="tab"
+              accessibilityLabel="Abrir Estados"
+              style={{ flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingVertical: 10 }}
+            >
+              <Text style={{ color: colors.foreground, fontWeight: "700" }}>Estados</Text>
+            </Pressable>
           </View>
 
           {friendsSection === "requests" ? (
@@ -563,27 +561,6 @@ export default function FriendsScreen() {
             </View>
           ) : null}
 
-           <View className="mb-4">
-             <Pressable
-               disabled={isLoadingNearby}
-               onPress={() => void fetchNearbyProfiles()}
-              accessibilityRole="button"
-              accessibilityLabel="Buscar personas cercanas"
-              style={({ pressed }) => ({
-                minHeight: 48,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: colors.border,
-                paddingVertical: 12,
-                 opacity: isLoadingNearby ? 0.55 : pressed ? 0.8 : 1,
-               })}
-             >
-               {isLoadingNearby ? <ActivityIndicator color={colors.primary} /> : <Text className="text-sm font-semibold text-foreground">Ver personas cercanas</Text>}
-            </Pressable>
-          </View>
-
           {isLoadingNearby ? <ActivityIndicator color={colors.primary} /> : null}
           {nearbyError ? <Text className="mb-2 text-xs text-muted">{nearbyError}</Text> : null}
           {nearbyProfiles.length > 0 ? (
@@ -617,6 +594,58 @@ export default function FriendsScreen() {
             />
           )}
         </View>
+
+        {friendsSection === "friends" ? (
+          <View pointerEvents="box-none" style={{ position: "absolute", right: 16, bottom: 18, alignItems: "center", gap: 6 }}>
+            <Pressable
+              disabled={isLoadingNearby}
+              onPress={() => void fetchNearbyProfiles()}
+              accessibilityRole="button"
+              accessibilityLabel="Ver personas cercanas"
+              style={({ pressed }) => ({
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.border,
+                shadowColor: "#000",
+                shadowOpacity: 0.16,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 3 },
+                elevation: 5,
+                opacity: isLoadingNearby ? 0.55 : pressed ? 0.78 : 1,
+              })}
+            >
+              {isLoadingNearby ? <ActivityIndicator color={colors.primary} size="small" /> : <IconSymbol name="location.fill" size={20} color={colors.foreground} />}
+            </Pressable>
+            <Pressable
+              onPress={() => setIsQrVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Conectar con QR"
+              style={({ pressed }) => ({
+                width: 64,
+                height: 64,
+                borderRadius: 32,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: colors.primary,
+                borderWidth: 2,
+                borderColor: colors.background,
+                shadowColor: "#000",
+                shadowOpacity: 0.24,
+                shadowRadius: 10,
+                shadowOffset: { width: 0, height: 5 },
+                elevation: 7,
+                opacity: pressed ? 0.82 : 1,
+              })}
+            >
+              <IconSymbol name="qrcode" size={27} color={colors.background} />
+            </Pressable>
+          </View>
+        ) : null}
 
         <Modal visible={isQrVisible} transparent animationType="slide" onRequestClose={() => setIsQrVisible(false)}>
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}>

@@ -34,7 +34,6 @@ export default function PublicProfileScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [requestMessage, setRequestMessage] = useState("");
-  const [unreadMessages, setUnreadMessages] = useState(0);
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   const hasLoadedProfileOnce = useRef(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -55,13 +54,6 @@ export default function PublicProfileScreen() {
           .or(`and(user_id.eq.${user.id},friend_id.eq.${id}),and(user_id.eq.${id},friend_id.eq.${user.id})`)
           .limit(1);
         setFriendship((friendshipRows?.[0] as Friendship | undefined) ?? null);
-        const { count } = await supabase
-          .from("direct_messages")
-          .select("id", { count: "exact", head: true })
-          .eq("sender_id", id)
-          .eq("recipient_id", user.id)
-          .is("read_at", null);
-        setUnreadMessages(count ?? 0);
       }
     } catch (error) {
       Alert.alert("No se pudo abrir el perfil", error instanceof Error ? error.message : "Inténtalo de nuevo.");
@@ -83,13 +75,6 @@ export default function PublicProfileScreen() {
   useEffect(() => {
     if (!user || !id || user.id === id) return;
     const channel = supabase.channel(`profile-unread-${user.id}-${id}`);
-    channel.on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "direct_messages", filter: `recipient_id=eq.${user.id}` },
-      (payload) => {
-        if ((payload.new as { sender_id?: string }).sender_id === id) setUnreadMessages((count) => count + 1);
-      },
-    );
     channel.on("postgres_changes", { event: "*", schema: "public", table: "profiles", filter: `id=eq.${id}` }, () =>
       void loadProfile(),
     );
@@ -99,20 +84,6 @@ export default function PublicProfileScreen() {
       void supabase.removeChannel(channel);
     };
   }, [id, user, loadProfile]);
-
-  const markAsRead = useCallback(
-    async (friendId: string) => {
-      if (!user) return;
-      const { error } = await supabase
-        .from("direct_messages")
-        .update({ read_at: new Date().toISOString() })
-        .eq("sender_id", friendId)
-        .eq("recipient_id", user.id)
-        .is("read_at", null);
-      if (!error) setUnreadMessages(0);
-    },
-    [user],
-  );
 
   const sendFriendRequest = async () => {
     if (!user || !profile || user.id === profile.id || isSending) return;
@@ -363,57 +334,6 @@ export default function PublicProfileScreen() {
                           : "Enviar solicitud"}
                   </Text>
                 </Pressable>
-                {isAccepted ? (
-                  <View style={{ position: "relative", alignSelf: "center" }}>
-                    <Pressable
-                      onPress={() => {
-                        void markAsRead(profile.id);
-                        router.push(`/chat/${profile.id}`);
-                      }}
-                      style={({ pressed }) => ({
-                        marginTop: 10,
-                        minHeight: 48,
-                        minWidth: 220,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        borderRadius: 15,
-                        borderWidth: 1,
-                        borderColor: colors.primary,
-                        backgroundColor: `${colors.primary}12`,
-                        opacity: pressed ? 0.75 : 1,
-                      })}
-                    >
-                      <View className="flex-row items-center gap-2">
-                        <IconSymbol name="message.fill" size={18} color={colors.primary} />
-                        <Text className="font-bold" style={{ color: colors.primary }}>
-                          Chat
-                        </Text>
-                      </View>
-                    </Pressable>
-                    {unreadMessages > 0 ? (
-                      <View
-                        style={{
-                          position: "absolute",
-                          right: -5,
-                          top: 3,
-                          minWidth: 22,
-                          height: 22,
-                          paddingHorizontal: 5,
-                          borderRadius: 11,
-                          backgroundColor: colors.success,
-                          alignItems: "center",
-                          justifyContent: "center",
-                          borderWidth: 2,
-                          borderColor: colors.surface,
-                        }}
-                      >
-                        <Text style={{ color: colors.background, fontSize: 11, fontWeight: "800" }}>
-                          {unreadMessages > 99 ? "99+" : unreadMessages}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                ) : null}
                 {isAccepted ? (
                   <View style={{ width: "100%", marginTop: 12, gap: 10 }}>
                     <Pressable

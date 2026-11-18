@@ -41,6 +41,8 @@ type StoryItem = {
   text_content?: string | null;
   text_background_color?: string | null;
   text_font_family?: string | null;
+  trim_start_sec?: number | null;
+  trim_end_sec?: number | null;
   isOptimistic?: boolean;
 };
 
@@ -70,7 +72,7 @@ function formatStoryAge(createdAt: string) {
   return `hace ${hours} h`;
 }
 
-function StoryVideo({ uri, muted, paused, onReady, onTimeUpdate }: { uri: string; muted: boolean; paused: boolean; onReady: () => void; onTimeUpdate: (currentTime: number, duration: number) => void }) {
+function StoryVideo({ uri, muted, paused, trimStart = 0, trimEnd, onReady, onTimeUpdate }: { uri: string; muted: boolean; paused: boolean; trimStart?: number; trimEnd?: number | null; onReady: () => void; onTimeUpdate: (currentTime: number, duration: number) => void }) {
   const [sourceUri, setSourceUri] = useState(() => resolvedVideoCache.get(uri) ?? uri);
   const player = useVideoPlayer(sourceUri, (videoPlayer) => {
     videoPlayer.loop = true;
@@ -89,6 +91,13 @@ function StoryVideo({ uri, muted, paused, onReady, onTimeUpdate }: { uri: string
     };
   }, [uri]);
   useEffect(() => {
+    const subscription = player.addListener("sourceLoad", ({ duration }) => {
+      if (trimStart > 0 && Number.isFinite(duration) && duration > 0) player.currentTime = Math.min(trimStart, Math.max(0, duration - 0.05));
+    });
+    if (trimStart > 0 && player.duration > trimStart) player.currentTime = trimStart;
+    return () => subscription.remove();
+  }, [player, trimStart]);
+  useEffect(() => {
     try { paused ? player.pause() : player.play(); }
     catch { /* El player puede estar liberándose durante un cambio de historia. */ }
     return () => {
@@ -100,22 +109,75 @@ function StoryVideo({ uri, muted, paused, onReady, onTimeUpdate }: { uri: string
     player.muted = muted;
   }, [muted, player]);
   useEffect(() => {
-    const subscription = player.addListener("timeUpdate", ({ currentTime }) => onTimeUpdate(currentTime, player.duration));
+    const subscription = player.addListener("timeUpdate", ({ currentTime }) => {
+      const duration = player.duration;
+      if (!Number.isFinite(duration) || duration <= 0) return;
+      const effectiveStart = Math.min(trimStart, Math.max(0, duration - 0.05));
+      const effectiveEnd = trimEnd != null ? Math.min(trimEnd, duration) : duration;
+      if (trimEnd != null && currentTime >= effectiveEnd) {
+        player.currentTime = effectiveStart;
+        if (!paused) player.play();
+        onTimeUpdate(effectiveEnd, duration);
+        return;
+      }
+      onTimeUpdate(currentTime, duration);
+    });
     return () => subscription.remove();
-  }, [onTimeUpdate, player]);
+  }, [onTimeUpdate, paused, player, trimEnd, trimStart]);
   return <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" nativeControls={false} onFirstFrameRender={onReady} />;
 }
 
-function PreviewVideo({ uri }: { uri: string }) {
+function PreviewVideo({ uri, trimStart, trimEnd, onDuration }: { uri: string; trimStart: number; trimEnd: number; onDuration: (duration: number) => void }) {
   const player = useVideoPlayer(uri, (videoPlayer) => {
     videoPlayer.loop = true;
     videoPlayer.muted = true;
   });
   useEffect(() => {
+    const sourceSubscription = player.addListener("sourceLoad", ({ duration }) => {
+      if (Number.isFinite(duration) && duration > 0) {
+        onDuration(duration);
+        player.currentTime = Math.min(trimStart, Math.max(0, duration - 0.05));
+      }
+    });
+    const timeSubscription = player.addListener("timeUpdate", ({ currentTime }) => {
+      if (currentTime >= trimEnd) player.currentTime = trimStart;
+    });
+    return () => {
+      sourceSubscription.remove();
+      timeSubscription.remove();
+    };
+  }, [onDuration, player, trimEnd, trimStart]);
+  useEffect(() => {
     try { player.play(); } catch { /* La vista previa puede cerrarse durante la inicialización. */ }
     return () => { try { player.pause(); } catch { /* El reproductor nativo puede haberse liberado. */ } };
   }, [player]);
   return <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" nativeControls={false} />;
+}
+
+function TrimRangeControl({ duration, range, colors, onChange }: { duration: number; range: { start: number; end: number }; colors: ReturnType<typeof useColors>; onChange: (range: { start: number; end: number }) => void }) {
+  const [trackWidth, setTrackWidth] = useState(1);
+  const safeDuration = Math.max(duration, 1);
+  const selectTime = (locationX: number) => {
+    const time = Math.min(safeDuration, Math.max(0, (locationX / trackWidth) * safeDuration));
+    const startDistance = Math.abs(time - range.start);
+    const endDistance = Math.abs(time - range.end);
+    if (startDistance <= endDistance) onChange({ start: Math.min(time, range.end - 0.1), end: range.end });
+    else onChange({ start: range.start, end: Math.max(time, range.start + 0.1) });
+  };
+  return <View className="mt-3 rounded-2xl px-3 py-3" style={{ backgroundColor: "rgba(28,28,30,0.88)" }}>
+    <View className="mb-2 flex-row items-center justify-between">
+      <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}>Recortar vídeo</Text>
+      <Text style={{ color: "rgba(255,255,255,0.72)", fontSize: 12 }}>{range.start.toFixed(1)}s — {range.end.toFixed(1)}s</Text>
+    </View>
+    <Pressable accessibilityRole="adjustable" accessibilityLabel="Seleccionar inicio o fin del vídeo" onLayout={(event) => setTrackWidth(Math.max(1, event.nativeEvent.layout.width))} onPress={(event) => selectTime(event.nativeEvent.locationX)} style={{ height: 30, justifyContent: "center" }}>
+      <View style={{ height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.28)" }} />
+      <View pointerEvents="none" style={{ position: "absolute", left: `${(range.start / safeDuration) * 100}%`, right: `${100 - (range.end / safeDuration) * 100}%`, height: 5, borderRadius: 3, backgroundColor: colors.primary }} />
+    </Pressable>
+    <View className="flex-row justify-between">
+      <Text style={{ color: "rgba(255,255,255,0.65)", fontSize: 11 }}>Inicio</Text>
+      <Text style={{ color: "rgba(255,255,255,0.65)", fontSize: 11 }}>Fin</Text>
+    </View>
+  </View>;
 }
 
 function SegmentedStoryRing({ stories, avatarUrl, colors, viewedStoryIds }: { stories: StoryItem[]; avatarUrl: string | null; colors: ReturnType<typeof useColors>; viewedStoryIds: Set<number> }) {
@@ -156,6 +218,8 @@ export default function StoriesScreen() {
     : null;
 
   const [selectedMedia, setSelectedMedia] = useState<SelectedMedia | null>(null);
+  const [videoDuration, setVideoDuration] = useState(1);
+  const [trimRange, setTrimRange] = useState({ start: 0, end: 1 });
   const [optimisticStories, setOptimisticStories] = useState<StoryItem[]>([]);
   const [selfAvatarUrl, setSelfAvatarUrl] = useState<string | null>(null);
   const [showTextCreator, setShowTextCreator] = useState(false);
@@ -247,7 +311,7 @@ export default function StoriesScreen() {
       await supabase.rpc("purge_expired_stories");
       const { data, error } = await supabase
         .from("stories")
-        .select("id, user_id, media_url, media_type, audio_url, audio_name, music_title, caption, visibility, privacy, created_at, expires_at, text_content, text_background_color, text_font_family")
+        .select("id, user_id, media_url, media_type, audio_url, audio_name, music_title, caption, visibility, privacy, created_at, expires_at, text_content, text_background_color, text_font_family, trim_start_sec, trim_end_sec")
         .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false });
 
@@ -400,6 +464,9 @@ export default function StoriesScreen() {
         const filename = uri.split("/").pop() ?? `story_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
         const mimeType = type === "video" ? "video/mp4" : "image/jpeg";
         setSelectedMedia({ uri, mimeType, type, name: filename });
+        const durationSeconds = type === "video" && durationMs ? Math.max(1, durationMs / 1000) : 1;
+        setVideoDuration(durationSeconds);
+        setTrimRange({ start: 0, end: durationSeconds });
       }
     } catch {
       Alert.alert("Error", "No se pudo seleccionar el archivo multimedia.");
@@ -424,6 +491,8 @@ export default function StoriesScreen() {
       expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       user_name: "Mi estado",
       isOptimistic: true,
+      trim_start_sec: media.type === "video" ? trimRange.start : 0,
+      trim_end_sec: media.type === "video" ? trimRange.end : null,
     };
     setOptimisticStories((previous) => [tempStory, ...previous]);
     setGroupedStories((previous) => {
@@ -435,7 +504,7 @@ export default function StoriesScreen() {
     setCaption("");
     setPrivacy("all_friends");
     try {
-      await enqueue({ userId: user.id, uri: media.uri, mimeType: media.mimeType, type: media.type, caption: tempStory.caption ?? "", privacy: selectedPrivacy });
+      await enqueue({ userId: user.id, uri: media.uri, mimeType: media.mimeType, type: media.type, caption: tempStory.caption ?? "", privacy: selectedPrivacy, trimStart: media.type === "video" ? trimRange.start : 0, trimEnd: media.type === "video" ? trimRange.end : null });
     } catch (err) {
       setOptimisticStories((previous) => previous.filter((item) => item.id !== tempStory.id));
       setGroupedStories((previous) => previous
@@ -664,8 +733,12 @@ export default function StoriesScreen() {
     setIsStoryMediaLoading(activeStory.media_type === "video");
     setVideoMuted(false);
     videoAdvancedStoryRef.current = null;
+    let cancelled = false;
+    const loadingFallback = activeStory.media_type === "video"
+      ? setTimeout(() => setIsStoryMediaLoading(false), 1500)
+      : null;
     if (activeStory.media_type === "image") {
-      if (activeStory.media_url) void RNImage.prefetch(activeStory.media_url).finally(() => setIsStoryMediaLoading(false));
+      if (activeStory.media_url) void RNImage.prefetch(activeStory.media_url).finally(() => { if (!cancelled) setIsStoryMediaLoading(false); });
     } else if (activeStory.media_type === "text") {
       setIsStoryMediaLoading(false);
     }
@@ -675,7 +748,14 @@ export default function StoriesScreen() {
       void recordStoryView(storyId);
     }
     void loadViewerCount(storyId);
-  }, [activeStory, activeGroup, loadReaction, recordStoryView, loadViewerCount]);
+    return () => {
+      cancelled = true;
+      if (loadingFallback) clearTimeout(loadingFallback);
+    };
+    // El ciclo de carga pertenece a una historia concreta; Realtime puede reemplazar
+    // activeStory por otro objeto con el mismo id sin cambiar el contenido visible.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStory?.id]);
 
   const navigateToGroup = (nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= groupedStories.length || nextIndex === activeGroupIndex) return;
@@ -691,8 +771,11 @@ export default function StoriesScreen() {
 
   const handleVideoTimeUpdate = useCallback((currentTime: number, duration: number) => {
     if (!activeStory || activeStory.media_type !== "video" || !duration || !Number.isFinite(duration)) return;
-    setProgressTimer(Math.min(1, Math.max(0, currentTime / duration)));
-    if (currentTime >= duration - 0.15 && videoAdvancedStoryRef.current !== activeStory.id) {
+    const trimStart = Math.max(0, activeStory.trim_start_sec ?? 0);
+    const trimEnd = Math.min(duration, activeStory.trim_end_sec ?? duration);
+    const visibleDuration = Math.max(trimEnd - trimStart, 0.1);
+    setProgressTimer(Math.min(1, Math.max(0, (currentTime - trimStart) / visibleDuration)));
+    if (currentTime >= trimEnd - 0.15 && videoAdvancedStoryRef.current !== activeStory.id) {
       videoAdvancedStoryRef.current = activeStory.id;
       advanceActiveStory();
     }
@@ -860,8 +943,9 @@ export default function StoriesScreen() {
       <Modal visible={Boolean(selectedMedia)} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setSelectedMedia(null)}>
         <View style={{ flex: 1, backgroundColor: "#000000" }}>
           <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}>
-            {selectedMedia?.type === "image" ? <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" /> : selectedMedia ? <PreviewVideo uri={selectedMedia.uri} /> : null}
+            {selectedMedia?.type === "image" ? <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" /> : selectedMedia ? <PreviewVideo uri={selectedMedia.uri} trimStart={trimRange.start} trimEnd={trimRange.end} onDuration={(duration) => { setVideoDuration(duration); setTrimRange((current) => ({ start: Math.min(current.start, Math.max(0, duration - 0.1)), end: Math.min(current.end, duration) })); }} /> : null}
           </View>
+          {selectedMedia?.type === "video" ? <View style={{ paddingHorizontal: 14 }}><TrimRangeControl duration={videoDuration} range={trimRange} colors={colors} onChange={setTrimRange} /></View> : null}
           <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0.62)", "rgba(0,0,0,0)"]} style={{ position: "absolute", top: 0, left: 0, right: 0, height: 180 }} />
           <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.84)"]} style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 240 }} />
           <View style={{ paddingTop: Math.max(insets.top + 8, 20), paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
@@ -919,7 +1003,7 @@ export default function StoriesScreen() {
             </View> : null}
 
             <View pointerEvents="none" style={{ position: "absolute", inset: 0, zIndex: 1, alignItems: "center", justifyContent: "center" }}>
-              {activeStory.media_type === "video" && activeStory.media_url ? <StoryVideo key={`story-video-${activeStory.id}`} uri={activeStory.media_url} muted={videoMuted} paused={isPaused || showViewers} onReady={() => setIsStoryMediaLoading(false)} onTimeUpdate={handleVideoTimeUpdate} /> : activeStory.media_type === "text" ? <View style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: activeStory.text_background_color || colors.primary }}><Text style={{ color: "#FFFFFF", fontFamily: activeStory.text_font_family || "System", fontSize: 30, fontWeight: "800", textAlign: "center" }}>{activeStory.text_content}</Text></View> : activeStory.media_url ? <ExpoImage source={{ uri: activeStory.media_url }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" transition={120} onLoad={() => setIsStoryMediaLoading(false)} onError={() => setIsStoryMediaLoading(false)} /> : null}
+              {activeStory.media_type === "video" && activeStory.media_url ? <StoryVideo key={`story-video-${activeStory.id}`} uri={activeStory.media_url} muted={videoMuted} paused={isPaused || showViewers} trimStart={activeStory.trim_start_sec ?? 0} trimEnd={activeStory.trim_end_sec} onReady={() => setIsStoryMediaLoading(false)} onTimeUpdate={handleVideoTimeUpdate} /> : activeStory.media_type === "text" ? <View style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: activeStory.text_background_color || colors.primary }}><Text style={{ color: "#FFFFFF", fontFamily: activeStory.text_font_family || "System", fontSize: 30, fontWeight: "800", textAlign: "center" }}>{activeStory.text_content}</Text></View> : activeStory.media_url ? <ExpoImage source={{ uri: activeStory.media_url }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" transition={120} onLoad={() => setIsStoryMediaLoading(false)} onError={() => setIsStoryMediaLoading(false)} /> : null}
               {isStoryMediaLoading ? <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.22)" }}><View style={{ width: "72%", height: "58%", borderRadius: 18, backgroundColor: "rgba(255,255,255,0.08)" }} /><ActivityIndicator color="#FFFFFF" size="large" style={{ position: "absolute" }} /></View> : null}
             </View>
 

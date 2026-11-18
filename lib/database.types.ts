@@ -371,6 +371,8 @@ export type Database = {
           text_content: string | null
           text_background_color: string | null
           text_font_family: string | null
+          trim_start_sec: number
+          trim_end_sec: number | null
         }
         Insert: {
           id?: number
@@ -391,6 +393,8 @@ export type Database = {
           text_content?: string | null
           text_background_color?: string | null
           text_font_family?: string | null
+          trim_start_sec?: number
+          trim_end_sec?: number | null
         }
         Update: {
           id?: number
@@ -411,6 +415,8 @@ export type Database = {
           text_content?: string | null
           text_background_color?: string | null
           text_font_family?: string | null
+          trim_start_sec?: number
+          trim_end_sec?: number | null
         }
         Relationships: []
       }

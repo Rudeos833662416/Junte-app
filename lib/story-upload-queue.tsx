@@ -10,6 +10,8 @@ export type StoryUploadJobInput = {
   type: "image" | "video";
   caption: string;
   privacy: "all_friends" | "close_friends" | "public";
+  trimStart?: number;
+  trimEnd?: number | null;
 };
 
 export type StoryUploadJob = StoryUploadJobInput & {

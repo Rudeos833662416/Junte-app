@@ -22,6 +22,8 @@ const input: StoryUploadJobInput = {
   type: "image",
   caption: "Una noche más",
   privacy: "all_friends",
+  trimStart: 2,
+  trimEnd: 8,
 };
 
 describe("StoryUploadQueue", () => {
@@ -40,7 +42,7 @@ describe("StoryUploadQueue", () => {
     expect(executor).toHaveBeenCalledOnce();
     expect(progress).toEqual([]);
     expect(queue.getSnapshot()).toMatchObject({
-      [job.id]: { status: "completed", progress: 1 },
+      [job.id]: { status: "completed", progress: 1, trimStart: 2, trimEnd: 8 },
     });
     expect(storage.setItem).toHaveBeenCalled();
   });

@@ -74,14 +74,29 @@ describe("mejoras confirmadas en la grabación", () => {
 			expect(stories).toContain('top: 115');
 		});
 
-	it("sincroniza vídeo, texto, audio, vistos y tiempo real de visualización", () => {
-		expect(stories).toContain("timeUpdate");
-		expect(stories).toContain("videoMuted");
-		expect(stories).toContain("showTextCreator");
-		expect(stories).toContain("Actualizaciones recientes");
-		expect(stories).toContain("Vistos");
-		expect(stories).toContain("formatStoryAge(viewer.viewed_at)");
-	});
+		it("sincroniza vídeo, texto, audio, vistos y tiempo real de visualización", () => {
+			expect(stories).toContain("timeUpdate");
+			expect(stories).toContain("videoMuted");
+			expect(stories).toContain("showTextCreator");
+			expect(stories).toContain("Actualizaciones recientes");
+			expect(stories).toContain("Vistos");
+			expect(stories).toContain("formatStoryAge(viewer.viewed_at)");
+		});
+
+		it("conecta el recorte desde el compositor hasta la reproducción publicada", () => {
+			expect(stories).toContain("trimRange");
+			expect(stories).toContain("trimStart");
+			expect(stories).toContain("trimEnd");
+			expect(stories).toContain("currentTime >= trimEnd");
+			expect(stories).toContain("Inicio");
+			expect(stories).toContain("Fin");
+		});
+
+		it("no reinicia la carga ni el audio cuando cambia la referencia de la historia", () => {
+			expect(stories).toContain("}, [activeStory?.id]);");
+			expect(stories).toContain("setTimeout(() => setIsStoryMediaLoading(false), 1500)");
+			expect(stories).toContain("let cancelled = false;");
+		});
 
   it("cierra el visor al perder foco y consume el deep link una sola vez", () => {
     expect(stories).toContain("useFocusEffect");

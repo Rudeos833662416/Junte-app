@@ -70,6 +70,8 @@ export async function processStoryUpload(job: StoryUploadJob, onProgress: (progr
     caption: job.caption.trim() || null,
     visibility: job.privacy === "public" ? "public" : "friends",
     privacy: job.privacy,
+    trim_start_sec: job.type === "video" ? Math.max(0, job.trimStart ?? 0) : 0,
+    trim_end_sec: job.type === "video" && job.trimEnd != null ? Math.max(job.trimStart ?? 0, job.trimEnd) : null,
     expires_at: expiresAt,
   });
   if (error) throw error;
