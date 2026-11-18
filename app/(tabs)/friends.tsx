@@ -68,7 +68,6 @@ export default function FriendsScreen() {
   const [isSearchingPublic, setIsSearchingPublic] = useState(false);
   const handleStoryViewerClose = useCallback(() => {
     setStoryViewerUserId(null);
-    setActiveSubTab("friends");
   }, []);
 
   const fetchNearbyProfiles = useCallback(async () => {
