@@ -17,7 +17,7 @@ type Coordinates = { latitude: number; longitude: number };
 
 type ActiveCheckin = {
   id: number;
-  venueId: number;
+  venueId: number | null;
   venueName: string;
   createdAt: string;
 };
@@ -49,7 +49,7 @@ export default function HomeScreen() {
     void supabase.from("profiles").select("is_admin").eq("id", user.id).maybeSingle().then(({ data }) => {
       setIsAdmin(Boolean(data?.is_admin));
     });
-  }, [user?.id]);
+  }, [user]);
 
   const visibilityLabel = useMemo(() => {
     if (checkinVisibility === "everyone") return "Todos";
@@ -82,7 +82,7 @@ export default function HomeScreen() {
         setActiveCheckin({
           id: checkinData.id,
           venueId: checkinData.venue_id,
-          venueName: venueInfo?.name === "Ubicación GPS actual" ? "Lugar compartido" : (venueInfo?.name ?? "Lugar compartido"),
+          venueName: venueInfo?.name ?? "Cerca de tu zona",
           createdAt: checkinData.created_at,
         });
       } else {
@@ -141,7 +141,7 @@ export default function HomeScreen() {
         })),
       );
     })();
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -223,12 +223,12 @@ export default function HomeScreen() {
         p_allowed_user_ids: [],
       });
       if (error) throw error;
-      const result = data as { id: number; venue_id: number; venue_name: string; created_at: string };
+      const result = data as { id: number; venue_id: number | null; venue_name: string | null; created_at: string };
 
       setActiveCheckin({
         id: result.id,
         venueId: result.venue_id,
-      venueName: result.venue_name === "Ubicación GPS actual" ? "Lugar compartido" : result.venue_name,
+        venueName: result.venue_name ?? "Cerca de tu zona",
         createdAt: result.created_at,
       });
 

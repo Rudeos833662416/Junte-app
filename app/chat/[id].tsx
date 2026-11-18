@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,11 +15,20 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
-import { getCachedConversation, mergeCachedMessage, setCachedConversation } from "@/lib/chat-store";
 import { Image } from "expo-image";
 import { setActiveChatId } from "@/lib/push-notifications";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
+import { MaterialIcons } from "@expo/vector-icons";
+import {
+  formatChatDateLabel,
+  getCachedConversation,
+  getDraft,
+  isSameMessageGroup,
+  mergeCachedMessage,
+  setCachedConversation,
+  setDraft,
+  clearDraft,
+} from "@/lib/chat-store";
 type Message = {
   id: string;
   sender_id: string;
@@ -29,6 +38,8 @@ type Message = {
   read_at: string | null;
   client_message_id?: string | null;
   pending?: boolean;
+  story_id?: number | null;
+  kind?: string;
 };
 
 function newClientMessageId() {
@@ -51,12 +62,17 @@ export default function ChatScreen() {
   const initialAvatar = Array.isArray(routeAvatar) ? routeAvatar[0] : routeAvatar;
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>(() => otherId ? getCachedConversation(otherId) as Message[] : []);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraftState] = useState(() => otherId ? getDraft(otherId) : "");
   const [otherName, setOtherName] = useState(initialName || "Chat");
   const [otherAvatar, setOtherAvatar] = useState<string | null>(initialAvatar || null);
   const [loading, setLoading] = useState(() => !otherId || getCachedConversation(otherId).length === 0);
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [isOtherOnline, setIsOtherOnline] = useState(false);
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingSendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const markAsRead = useCallback(
     async (friendId: string) => {
       if (!user) return;
@@ -91,7 +107,7 @@ export default function ChatScreen() {
     try {
       const { data, error } = await supabase
         .from("direct_messages")
-        .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id")
+        .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind")
         .or(
           `and(sender_id.eq.${user.id},recipient_id.eq.${otherId}),and(sender_id.eq.${otherId},recipient_id.eq.${user.id})`,
         )
@@ -168,11 +184,70 @@ export default function ChatScreen() {
         if (row.recipient_id === otherId) upsertRow(row);
       },
     );
+    channel.on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "direct_messages",
+        filter: `recipient_id=eq.${user.id}`,
+      },
+      (payload) => upsertRow(payload.new as Message),
+    );
+    channel.on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "direct_messages",
+        filter: `sender_id=eq.${user.id}`,
+      },
+      (payload) => upsertRow(payload.new as Message),
+    );
     channel.subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
   }, [markAsRead, otherId, user]);
+
+  useEffect(() => {
+    if (!user || !otherId) return;
+    const channel = supabase.channel(`typing:${[user.id, otherId].sort().join(":")}`, {
+      config: { broadcast: { self: false }, presence: { key: user.id } },
+    });
+    typingChannelRef.current = channel;
+    channel.on("broadcast", { event: "typing" }, ({ payload }) => {
+      if (payload?.userId !== otherId) return;
+      setIsOtherTyping(Boolean(payload.typing));
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (payload.typing) {
+        typingTimeoutRef.current = setTimeout(() => setIsOtherTyping(false), 2000);
+      }
+    });
+    channel.on("presence", { event: "sync" }, () => {
+      const state = channel.presenceState();
+      setIsOtherOnline(Boolean(state[otherId]?.length));
+    });
+    void channel.subscribe(async (status) => {
+      if (status === "SUBSCRIBED") await channel.track({ userId: user.id });
+    });
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (typingSendTimeoutRef.current) clearTimeout(typingSendTimeoutRef.current);
+      typingChannelRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [otherId, user]);
+
+  const updateDraft = (value: string) => {
+    setDraftState(value);
+    if (otherId) setDraft(otherId, value);
+    if (!typingChannelRef.current || !user) return;
+    if (typingSendTimeoutRef.current) clearTimeout(typingSendTimeoutRef.current);
+    typingSendTimeoutRef.current = setTimeout(() => {
+      void typingChannelRef.current?.send({ type: "broadcast", event: "typing", payload: { userId: user.id, typing: Boolean(value.trim()) } });
+    }, 80);
+  };
 
   const sendMessage = async () => {
     const body = draft.trim();
@@ -190,7 +265,8 @@ export default function ChatScreen() {
       pending: true,
     };
 
-    setDraft("");
+    setDraftState("");
+    clearDraft(otherId);
     setSending(true);
     setMessages((current) => {
       const next = [optimistic, ...current];
@@ -206,7 +282,7 @@ export default function ChatScreen() {
         body,
         client_message_id: clientMessageId,
       })
-      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id")
+      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind")
       .single();
 
     setSending(false);
@@ -221,7 +297,8 @@ export default function ChatScreen() {
         setCachedConversation(otherId, next);
         return next;
       });
-      setDraft(body);
+      setDraftState(body);
+      setDraft(otherId, body);
       Alert.alert("No se pudo enviar", "El mensaje quedó sin enviar. Comprueba tu conexión e inténtalo de nuevo.");
       return;
     }
@@ -275,9 +352,12 @@ export default function ChatScreen() {
               </Text>
             )}
           </View>
-          <Text className="min-w-0 flex-1 text-lg font-semibold text-foreground" numberOfLines={1}>
-            {otherName}
-          </Text>
+          <View className="min-w-0 flex-1">
+            <Text className="text-lg font-semibold text-foreground" numberOfLines={1}>{otherName}</Text>
+            <Text className="text-xs" style={{ color: isOtherTyping ? colors.primary : colors.muted }}>
+              {isOtherTyping ? "escribiendo…" : isOtherOnline ? "En línea" : ""}
+            </Text>
+          </View>
         </View>
         </View>
 
@@ -299,35 +379,50 @@ export default function ChatScreen() {
                 <Text className="text-sm text-muted">Escribe el primer mensaje</Text>
               </View>
             }
-            renderItem={({ item }) => {
+            renderItem={({ item, index }) => {
               const mine = item.sender_id === user?.id;
+              const previous = messages[index + 1];
+              const grouped = isSameMessageGroup(item, previous);
+              const showDateSeparator = !previous || formatChatDateLabel(item.created_at) !== formatChatDateLabel(previous.created_at);
+              const deliveryStatus = item.pending ? "sending" : item.read_at ? "read" : "delivered";
               return (
                 <View
                   style={{
                     alignSelf: mine ? "flex-end" : "flex-start",
                     maxWidth: "82%",
-                    marginBottom: 8,
+                    marginBottom: grouped ? 2 : 8,
                     borderRadius: 16,
+                    borderTopLeftRadius: grouped && !mine ? 6 : 16,
+                    borderTopRightRadius: grouped && mine ? 6 : 16,
                     paddingHorizontal: 12,
                     paddingVertical: 10,
                     backgroundColor: mine ? colors.primary : colors.surface,
                     opacity: item.pending ? 0.65 : 1,
                   }}
                 >
+                  {item.story_id ? (
+                    <View style={{ borderLeftWidth: 3, borderLeftColor: colors.primary, paddingLeft: 8, marginBottom: 6 }}>
+                      <Text style={{ color: colors.primary, fontSize: 11, fontWeight: "800" }}>Tu Estado</Text>
+                      <Text style={{ color: mine ? `${colors.background}CC` : colors.muted, fontSize: 11 }} numberOfLines={1}>
+                        {item.kind === "story_reaction" || item.kind === "story_quick_reaction" ? "Reacción a tu Estado" : "Respuesta a tu Estado"}
+                      </Text>
+                    </View>
+                  ) : null}
                   <Text style={{ color: mine ? colors.background : colors.foreground }}>{item.body}</Text>
-                  <Text
-                    style={{
-                      marginTop: 4,
-                      fontSize: 10,
-                      color: mine ? `${colors.background}CC` : colors.muted,
-                    }}
-                  >
-                    {new Date(item.created_at).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                    {mine && item.read_at ? " · leído" : mine && item.pending ? " · enviando…" : ""}
-                  </Text>
+                  <View className="mt-1 flex-row items-center justify-end gap-1">
+                    <Text style={{ fontSize: 10, color: mine ? `${colors.background}CC` : colors.muted }}>
+                      {new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </Text>
+                    {mine ? (
+                      deliveryStatus === "sending" ? <MaterialIcons name="schedule" size={12} color={mine ? `${colors.background}CC` : colors.muted} /> :
+                      <MaterialIcons name="done-all" size={14} color={deliveryStatus === "read" ? "#7DD3FC" : `${colors.background}CC`} />
+                    ) : null}
+                  </View>
+                  {showDateSeparator ? (
+                    <Text style={{ alignSelf: "center", marginTop: 10, color: colors.muted, fontSize: 10, fontWeight: "800" }}>
+                      {formatChatDateLabel(item.created_at)}
+                    </Text>
+                  ) : null}
                 </View>
               );
             }}
@@ -340,7 +435,7 @@ export default function ChatScreen() {
             accessibilityLabel="Mensaje"
             accessibilityHint="Escribe un mensaje para enviarlo a tu contacto"
             value={draft}
-            onChangeText={setDraft}
+            onChangeText={updateDraft}
             placeholder="Mensaje…"
             placeholderTextColor={colors.muted}
             multiline
@@ -360,18 +455,20 @@ export default function ChatScreen() {
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Enviar mensaje"
+            accessibilityLabel={draft.trim() ? "Enviar mensaje" : "Micrófono"}
             onPress={() => void sendMessage()}
             disabled={sending || !draft.trim()}
             style={({ pressed }) => ({
               borderRadius: 18,
               backgroundColor: colors.primary,
-              paddingHorizontal: 16,
-              paddingVertical: 13,
+              width: 48,
+              height: 48,
+              alignItems: "center",
+              justifyContent: "center",
               opacity: pressed || sending || !draft.trim() ? 0.55 : 1,
             })}
           >
-            <Text className="font-bold text-background">Enviar</Text>
+            <MaterialIcons name={draft.trim() ? "send" : "mic"} size={21} color={colors.background} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>

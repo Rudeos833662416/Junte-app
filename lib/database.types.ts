@@ -70,7 +70,7 @@ export type Database = {
         Row: {
           id: number
           user_id: string
-          venue_id: number
+          venue_id: number | null
           status: string
           note: string | null
           created_at: string
@@ -83,7 +83,7 @@ export type Database = {
         Insert: {
           id?: number
           user_id: string
-          venue_id: number
+          venue_id: number | null
           status?: string
           note?: string | null
           created_at?: string
@@ -96,7 +96,7 @@ export type Database = {
         Update: {
           id?: number
           user_id?: string
-          venue_id?: number
+          venue_id?: number | null
           status?: string
           note?: string | null
           created_at?: string
@@ -122,6 +122,7 @@ export type Database = {
           body: string
           story_id: number | null
           kind: string
+          reply_to_message_id: string | null
           created_at: string
           read_at: string | null
           client_message_id: string | null
@@ -133,6 +134,7 @@ export type Database = {
           body: string
           story_id?: number | null
           kind?: string
+          reply_to_message_id?: string | null
           created_at?: string
           read_at?: string | null
           client_message_id?: string | null
@@ -144,6 +146,7 @@ export type Database = {
           body?: string
           story_id?: number | null
           kind?: string
+          reply_to_message_id?: string | null
           created_at?: string
           read_at?: string | null
           client_message_id?: string | null

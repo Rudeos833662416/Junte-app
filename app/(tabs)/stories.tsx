@@ -645,23 +645,21 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       Alert.alert("No se pudo guardar", "Ejecuta la migración 0011 en Supabase y vuelve a intentarlo.");
       return;
     }
-    if (next && activeGroup && !activeGroup.isSelf) {
-      const { error: messageError } = await supabase.from("direct_messages").insert({ sender_id: user.id, recipient_id: activeGroup.userId, body: `${next} Reaccionó a tu Estado` });
-      if (messageError) console.warn("No se pudo enviar la reacción al Chat:", messageError.message);
-    }
+    // La reacción ya genera una actividad/notificación deduplicada en Supabase.
+    // No insertamos otro mensaje de chat para evitar inflar el historial.
   };
 
   const sendQuickReaction = async (emoji: string) => {
     if (!user || !activeGroup || activeGroup.isSelf) return;
     animateQuickReaction(emoji);
-    const { error } = await supabase.from("direct_messages").insert({ sender_id: user.id, recipient_id: activeGroup.userId, body: emoji });
+    const { error } = await supabase.from("direct_messages").insert({ sender_id: user.id, recipient_id: activeGroup.userId, body: emoji, story_id: activeStory?.id ?? null, kind: "story_quick_reaction" });
     if (error) Alert.alert("No se pudo enviar", "Ejecuta la migración 0020 en Supabase y vuelve a intentarlo.");
   };
 
   const sendStoryReply = async () => {
     const body = storyReply.trim();
     if (!user || !activeGroup || activeGroup.isSelf || !body) return;
-    const { error } = await supabase.from("direct_messages").insert({ sender_id: user.id, recipient_id: activeGroup.userId, body });
+    const { error } = await supabase.from("direct_messages").insert({ sender_id: user.id, recipient_id: activeGroup.userId, body, story_id: activeStory?.id ?? null, kind: "story_reply" });
     if (error) {
       Alert.alert("No se pudo enviar", "Ejecuta la migración 0020 en Supabase y vuelve a intentarlo.");
       return;

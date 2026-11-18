@@ -6,7 +6,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
-import { getCachedInbox, setCachedInbox, type CachedConversation } from "@/lib/chat-store";
+import { getCachedInbox, getDraft, setCachedInbox, type CachedConversation } from "@/lib/chat-store";
 
 type MessageRow = {
   id: string;
@@ -130,8 +130,9 @@ export default function MessagesInboxScreen({ embedded = false }: { embedded?: b
           keyExtractor={(item) => item.otherId}
           ListEmptyComponent={empty}
           contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
-          renderItem={({ item }) => (
-            <Pressable
+          renderItem={({ item }) => {
+            const draft = getDraft(item.otherId);
+            return <Pressable
               onPress={() => router.push({
                 pathname: "/chat/[id]",
                 params: { id: item.otherId, name: item.name, avatarUrl: item.avatarUrl ?? "" },
@@ -187,8 +188,8 @@ export default function MessagesInboxScreen({ embedded = false }: { embedded?: b
                 </Text>
               </View>
               <View className="mt-1 flex-row items-center justify-between gap-2">
-                <Text className="flex-1 text-sm text-muted" numberOfLines={1}>
-                  {item.lastBody}
+                <Text className="flex-1 text-sm" style={{ color: draft ? colors.primary : colors.muted }} numberOfLines={1}>
+                  {draft ? `Borrador: ${draft}` : item.lastBody}
                 </Text>
                 {item.unread > 0 ? (
                   <View
@@ -210,8 +211,8 @@ export default function MessagesInboxScreen({ embedded = false }: { embedded?: b
               </View>
                 </View>
               </View>
-            </Pressable>
-          )}
+            </Pressable>;
+          }}
           />
         </>
       )}
