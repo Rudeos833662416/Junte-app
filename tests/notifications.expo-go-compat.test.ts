@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 describe("Expo notifications compatibility", () => {
-  it("loads notifications lazily only for native builds outside Expo Go", () => {
+  it("does not schedule a duplicate local banner for the author's own toast", () => {
     const source = readFileSync(resolve(process.cwd(), "app/(tabs)/index.tsx"), "utf8");
 
     expect(source).not.toMatch(/import\s+\*\s+as\s+Notifications\s+from\s+["']expo-notifications["']/);
     expect(source).toContain('Constants.appOwnership === "expo"');
-    expect(source).toContain('await import("expo-notifications")');
-    expect(source).toContain('Platform.OS !== "web" && !isExpoGo');
+    expect(source).not.toContain("scheduleNotificationAsync");
+    expect(source).toContain("Haptics.notificationAsync");
   });
 });

@@ -12,9 +12,14 @@ const EAS_PROJECT_ID_FALLBACK = "a595b360-16d9-40e4-9df4-7a3630257f39";
 const PUSH_DIAGNOSTIC_KEY = "junte-push-diagnostic-v1";
 const PUSH_INSTALLATION_KEY = "junte-push-installation-id-v1";
 let activeChatId: string | null = null;
+let activeStoryUserId: string | null = null;
 
 export function setActiveChatId(chatId: string | null) {
   activeChatId = chatId;
+}
+
+export function setActiveStoryUserId(userId: string | null) {
+  activeStoryUserId = userId;
 }
 
 export type PushDiagnostic = {
@@ -93,14 +98,15 @@ export function setupNotificationHandler() {
   try {
     Notifications.setNotificationHandler({
       handleNotification: async (notification) => {
-        const data = notification.request.content.data as { screen?: string; senderId?: string; chatId?: string };
+        const data = notification.request.content.data as { screen?: string; senderId?: string; chatId?: string; storyUserId?: string };
         const incomingChatId = data.chatId ?? data.senderId;
         const isActiveChat = data.screen === "chat" && Boolean(incomingChatId && incomingChatId === activeChatId);
+        const isActiveStory = data.screen === "stories" && Boolean(data.storyUserId && data.storyUserId === activeStoryUserId);
         return {
-        shouldShowBanner: !isActiveChat,
-        shouldShowList: !isActiveChat,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
+        shouldShowBanner: !isActiveChat && !isActiveStory,
+        shouldShowList: !isActiveChat && !isActiveStory,
+        shouldPlaySound: !isActiveChat && !isActiveStory,
+        shouldSetBadge: !isActiveChat && !isActiveStory,
         };
       },
     });

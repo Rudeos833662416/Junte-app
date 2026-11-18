@@ -8,8 +8,8 @@ import { useAppRefresh } from "@/lib/app-refresh";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
-import * as Location from "expo-location";
 import Constants from "expo-constants";
+import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Image as RNImage, Platform, Pressable, ScrollView, Text, View } from "react-native";
 
@@ -233,14 +233,7 @@ export default function HomeScreen() {
       });
 
       const isExpoGo = Constants.appOwnership === "expo";
-      if (Platform.OS !== "web" && !isExpoGo) {
-        const Notifications = await import("expo-notifications");
-        await Notifications.scheduleNotificationAsync({
-          content: { title: "Brindis compartido", body: "Estás tomando algo", data: { screen: "friends" } },
-          trigger: null,
-        });
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
+      if (Platform.OS !== "web" && !isExpoGo) await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Brindis activo", "Tu brindis quedó registrado y se mostrará según la audiencia elegida.");
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "No se pudo brindar.");

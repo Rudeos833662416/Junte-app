@@ -8,6 +8,27 @@ describe("notification routing", () => {
     });
   });
 
+  it("passes cached sender identity to a cold-start chat", () => {
+    expect(routeForNotification({ screen: "chat", peerId: "user-42", actorName: "Ana", actorAvatarUrl: "https://img/avatar.jpg" })).toEqual({
+      pathname: "/chat/user-42",
+      params: { name: "Ana", avatarUrl: "https://img/avatar.jpg" },
+    });
+  });
+
+  it("opens a story inside the unified Friends container", () => {
+    expect(routeForNotification({ screen: "stories", storyId: "story-9", storyUserId: "user-7" })).toEqual({
+      pathname: "/(tabs)/friends",
+      params: { subTab: "stories", storyId: "story-9", userId: "user-7" },
+    });
+  });
+
+  it("opens the administered venue pin for a check-in", () => {
+    expect(routeForNotification({ activityType: "check_in", senderId: "user-7", venueId: "42" })).toEqual({
+      pathname: "/(tabs)/map",
+      params: { focusVenueId: "42" },
+    });
+  });
+
   it("opens Events and carries the exact official post", () => {
     expect(routeForNotification({ screen: "events", postId: "post-9" })).toEqual({
       pathname: "/(tabs)/events",

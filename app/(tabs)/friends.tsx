@@ -1,6 +1,6 @@
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, Text, TextInput, TouchableOpacity, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import * as Location from "expo-location";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
@@ -48,6 +48,7 @@ function formatDate(value: string) {
 export default function FriendsScreen() {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
+  const { subTab: routeSubTab, userId: routeStoryUserId, storyId: routeStoryId } = useLocalSearchParams<{ subTab?: string; userId?: string; storyId?: string }>();
   const { revision } = useAppRefresh();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -64,11 +65,20 @@ export default function FriendsScreen() {
   const [respondingRequestId, setRespondingRequestId] = useState<number | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<"friends" | "requests" | "chat" | "stories">("friends");
   const [storyViewerUserId, setStoryViewerUserId] = useState<string | null>(null);
+  const [storyViewerStoryId, setStoryViewerStoryId] = useState<string | null>(null);
   const [publicSearchResults, setPublicSearchResults] = useState<PublicSearchProfile[]>([]);
   const [isSearchingPublic, setIsSearchingPublic] = useState(false);
   const handleStoryViewerClose = useCallback(() => {
     setStoryViewerUserId(null);
+    setStoryViewerStoryId(null);
   }, []);
+
+  useEffect(() => {
+    if (routeSubTab !== "stories") return;
+    setActiveSubTab("stories");
+    setStoryViewerUserId(typeof routeStoryUserId === "string" ? routeStoryUserId : null);
+    setStoryViewerStoryId(typeof routeStoryId === "string" ? routeStoryId : null);
+  }, [routeStoryId, routeStoryUserId, routeSubTab]);
 
   const fetchNearbyProfiles = useCallback(async () => {
     if (!user) return;
@@ -606,6 +616,7 @@ export default function FriendsScreen() {
             <StoriesScreen
               embedded
               requestedUserId={storyViewerUserId}
+              requestedStoryId={storyViewerStoryId}
               onViewerClose={handleStoryViewerClose}
             />
           </View>

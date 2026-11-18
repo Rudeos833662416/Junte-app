@@ -14,6 +14,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView } from "expo-video";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useStoryUploadQueue } from "@/lib/story-upload-queue";
+import { setActiveStoryUserId } from "@/lib/push-notifications";
 import { resolveCachedVideoUri } from "@/lib/video-cache";
 import { getCachedStoryGroups, setCachedStoryGroups, subscribeStoryGroups, type GroupedStoryUser, type StoryItem } from "@/lib/stories-store";
 import Svg, { Circle } from "react-native-svg";
@@ -169,12 +170,13 @@ function SegmentedStoryRing({ stories, avatarUrl, colors, viewedStoryIds }: { st
   </View>;
 }
 
-export default function StoriesScreen({ embedded = false, requestedUserId: embeddedUserId, onViewerClose }: { embedded?: boolean; requestedUserId?: string | null; onViewerClose?: () => void }) {
+export default function StoriesScreen({ embedded = false, requestedUserId: embeddedUserId, requestedStoryId: embeddedStoryId, onViewerClose }: { embedded?: boolean; requestedUserId?: string | null; requestedStoryId?: string | null; onViewerClose?: () => void }) {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
   const { revision } = useAppRefresh();
-  const { userId: routeUserId } = useLocalSearchParams<{ userId?: string }>();
+  const { userId: routeUserId, storyId: routeStoryId } = useLocalSearchParams<{ userId?: string; storyId?: string }>();
   const requestedUserId = embeddedUserId ?? routeUserId;
+  const requestedStoryId = embeddedStoryId ?? routeStoryId;
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -237,21 +239,28 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     onViewerClose?.();
   }, [onViewerClose]);
 
+  useEffect(() => {
+    setActiveStoryUserId(activeGroupIndex === null ? null : groupedStories[activeGroupIndex]?.userId ?? null);
+    return () => setActiveStoryUserId(null);
+  }, [activeGroupIndex, groupedStories]);
+
   useEffect(() => subscribeStoryGroups((groups) => setGroupedStories(groups)), []);
 
   useEffect(() => {
-    if (!requestedUserId || requestedUserConsumedRef.current === requestedUserId) return;
-    const requestedIndex = groupedStories.findIndex((group) => group.userId === requestedUserId);
+    const requestKey = `${requestedUserId ?? ""}:${requestedStoryId ?? ""}`;
+    if ((!requestedUserId && !requestedStoryId) || requestedUserConsumedRef.current === requestKey) return;
+    const requestedIndex = groupedStories.findIndex((group) => requestedUserId ? group.userId === requestedUserId : group.stories.some((story) => String(story.id) === requestedStoryId));
     if (requestedIndex < 0) return;
-    requestedUserConsumedRef.current = requestedUserId;
+    const requestedStoryIndex = requestedStoryId ? groupedStories[requestedIndex].stories.findIndex((story) => String(story.id) === requestedStoryId) : -1;
+    requestedUserConsumedRef.current = requestKey;
     setActiveGroupIndex(requestedIndex);
-    setActiveStoryIndex(0);
+    setActiveStoryIndex(Math.max(0, requestedStoryIndex));
     setProgressTimer(0);
-  }, [groupedStories, requestedUserId]);
+  }, [groupedStories, requestedStoryId, requestedUserId]);
 
   useEffect(() => {
-    if (!requestedUserId) requestedUserConsumedRef.current = null;
-  }, [requestedUserId]);
+    if (!requestedUserId && !requestedStoryId) requestedUserConsumedRef.current = null;
+  }, [requestedStoryId, requestedUserId]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -433,12 +442,14 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
         resolvedVideoCache.set(url, resolved);
         return resolved;
       }));
-      if (requestedUserId && requestedUserConsumedRef.current !== requestedUserId) {
-        const requestedIndex = groups.findIndex((group) => group.userId === requestedUserId);
+      const requestKey = `${requestedUserId ?? ""}:${requestedStoryId ?? ""}`;
+      if ((requestedUserId || requestedStoryId) && requestedUserConsumedRef.current !== requestKey) {
+        const requestedIndex = groups.findIndex((group) => requestedUserId ? group.userId === requestedUserId : group.stories.some((story) => String(story.id) === requestedStoryId));
         if (requestedIndex >= 0) {
-          requestedUserConsumedRef.current = requestedUserId;
+          const requestedStoryIndex = requestedStoryId ? groups[requestedIndex].stories.findIndex((story) => String(story.id) === requestedStoryId) : -1;
+          requestedUserConsumedRef.current = requestKey;
           setActiveGroupIndex(requestedIndex);
-          setActiveStoryIndex(0);
+          setActiveStoryIndex(Math.max(0, requestedStoryIndex));
           setProgressTimer(0);
           // Consumir el deep link: no debe quedar en la URL para reabrir el
           // mismo Estado después de Realtime, AppState o una navegación.
@@ -454,7 +465,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       setIsLoading(false);
       fetchInFlightRef.current = false;
     }
-  }, [embedded, optimisticStories, requestedUserId, router, selfAvatarUrl, user]);
+  }, [embedded, optimisticStories, requestedStoryId, requestedUserId, router, selfAvatarUrl, user]);
 
   const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await fetchStories(); } finally { setIsRefreshing(false); } }, [fetchStories]);
 

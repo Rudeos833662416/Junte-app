@@ -2,7 +2,7 @@
 
 ## 1. Resumen ejecutivo
 
-Junta2 utiliza un flujo basado en actividades de Supabase. Una acción de usuario no envía directamente un push desde el teléfono. Primero se crea una fila en `public.activities`; después un trigger la coloca en `public.notification_outbox`; un trabajo `pg_cron` procesa esa cola y llama a la Edge Function `notify-activity`; finalmente la función envía la alerta a Expo Push Service y/o directamente a Firebase Cloud Messaging (FCM).
+Junta2 utiliza un flujo basado en actividades de Supabase. Una acción de usuario no envía directamente un push desde el teléfono. Primero se crea una fila en `public.activities`; después un trigger la coloca en `public.notification_outbox` y dispara inmediatamente `notify-activity` mediante `pg_net`; finalmente la función envía la alerta a Expo Push Service y/o directamente a Firebase Cloud Messaging (FCM). `pg_cron` permanece como fallback para reintentos y recuperación.
 
 Este diseño desacopla la aplicación del proveedor de push, permite reintentos y evita que una caída temporal del proveedor haga perder inmediatamente una notificación.
 
@@ -33,9 +33,9 @@ Los triggers de la base de datos escriben en `public.activities`. Cada actividad
 - Identificadores de navegación como `friendship_id`, `direct_message_id`, `story_id`, `official_post_id`, `comment_id` o `checkin_id`.
 - `read_at`: fecha de lectura, cuando aplica.
 
-### Paso C: se coloca la actividad en la outbox
+### Paso C: se coloca la actividad en la outbox y se dispara en el acto
 
-El trigger `activities_push_after_insert` llama a `enqueue_activity_push()`. La actividad se copia a `notification_outbox` con estado `queued`.
+El trigger `activities_push_after_insert` llama a `enqueue_activity_push()`. La actividad se copia a `notification_outbox` con estado `queued` y el mismo trigger llama a `net.http_post` con el `outbox_id` recién creado. La llamada a `pg_net` es asíncrona, por lo que no bloquea la creación de la actividad; el objetivo es que `notify-activity` empiece el envío en milisegundos.
 
 La outbox tiene estos estados:
 
@@ -44,7 +44,7 @@ La outbox tiene estos estados:
 - `dispatched`: la función de envío fue llamada correctamente.
 - `failed`: agotó los reintentos permitidos.
 
-El worker procesa hasta 25 elementos por ciclo y corre cada minuto mediante `pg_cron`. Usa reintentos exponenciales, hasta 8 intentos, con espera progresiva que puede llegar a 15 minutos.
+El worker procesa hasta 25 elementos por ciclo y corre cada minuto mediante `pg_cron`. Se utiliza cuando `pg_net` no pudo programar la llamada o cuando el envío inmediato dejó la fila en `queued`. Usa reintentos exponenciales, hasta 8 intentos, con espera progresiva que puede llegar a 15 minutos.
 
 ### Paso D: `notify-activity` valida y prepara el envío
 
@@ -90,7 +90,7 @@ La función evita presentar una ubicación GPS genérica como si fuera un local 
 
 Estas acciones envían un mensaje privado de respuesta al autor del brindis mediante `notification-action`.
 
-**Al tocar la notificación:** se dirige al apartado de actividad o al destino de actividad correspondiente.
+**Al tocar la notificación:** si existe `venueId`, abre el Mapa centrado en el pin administrado; si no existe, abre el perfil del amigo como fallback.
 
 ### 3.2 Brindis terminado: `check_out`
 
@@ -143,7 +143,7 @@ La respuesta se procesa mediante `notification-action` y se protege con `client_
 
 **Comportamiento dentro de la app:** si el usuario ya está dentro del chat activo con esa persona, el handler local no muestra banner ni agrega otra alerta visible. El mensaje sigue llegando al chat en tiempo real.
 
-**Al tocar la alerta:** abre `/chat/{peerId}` y, si existe, usa el identificador del mensaje para mantener el contexto.
+**Al tocar la alerta:** abre `/chat/{peerId}` pasando nombre y foto del remitente en los parámetros iniciales; así el encabezado aparece desde el primer frame y luego se reconcilia con Supabase.
 
 ### 3.5 Reacción a un Estado: `reaction_story`
 
@@ -160,7 +160,7 @@ Se genera cuando otra persona reacciona a un Estado.
 
 La reacción elegida se guarda en la actividad mediante `saveNotificationReaction`.
 
-**Al tocar la alerta:** abre Estados con el `storyId` y el `storyUserId` para que el visor pueda abrir el Estado correspondiente.
+**Al tocar la alerta:** abre Amigos en la subpestaña Estados con `storyId` y `storyUserId`; el visor embebido abre la diapositiva correspondiente usando el caché compartido.
 
 La base de datos actualiza la misma actividad de reacción cuando el usuario cambia el emoji, en vez de crear una fila duplicada para cada cambio.
 
