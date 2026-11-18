@@ -14,6 +14,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useStoryUploadQueue } from "@/lib/story-upload-queue";
 import { resolveCachedVideoUri } from "@/lib/video-cache";
+import { getCachedStoryGroups, setCachedStoryGroups, subscribeStoryGroups, type GroupedStoryUser, type StoryItem } from "@/lib/stories-store";
 import Svg, { Circle } from "react-native-svg";
 
 type SelectedMedia = {
@@ -23,42 +24,8 @@ type SelectedMedia = {
   name: string;
 };
 
-type StoryItem = {
-  id: number;
-  user_id: string;
-  media_url: string | null;
-  media_type: "image" | "video" | "text";
-  audio_url: string | null;
-  audio_name: string | null;
-  music_title?: string | null;
-  caption: string | null;
-  visibility: "friends" | "public";
-  privacy?: "all_friends" | "close_friends" | "public";
-  created_at: string;
-  expires_at: string;
-  user_name?: string;
-  avatar_url?: string | null;
-  text_content?: string | null;
-  text_background_color?: string | null;
-  text_font_family?: string | null;
-  trim_start_sec?: number | null;
-  trim_end_sec?: number | null;
-  isOptimistic?: boolean;
-};
-
-type GroupedStoryUser = {
-  userId: string;
-  userName: string;
-  avatarUrl: string | null;
-  isSelf: boolean;
-  stories: StoryItem[];
-  latestCreatedAt: string;
-};
-
 const MAX_STORY_VIDEO_BYTES = 300_000_000;
-const MAX_COMPRESSED_VIDEO_BYTES = 100_000_000;
 const MAX_STORY_DURATION_SECONDS = 300;
-const STORY_VIDEO_DURATION_MESSAGE = "Las historias en vídeo pueden durar como máximo 5 minutos (300 segundos).";
 const TEXT_STORY_BACKGROUNDS = ["#FF6B00", "#1E88E5", "#8E24AA", "#00897B", "#D81B60", "#212121"];
 const TEXT_STORY_FONTS = ["System", "serif", "monospace"];
 const resolvedVideoCache = new Map<string, string>();
@@ -98,7 +65,10 @@ function StoryVideo({ uri, muted, paused, trimStart = 0, trimEnd, onReady, onTim
     return () => subscription.remove();
   }, [player, trimStart]);
   useEffect(() => {
-    try { paused ? player.pause() : player.play(); }
+    try {
+      if (paused) player.pause();
+      else player.play();
+    }
     catch { /* El player puede estar liberándose durante un cambio de historia. */ }
     return () => {
       try { player.pause(); }
@@ -195,15 +165,16 @@ function SegmentedStoryRing({ stories, avatarUrl, colors, viewedStoryIds }: { st
   </View>;
 }
 
-export default function StoriesScreen() {
+export default function StoriesScreen({ embedded = false, requestedUserId: embeddedUserId, onViewerClose }: { embedded?: boolean; requestedUserId?: string | null; onViewerClose?: () => void }) {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
   const { revision } = useAppRefresh();
-  const { userId: requestedUserId } = useLocalSearchParams<{ userId?: string }>();
+  const { userId: routeUserId } = useLocalSearchParams<{ userId?: string }>();
+  const requestedUserId = embeddedUserId ?? routeUserId;
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [groupedStories, setGroupedStories] = useState<GroupedStoryUser[]>([]);
+  const [groupedStories, setGroupedStories] = useState<GroupedStoryUser[]>(() => getCachedStoryGroups());
   const [isLoading, setIsLoading] = useState(true);
   const hasLoadedStoriesOnce = useRef(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -253,6 +224,22 @@ export default function StoriesScreen() {
   const requestedUserConsumedRef = useRef<string | null>(null);
   const videoAdvancedStoryRef = useRef<number | null>(null);
 
+  useEffect(() => subscribeStoryGroups((groups) => setGroupedStories(groups)), []);
+
+  useEffect(() => {
+    if (!requestedUserId || requestedUserConsumedRef.current === requestedUserId) return;
+    const requestedIndex = groupedStories.findIndex((group) => group.userId === requestedUserId);
+    if (requestedIndex < 0) return;
+    requestedUserConsumedRef.current = requestedUserId;
+    setActiveGroupIndex(requestedIndex);
+    setActiveStoryIndex(0);
+    setProgressTimer(0);
+  }, [groupedStories, requestedUserId]);
+
+  useEffect(() => {
+    if (!requestedUserId) requestedUserConsumedRef.current = null;
+  }, [requestedUserId]);
+
   useEffect(() => {
     if (!user?.id) return;
     void supabase
@@ -268,14 +255,14 @@ export default function StoriesScreen() {
   useEffect(() => {
     const onBack = () => {
       if (showViewers) { closeViewers(); return true; }
-      if (activeGroupIndex !== null) { setActiveGroupIndex(null); return true; }
+      if (activeGroupIndex !== null) { setActiveGroupIndex(null); onViewerClose?.(); return true; }
       if (selectedMedia) { setSelectedMedia(null); return true; }
       if (showTextCreator) { setShowTextCreator(false); return true; }
       return false;
     };
     const subscription = BackHandler.addEventListener("hardwareBackPress", onBack);
     return () => subscription.remove();
-  }, [activeGroupIndex, selectedMedia, showTextCreator, showViewers]);
+  }, [activeGroupIndex, onViewerClose, selectedMedia, showTextCreator, showViewers]);
 
   useFocusEffect(
     useCallback(() => {
@@ -388,6 +375,7 @@ export default function StoriesScreen() {
         else groups.unshift({ userId: user.id, userName: "Mi estado", avatarUrl: profileMap.get(user.id)?.avatarUrl || null, isSelf: true, stories: pendingOptimistic, latestCreatedAt: pendingOptimistic[0].created_at });
       }
       setOptimisticStories((previous) => previous.length === pendingOptimistic.length && previous.every((item, index) => item.id === pendingOptimistic[index]?.id) ? previous : pendingOptimistic);
+      setCachedStoryGroups(groups);
       setGroupedStories(groups);
       const urlsToPrefetch = [...new Set(groups.flatMap((group) => group.stories.map((story) => story.media_url).filter((url): url is string => Boolean(url))))].slice(0, 30);
       void Promise.all(urlsToPrefetch.map((url) => RNImage.prefetch(url).catch(() => false)));
@@ -406,7 +394,7 @@ export default function StoriesScreen() {
           setProgressTimer(0);
           // Consumir el deep link: no debe quedar en la URL para reabrir el
           // mismo Estado después de Realtime, AppState o una navegación.
-          router.replace("/(tabs)/stories");
+          if (!embedded) router.replace("/(tabs)/stories");
         }
       }
     } catch (err) {
@@ -418,7 +406,7 @@ export default function StoriesScreen() {
       setIsLoading(false);
       fetchInFlightRef.current = false;
     }
-  }, [optimisticStories, requestedUserId, router, user]);
+  }, [embedded, optimisticStories, requestedUserId, router, user]);
 
   const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await fetchStories(); } finally { setIsRefreshing(false); } }, [fetchStories]);
 
@@ -467,7 +455,7 @@ export default function StoriesScreen() {
         const durationMs = asset.duration ?? undefined;
         const fileSize = asset.fileSize ?? undefined;
         if (type === "video" && durationMs !== undefined && durationMs > MAX_STORY_DURATION_SECONDS * 1000) {
-          Alert.alert("Vídeo demasiado largo", "Máximo 5 minutos (300 s). Elige un fragmento más corto antes de subirlo.");
+          Alert.alert("Vídeo demasiado largo", "Máximo 5 minutos (300 segundos). Elige un fragmento más corto antes de subirlo.");
           return;
         }
         if (type === "video" && fileSize !== undefined && fileSize > MAX_STORY_VIDEO_BYTES) {
@@ -771,18 +759,6 @@ export default function StoriesScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStory?.id]);
 
-  const navigateToGroup = (nextIndex: number) => {
-    if (nextIndex < 0 || nextIndex >= groupedStories.length || nextIndex === activeGroupIndex) return;
-    setIsChromeHidden(false);
-    Animated.timing(profileTransition, { toValue: 1, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(() => {
-      setActiveGroupIndex(nextIndex);
-      setActiveStoryIndex(0);
-      setProgressTimer(0);
-      profileTransition.setValue(-1);
-      Animated.timing(profileTransition, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    });
-  };
-
   const handleVideoTimeUpdate = useCallback((currentTime: number, duration: number) => {
     if (!activeStory || activeStory.media_type !== "video" || !duration || !Number.isFinite(duration)) return;
     const trimStart = Math.max(0, activeStory.trim_start_sec ?? 0);
@@ -845,12 +821,12 @@ export default function StoriesScreen() {
   };
 
   return (
-    <ScreenContainer className="px-5 pt-3">
+    <ScreenContainer className={embedded ? "flex-1" : "px-5 pt-3"}>
       <ScrollView contentContainerStyle={{ paddingBottom: 48 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} colors={[colors.primary]} />}>
-        <View className="mb-4">
+        {!embedded ? <View className="mb-4">
           <Text className="text-2xl font-black text-foreground">Estados</Text>
           <Text className="text-xs text-muted">Comparte momentos que desaparecen en 24 horas</Text>
-        </View>
+        </View> : null}
 
         {/* Mi estado */}
         {(() => {
@@ -976,7 +952,7 @@ export default function StoriesScreen() {
       </Modal>
 
       {/* Visor Inmersivo Estilo WhatsApp */}
-      <Modal visible={activeGroup !== null && activeStory !== null} animationType="fade" transparent onRequestClose={() => setActiveGroupIndex(null)}>
+      <Modal visible={activeGroup !== null && activeStory !== null} animationType="fade" transparent onRequestClose={() => { setActiveGroupIndex(null); onViewerClose?.(); }}>
         {activeGroup && activeStory ? (
           <Animated.View onTouchStart={handleViewerTouchStart} onTouchEnd={handleViewerTouchEnd} onTouchCancel={handleViewerTouchEnd} style={[{ flex: 1, position: "relative", backgroundColor: "#000000" }, { transform: [{ perspective: 900 }, { rotateY: profileTransition.interpolate({ inputRange: [-1, 0, 1], outputRange: ["-90deg", "0deg", "90deg"] }) }] }]}>
             <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0.72)", "rgba(0,0,0,0)"]} locations={[0, 1]} style={{ position: "absolute", top: 0, left: 0, right: 0, height: 170, zIndex: 2 }} />

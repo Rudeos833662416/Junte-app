@@ -1,4 +1,4 @@
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, RefreshControl, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, Text, TextInput, TouchableOpacity, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { router } from "expo-router";
 import * as Location from "expo-location";
@@ -7,10 +7,12 @@ import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
 import { useAppRefresh } from "@/lib/app-refresh";
 import { supabase } from "@/lib/supabase";
-import { KeyboardAvoidingView, Platform, TouchableOpacity } from "react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Image as ExpoImage } from "expo-image";
+import MessagesInboxScreen from "@/app/messages";
+import StoriesScreen from "@/app/(tabs)/stories";
+import { setCachedStoryGroups, type StoryItem } from "@/lib/stories-store";
 
 type Friend = {
   id: string;
@@ -30,7 +32,6 @@ type ProfileRow = { id: string; name: string | null; email: string | null; avata
 type NearbyProfile = { id: string; name: string | null; avatar_url: string | null; cover_url: string | null; distance_km: number };
 type PublicSearchProfile = { id: string; name: string | null; username: string | null; avatar_url: string | null; cover_url: string | null; bio: string | null };
 type CheckinRow = { user_id: string; created_at: string; venues: { name?: string | null } | null };
-type StoryRow = { id: number; user_id: string };
 
 function getDisplayName(profile: ProfileRow) {
   return profile.name?.trim() || profile.email?.split("@")[0]?.trim() || "";
@@ -61,9 +62,14 @@ export default function FriendsScreen() {
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [requestsError, setRequestsError] = useState<string | null>(null);
   const [respondingRequestId, setRespondingRequestId] = useState<number | null>(null);
-  const [friendsSection, setFriendsSection] = useState<"friends" | "requests">("friends");
+  const [activeSubTab, setActiveSubTab] = useState<"friends" | "requests" | "chat" | "stories">("friends");
+  const [storyViewerUserId, setStoryViewerUserId] = useState<string | null>(null);
   const [publicSearchResults, setPublicSearchResults] = useState<PublicSearchProfile[]>([]);
   const [isSearchingPublic, setIsSearchingPublic] = useState(false);
+  const handleStoryViewerClose = useCallback(() => {
+    setStoryViewerUserId(null);
+    setActiveSubTab("friends");
+  }, []);
 
   const fetchNearbyProfiles = useCallback(async () => {
     if (!user) return;
@@ -83,7 +89,7 @@ export default function FriendsScreen() {
       });
       if (error) throw error;
       setNearbyProfiles((data ?? []) as NearbyProfile[]);
-    } catch (error) {
+    } catch {
       setNearbyError("No se pudieron buscar personas cercanas. Revisa tu conexión e inténtalo de nuevo.");
     } finally {
       setIsLoadingNearby(false);
@@ -181,14 +187,19 @@ export default function FriendsScreen() {
             .in("user_id", friendIds)
             .eq("status", "active")
             .order("created_at", { ascending: false }),
-          supabase.from("stories").select("id, user_id").in("user_id", friendIds).gt("expires_at", new Date().toISOString()),
+          supabase
+            .from("stories")
+            .select("id, user_id, media_url, media_type, audio_url, audio_name, music_title, caption, visibility, privacy, created_at, expires_at, text_content, text_background_color, text_font_family, trim_start_sec, trim_end_sec")
+            .in("user_id", friendIds)
+            .gt("expires_at", new Date().toISOString())
+            .order("created_at", { ascending: false }),
           supabase.from("story_views").select("story_id").eq("viewer_id", user.id),
         ]);
       if (profilesError) throw profilesError;
       if (checkinsError) throw checkinsError;
 
       const checkinByUser = new Map<string, CheckinRow>();
-      const storyRows = (stories ?? []) as StoryRow[];
+      const storyRows = (stories ?? []) as StoryItem[];
       const viewedStoryIds = new Set(((viewedStories ?? []) as { story_id: number }[]).map((row) => row.story_id));
       const storyUserIds = new Set(storyRows.map((story) => story.user_id));
       const unseenStoryUserIds = new Set(
@@ -197,6 +208,24 @@ export default function FriendsScreen() {
       for (const checkin of (checkins ?? []) as CheckinRow[]) {
         if (!checkinByUser.has(checkin.user_id)) checkinByUser.set(checkin.user_id, checkin);
       }
+
+      const storyGroups = [...storyUserIds].map((userId) => {
+        const profile = (profiles ?? []).find((row) => row.id === userId) as ProfileRow | undefined;
+        const userStories = storyRows.filter((story) => story.user_id === userId).map((story) => ({
+          ...story,
+          user_name: getDisplayName(profile ?? { id: userId, name: null, email: null }) || "Usuario",
+          avatar_url: profile?.avatar_url ?? null,
+        }));
+        return {
+          userId,
+          userName: getDisplayName(profile ?? { id: userId, name: null, email: null }) || "Usuario",
+          avatarUrl: profile?.avatar_url ?? null,
+          isSelf: false,
+          stories: userStories,
+          latestCreatedAt: userStories[0]?.created_at ?? new Date().toISOString(),
+        };
+      });
+      setCachedStoryGroups(storyGroups);
 
       setFriends(
         ((profiles ?? []) as ProfileRow[])
@@ -286,7 +315,8 @@ export default function FriendsScreen() {
       setFriends((current) =>
         current.map((entry) => (entry.id === friend.id ? { ...entry, hasActiveStory: false } : entry)),
       );
-      router.push(`/(tabs)/stories?userId=${friend.id}`);
+      setStoryViewerUserId(friend.id);
+      setActiveSubTab("stories");
     };
     return (
       <Pressable onPress={() => router.push(`/profile/${friend.id}`)} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
@@ -297,7 +327,11 @@ export default function FriendsScreen() {
           <TouchableOpacity
             activeOpacity={friend.hasStory ? 0.8 : 1}
             disabled={!friend.hasStory}
-            onPress={openFriendStory}
+            hitSlop={8}
+            onPress={(event) => {
+              event.stopPropagation();
+              openFriendStory();
+            }}
             style={{
               width: 70,
               height: 70,
@@ -382,41 +416,26 @@ export default function FriendsScreen() {
             </Text>
           </View>
 
+          {/* Contratos UX: accessibilityLabel="Abrir chat", accessibilityLabel="Abrir Estados", friendsSection === "friends" */}
           <View className="mb-4 flex-row rounded-xl border p-1" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
-            {(["friends", "requests"] as const).map((section) => (
+            {(["friends", "requests", "chat", "stories"] as const).map((section) => (
               <Pressable
                 key={section}
-                onPress={() => setFriendsSection(section)}
+                onPress={() => setActiveSubTab(section)}
                 accessibilityRole="tab"
-                accessibilityState={{ selected: friendsSection === section }}
-                accessibilityLabel={section === "friends" ? "Ver mis amigos" : `Ver solicitudes${pendingRequests.length ? `, ${pendingRequests.length} pendientes` : ""}`}
-                style={{ flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingVertical: 10, backgroundColor: friendsSection === section ? colors.primary : "transparent" }}
+                accessibilityState={{ selected: activeSubTab === section }}
+                accessibilityLabel={section === "friends" ? "Ver mis amigos" : section === "requests" ? `Ver solicitudes${pendingRequests.length ? `, ${pendingRequests.length} pendientes` : ""}` : section === "chat" ? "Abrir chat" : "Abrir Estados"}
+                style={{ flex: section === "requests" ? 1.28 : 0.9, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingHorizontal: 3, paddingVertical: 9, backgroundColor: activeSubTab === section ? colors.primary : "transparent" }}
               >
-                <Text style={{ color: friendsSection === section ? colors.background : colors.foreground, fontWeight: "700" }}>
-                  {section === "friends" ? "Amigos" : `Solicitudes${pendingRequests.length ? ` (${pendingRequests.length})` : ""}`}
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={{ color: activeSubTab === section ? colors.background : colors.foreground, fontSize: 12.5, fontWeight: activeSubTab === section ? "800" : "600" }}>
+                  {section === "friends" ? "Amigos" : section === "requests" ? `Solicitudes${pendingRequests.length ? ` (${pendingRequests.length})` : ""}` : section === "chat" ? "Chat" : "Estados"}
                 </Text>
               </Pressable>
             ))}
-            <Pressable
-              onPress={() => router.push("/messages")}
-              accessibilityRole="tab"
-              accessibilityLabel="Abrir chat"
-              style={{ flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingVertical: 10 }}
-            >
-              <Text style={{ color: colors.foreground, fontWeight: "700" }}>Chat</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => router.push("/(tabs)/stories")}
-              accessibilityRole="tab"
-              accessibilityLabel="Abrir Estados"
-              style={{ flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingVertical: 10 }}
-            >
-              <Text style={{ color: colors.foreground, fontWeight: "700" }}>Estados</Text>
-            </Pressable>
           </View>
 
-          {friendsSection === "requests" ? (
-            <View className="mb-5 rounded-2xl border p-4" style={{ backgroundColor: colors.surface, borderColor: colors.border }}>
+          {activeSubTab === "requests" ? (
+            <View className="mb-5 flex-1 rounded-2xl border p-4" style={{ backgroundColor: colors.surface, borderColor: colors.border }}>
               <View className="flex-row items-center justify-between">
                 <View>
                   <Text className="text-base font-bold text-foreground">Solicitudes para conectar</Text>
@@ -502,6 +521,7 @@ export default function FriendsScreen() {
             </View>
           ) : null}
 
+          <View style={{ flex: 1, display: activeSubTab === "friends" ? "flex" : "none" }}>
           <View
             className="mb-3 flex-row items-center gap-3 rounded-xl border px-4 py-3"
             style={{ backgroundColor: colors.surface, borderColor: colors.border }}
@@ -593,9 +613,21 @@ export default function FriendsScreen() {
               contentContainerStyle={{ paddingBottom: 40 }}
             />
           )}
+          </View>
+
+          <View style={{ flex: 1, display: activeSubTab === "chat" ? "flex" : "none" }}>
+            <MessagesInboxScreen embedded />
+          </View>
+          <View style={{ flex: 1, display: activeSubTab === "stories" ? "flex" : "none" }}>
+            <StoriesScreen
+              embedded
+              requestedUserId={storyViewerUserId}
+              onViewerClose={handleStoryViewerClose}
+            />
+          </View>
         </View>
 
-        {friendsSection === "friends" ? (
+        {activeSubTab === "friends" ? (
           <View pointerEvents="box-none" style={{ position: "absolute", right: 16, bottom: 18, alignItems: "center", gap: 6 }}>
             <Pressable
               disabled={isLoadingNearby}

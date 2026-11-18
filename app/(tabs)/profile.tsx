@@ -473,58 +473,6 @@ export default function ProfileScreen() {
             className="mb-4 rounded-2xl border p-4"
             style={{ borderColor: colors.border, backgroundColor: colors.surface }}
           >
-            <Text className="mb-2 text-base font-bold text-foreground">Historias</Text>
-            <Text className="mb-3 text-xs text-muted">
-              Publica o gestiona tus historias y la música que acompañan.
-            </Text>
-            <Pressable
-              onPress={() => router.push("/(tabs)/stories")}
-              accessibilityRole="button"
-              accessibilityLabel="Gestionar historias y música"
-              style={({ pressed }) => ({
-                height: 46,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 14,
-                backgroundColor: colors.primary,
-                opacity: pressed ? 0.85 : 1,
-              })}
-            >
-              <Text style={{ color: colors.background, fontWeight: "700" }}>Gestionar Historias y Música</Text>
-            </Pressable>
-          </View>
-
-          <View
-            className="mb-4 rounded-2xl border p-4"
-            style={{ borderColor: colors.border, backgroundColor: colors.surface }}
-          >
-            <Text className="mb-2 text-base font-bold text-foreground">Chat</Text>
-            <Text className="mb-3 text-xs text-muted">
-              Conversaciones y mensajes directos con tus contactos.
-            </Text>
-            <Pressable
-              onPress={() => router.push("/messages")}
-              accessibilityRole="button"
-              accessibilityLabel="Abrir mensajes"
-              style={{
-                backgroundColor: colors.primary,
-                borderRadius: 12,
-                paddingVertical: 12,
-                flexDirection: "row",
-                justifyContent: "center",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <IconSymbol name="message.fill" size={18} color={colors.background} />
-              <Text style={{ color: colors.background, fontWeight: "700" }}>Mensajes</Text>
-            </Pressable>
-          </View>
-
-          <View
-            className="mb-4 rounded-2xl border p-4"
-            style={{ borderColor: colors.border, backgroundColor: colors.surface }}
-          >
             <Text className="mb-1 text-base font-bold text-foreground">Apariencia</Text>
             <Text className="mb-3 text-xs leading-5 text-muted">
               Elige cómo quieres ver Junta2. Se guarda en este dispositivo.

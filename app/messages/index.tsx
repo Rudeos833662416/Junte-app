@@ -25,7 +25,7 @@ type Conversation = {
   unread: number;
 };
 
-export default function MessagesInboxScreen() {
+export default function MessagesInboxScreen({ embedded = false }: { embedded?: boolean }) {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
   const [loading, setLoading] = useState(true);
@@ -113,15 +113,15 @@ export default function MessagesInboxScreen() {
   );
 
   return (
-    <ScreenContainer className="p-5">
-      <View className="mb-4 flex-row items-center gap-3">
+    <ScreenContainer className={embedded ? "flex-1" : "p-5"}>
+      {!embedded ? <View className="mb-4 flex-row items-center gap-3">
         <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Volver">
           <Text className="text-2xl" style={{ color: colors.primary }}>
             ‹
           </Text>
         </Pressable>
         <Text className="text-2xl font-bold text-foreground">Mensajes</Text>
-      </View>
+      </View> : null}
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
