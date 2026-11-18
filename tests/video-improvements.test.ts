@@ -34,6 +34,31 @@ describe("mejoras confirmadas en la grabación", () => {
 		expect(stories).toContain("longPressTimerRef.current = null");
 	});
 
+	it("mantiene el visor coherente con el prototipo interactivo", () => {
+		expect(stories).toContain("BackHandler");
+		expect(stories).toContain("SegmentedStoryRing");
+		expect(stories).toContain("PreviewVideo");
+		expect(stories).toContain("onFocus={() => setIsPaused(true)}");
+		expect(stories).toContain("onBlur={() => setIsPaused(false)}");
+	});
+
+	it("protege el compositor y el visor frente a los cuatro casos de uso reales", () => {
+		expect(stories).toContain('onRequestClose={() => setSelectedMedia(null)}');
+		expect(stories).toContain('IconSymbol name="chevron.left"');
+		expect(stories).toContain('className="mb-4 flex-1 w-full overflow-hidden rounded-2xl bg-black"');
+		expect(stories).toContain('colors={["rgba(0,0,0,0.72)", "rgba(0,0,0,0)"]}');
+		expect(stories).toContain('{!isChromeHidden ? <View style={{ position: "absolute", left: 16');
+	});
+
+	it("sincroniza vídeo, texto, audio, vistos y tiempo real de visualización", () => {
+		expect(stories).toContain("timeUpdate");
+		expect(stories).toContain("videoMuted");
+		expect(stories).toContain("showTextCreator");
+		expect(stories).toContain("Actualizaciones recientes");
+		expect(stories).toContain("Vistos");
+		expect(stories).toContain("formatStoryAge(viewer.viewed_at)");
+	});
+
   it("cierra el visor al perder foco y consume el deep link una sola vez", () => {
     expect(stories).toContain("useFocusEffect");
     expect(stories).toContain("setActiveGroupIndex(null);");

@@ -7,12 +7,14 @@ import { supabase } from "@/lib/supabase";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, Alert, Animated, Easing, Image as RNImage, Modal, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, BackHandler, Easing, Image as RNImage, Modal, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image as ExpoImage } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useStoryUploadQueue } from "@/lib/story-upload-queue";
 import { resolveCachedVideoUri } from "@/lib/video-cache";
+import Svg, { Circle } from "react-native-svg";
 
 type SelectedMedia = {
   uri: string;
@@ -24,8 +26,8 @@ type SelectedMedia = {
 type StoryItem = {
   id: number;
   user_id: string;
-  media_url: string;
-  media_type: "image" | "video";
+  media_url: string | null;
+  media_type: "image" | "video" | "text";
   audio_url: string | null;
   audio_name: string | null;
   music_title?: string | null;
@@ -36,6 +38,9 @@ type StoryItem = {
   expires_at: string;
   user_name?: string;
   avatar_url?: string | null;
+  text_content?: string | null;
+  text_background_color?: string | null;
+  text_font_family?: string | null;
 };
 
 type GroupedStoryUser = {
@@ -51,6 +56,8 @@ const MAX_STORY_VIDEO_BYTES = 300_000_000;
 const MAX_COMPRESSED_VIDEO_BYTES = 100_000_000;
 const MAX_STORY_DURATION_SECONDS = 300;
 const STORY_VIDEO_DURATION_MESSAGE = "Las historias en vídeo pueden durar como máximo 5 minutos (300 segundos).";
+const TEXT_STORY_BACKGROUNDS = ["#FF6B00", "#1E88E5", "#8E24AA", "#00897B", "#D81B60", "#212121"];
+const TEXT_STORY_FONTS = ["System", "serif", "monospace"];
 
 function formatStoryAge(createdAt: string) {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000));
@@ -61,11 +68,12 @@ function formatStoryAge(createdAt: string) {
   return `hace ${hours} h`;
 }
 
-function StoryVideo({ uri, onReady }: { uri: string; onReady: () => void }) {
+function StoryVideo({ uri, muted, paused, onReady, onTimeUpdate }: { uri: string; muted: boolean; paused: boolean; onReady: () => void; onTimeUpdate: (currentTime: number, duration: number) => void }) {
   const [sourceUri, setSourceUri] = useState(uri);
   const player = useVideoPlayer(sourceUri, (videoPlayer) => {
     videoPlayer.loop = true;
-    videoPlayer.muted = false;
+    videoPlayer.muted = muted;
+    videoPlayer.timeUpdateEventInterval = 0.1;
   });
   useEffect(() => {
     let cancelled = false;
@@ -77,14 +85,48 @@ function StoryVideo({ uri, onReady }: { uri: string; onReady: () => void }) {
     };
   }, [uri]);
   useEffect(() => {
-    try { player.play(); }
+    try { paused ? player.pause() : player.play(); }
     catch { /* El player puede estar liberándose durante un cambio de historia. */ }
     return () => {
       try { player.pause(); }
       catch { /* El player nativo ya fue liberado. */ }
     };
-  }, [player]);
+  }, [paused, player]);
+  useEffect(() => {
+    player.muted = muted;
+  }, [muted, player]);
+  useEffect(() => {
+    const subscription = player.addListener("timeUpdate", ({ currentTime }) => onTimeUpdate(currentTime, player.duration));
+    return () => subscription.remove();
+  }, [onTimeUpdate, player]);
   return <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" nativeControls={false} onFirstFrameRender={onReady} />;
+}
+
+function PreviewVideo({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (videoPlayer) => {
+    videoPlayer.loop = true;
+    videoPlayer.muted = true;
+  });
+  useEffect(() => {
+    try { player.play(); } catch { /* La vista previa puede cerrarse durante la inicialización. */ }
+    return () => { try { player.pause(); } catch { /* El reproductor nativo puede haberse liberado. */ } };
+  }, [player]);
+  return <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" nativeControls={false} />;
+}
+
+function SegmentedStoryRing({ stories, avatarUrl, colors, viewedStoryIds }: { stories: StoryItem[]; avatarUrl: string | null; colors: ReturnType<typeof useColors>; viewedStoryIds: Set<number> }) {
+  const size = 60;
+  const strokeWidth = 3;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const gap = stories.length > 1 ? 6 : 0;
+  const segment = stories.length ? 360 / stories.length - gap : 360;
+  return <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+    <Svg width={size} height={size} style={{ position: "absolute" }}>
+      {stories.map((story, index) => <Circle key={story.id} cx={size / 2} cy={size / 2} r={radius} fill="transparent" stroke={viewedStoryIds.has(story.id) ? "#9CA3AF" : colors.primary} strokeWidth={strokeWidth} strokeDasharray={`${(segment / 360) * circumference} ${circumference}`} strokeLinecap="round" transform={`rotate(${index * (360 / stories.length) - 90 + gap / 2} ${size / 2} ${size / 2})`} />)}
+    </Svg>
+    {avatarUrl ? <ExpoImage source={{ uri: avatarUrl }} style={{ width: 50, height: 50, borderRadius: 25 }} contentFit="cover" cachePolicy="memory-disk" /> : <View style={{ width: 50, height: 50, borderRadius: 25, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary }}><Text style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "800" }}>?</Text></View>}
+  </View>;
 }
 
 export default function StoriesScreen() {
@@ -110,11 +152,18 @@ export default function StoriesScreen() {
     : null;
 
   const [selectedMedia, setSelectedMedia] = useState<SelectedMedia | null>(null);
+  const [showTextCreator, setShowTextCreator] = useState(false);
+  const [textDraft, setTextDraft] = useState("");
+  const [textBackgroundColor, setTextBackgroundColor] = useState(TEXT_STORY_BACKGROUNDS[0]);
+  const [textFontFamily, setTextFontFamily] = useState(TEXT_STORY_FONTS[0]);
+  const [isPublishingText, setIsPublishingText] = useState(false);
   const [caption, setCaption] = useState("");
   const [privacy, setPrivacy] = useState<"all_friends" | "close_friends" | "public">("all_friends");
   const [reactionByStory, setReactionByStory] = useState<Record<number, string | null>>({});
+  const [viewedStoryIds, setViewedStoryIds] = useState<Set<number>>(new Set());
   const [storyReply, setStoryReply] = useState("");
   const [isStoryMediaLoading, setIsStoryMediaLoading] = useState(true);
+  const [videoMuted, setVideoMuted] = useState(false);
   const [viewers, setViewers] = useState<{ viewer_id: string; name: string; avatar_url: string | null; viewed_at: string }[]>([]);
   const [viewerCountByStory, setViewerCountByStory] = useState<Record<number, number>>({});
   const [showViewers, setShowViewers] = useState(false);
@@ -132,6 +181,18 @@ export default function StoriesScreen() {
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchInFlightRef = useRef(false);
   const requestedUserConsumedRef = useRef<string | null>(null);
+  const videoAdvancedStoryRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const onBack = () => {
+      if (showViewers) { closeViewers(); return true; }
+      if (activeGroupIndex !== null) { setActiveGroupIndex(null); return true; }
+      if (selectedMedia) { setSelectedMedia(null); return true; }
+      return false;
+    };
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBack);
+    return () => subscription.remove();
+  }, [activeGroupIndex, selectedMedia, showViewers]);
 
   useFocusEffect(
     useCallback(() => {
@@ -150,6 +211,8 @@ export default function StoriesScreen() {
 
   // Optimización: el filtrado O(n) por render se reemplaza por una lista memoizada.
   const friendGroups = useMemo(() => groupedStories.filter((group) => !group.isSelf), [groupedStories]);
+  const recentFriendGroups = useMemo(() => friendGroups.filter((group) => group.stories.some((story) => !viewedStoryIds.has(story.id))), [friendGroups, viewedStoryIds]);
+  const viewedFriendGroups = useMemo(() => friendGroups.filter((group) => group.stories.every((story) => viewedStoryIds.has(story.id))), [friendGroups, viewedStoryIds]);
 
   // Optimización: la edad relativa se calcula una vez por historia (en la carga)
   // en lugar de recalcular Date.now() en cada render/tick del visor.
@@ -177,7 +240,7 @@ export default function StoriesScreen() {
       await supabase.rpc("purge_expired_stories");
       const { data, error } = await supabase
         .from("stories")
-        .select("id, user_id, media_url, media_type, audio_url, audio_name, music_title, caption, visibility, privacy, created_at, expires_at")
+        .select("id, user_id, media_url, media_type, audio_url, audio_name, music_title, caption, visibility, privacy, created_at, expires_at, text_content, text_background_color, text_font_family")
         .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false });
 
@@ -234,9 +297,9 @@ export default function StoriesScreen() {
       }
 
       setGroupedStories(groups);
-      const urlsToPrefetch = [...new Set(groups.flatMap((group) => group.stories.map((story) => story.media_url)).filter(Boolean))].slice(0, 30);
+      const urlsToPrefetch = [...new Set(groups.flatMap((group) => group.stories.map((story) => story.media_url).filter((url): url is string => Boolean(url))))].slice(0, 30);
       void Promise.all(urlsToPrefetch.map((url) => RNImage.prefetch(url).catch(() => false)));
-      const videosToWarm = [...new Set(groups.flatMap((group) => group.stories.filter((story) => story.media_type === "video").map((story) => story.media_url)))].slice(0, 6);
+      const videosToWarm = [...new Set(groups.flatMap((group) => group.stories.filter((story) => story.media_type === "video").map((story) => story.media_url).filter((url): url is string => Boolean(url))))].slice(0, 6);
       void Promise.all(videosToWarm.map((url) => resolveCachedVideoUri(url).catch(() => url)));
       if (requestedUserId && requestedUserConsumedRef.current !== requestedUserId) {
         const requestedIndex = groups.findIndex((group) => group.userId === requestedUserId);
@@ -333,6 +396,35 @@ export default function StoriesScreen() {
       setPrivacy("all_friends");
     } catch (err) {
       Alert.alert("No se pudo publicar", err instanceof Error ? err.message : "Inténtalo de nuevo.");
+    }
+  };
+
+  const publishTextStory = async () => {
+    const text = textDraft.trim();
+    if (!user || !text || isPublishingText) return;
+    setIsPublishingText(true);
+    try {
+      const { error } = await supabase.from("stories").insert({
+        user_id: user.id,
+        media_url: null,
+        media_type: "text",
+        text_content: text,
+        text_background_color: textBackgroundColor,
+        text_font_family: textFontFamily,
+        caption: null,
+        visibility: privacy === "public" ? "public" : "friends",
+        privacy,
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+      if (error) throw error;
+      setTextDraft("");
+      setShowTextCreator(false);
+      setPrivacy("all_friends");
+      await fetchStories();
+    } catch (err) {
+      Alert.alert("No se pudo publicar", err instanceof Error ? err.message : "Inténtalo de nuevo.");
+    } finally {
+      setIsPublishingText(false);
     }
   };
 
@@ -486,49 +578,56 @@ export default function StoriesScreen() {
     ]);
   };
 
+  const activeGroup = activeGroupIndex !== null ? groupedStories[activeGroupIndex] : null;
+  const activeStory = activeGroup ? activeGroup.stories[activeStoryIndex] : null;
+  const advanceActiveStory = useCallback(() => {
+    if (activeGroupIndex === null) return;
+    if (activeStoryIndex < (activeGroup?.stories.length ?? 0) - 1) {
+      setActiveStoryIndex((index) => index + 1);
+      setProgressTimer(0);
+    } else if (activeGroupIndex < groupedStories.length - 1) {
+      setActiveGroupIndex((index) => (index !== null ? index + 1 : null));
+      setActiveStoryIndex(0);
+      setProgressTimer(0);
+    } else {
+      setActiveGroupIndex(null);
+      setProgressTimer(0);
+    }
+  }, [activeGroup?.stories.length, activeGroupIndex, activeStoryIndex, groupedStories.length]);
+
   // Viewer timer logic
   useEffect(() => {
-    if (activeGroupIndex === null || isPaused || showViewers) return;
+    if (activeGroupIndex === null || isPaused || showViewers || activeStory?.media_type === "video") return;
     const interval = setInterval(() => {
       if (showViewers) return;
       setProgressTimer((prev) => {
         if (prev >= 1) {
-          // Advance story
-          const group = groupedStories[activeGroupIndex];
-          if (group && activeStoryIndex < group.stories.length - 1) {
-            setActiveStoryIndex((i) => i + 1);
-            return 0;
-          } else {
-            // Close viewer or advance group
-            if (activeGroupIndex < groupedStories.length - 1) {
-              setActiveGroupIndex((g) => (g !== null ? g + 1 : null));
-              setActiveStoryIndex(0);
-              return 0;
-            } else {
-              setActiveGroupIndex(null);
-              return 0;
-            }
-          }
+          advanceActiveStory();
+          return 0;
         }
         return prev + 0.02; // ~5 seconds per story item
       });
     }, 100);
     return () => clearInterval(interval);
-  }, [activeGroupIndex, activeStoryIndex, groupedStories, isPaused, showViewers]);
-
-  const activeGroup = activeGroupIndex !== null ? groupedStories[activeGroupIndex] : null;
-  const activeStory = activeGroup ? activeGroup.stories[activeStoryIndex] : null;
+  }, [activeGroupIndex, activeStory?.media_type, advanceActiveStory, isPaused, showViewers]);
 
   useEffect(() => {
     const storyId = activeStory?.id;
     if (!storyId) return;
     setShowViewers(false);
     setIsStoryMediaLoading(activeStory.media_type === "video");
+    setVideoMuted(false);
+    videoAdvancedStoryRef.current = null;
     if (activeStory.media_type === "image") {
-      void RNImage.prefetch(activeStory.media_url).finally(() => setIsStoryMediaLoading(false));
+      if (activeStory.media_url) void RNImage.prefetch(activeStory.media_url).finally(() => setIsStoryMediaLoading(false));
+    } else if (activeStory.media_type === "text") {
+      setIsStoryMediaLoading(false);
     }
     void loadReaction(storyId);
-    if (activeGroup && !activeGroup.isSelf) void recordStoryView(storyId);
+    if (activeGroup && !activeGroup.isSelf) {
+      setViewedStoryIds((current) => new Set(current).add(storyId));
+      void recordStoryView(storyId);
+    }
     void loadViewerCount(storyId);
   }, [activeStory, activeGroup, loadReaction, recordStoryView, loadViewerCount]);
 
@@ -543,6 +642,15 @@ export default function StoriesScreen() {
       Animated.timing(profileTransition, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     });
   };
+
+  const handleVideoTimeUpdate = useCallback((currentTime: number, duration: number) => {
+    if (!activeStory || activeStory.media_type !== "video" || !duration || !Number.isFinite(duration)) return;
+    setProgressTimer(Math.min(1, Math.max(0, currentTime / duration)));
+    if (currentTime >= duration - 0.15 && videoAdvancedStoryRef.current !== activeStory.id) {
+      videoAdvancedStoryRef.current = activeStory.id;
+      advanceActiveStory();
+    }
+  }, [activeStory, advanceActiveStory]);
 
   const handleViewerTouchStart = (event: { nativeEvent: { pageX: number; pageY: number } }) => {
     setIsPaused(true);
@@ -582,6 +690,17 @@ export default function StoriesScreen() {
     return () => { void supabase.removeChannel(channel); };
   }, [activeStory?.id, loadViewerCount, user]);
 
+  const renderFriendGroup = (group: GroupedStoryUser, muted = false) => {
+    const realIndex = groupedStories.findIndex((candidate) => candidate.userId === group.userId);
+    return <Pressable key={group.userId} onPress={() => { setActiveGroupIndex(realIndex); setActiveStoryIndex(0); setProgressTimer(0); }} className="flex-row items-center justify-between rounded-2xl border p-3.5 shadow-sm" style={{ backgroundColor: colors.surface, borderColor: `${colors.border}AA`, opacity: muted ? 0.62 : 1 }}>
+      <View className="flex-row items-center gap-3">
+        <SegmentedStoryRing stories={group.stories} avatarUrl={group.avatarUrl} colors={colors} viewedStoryIds={viewedStoryIds} />
+        <View><Text className="text-base font-bold text-foreground">{group.userName}</Text><Text className="text-xs text-muted">{group.stories.length} estado{group.stories.length === 1 ? "" : "s"}</Text></View>
+      </View>
+      <IconSymbol name="chevron.right" size={18} color={colors.muted} />
+    </Pressable>;
+  };
+
   return (
     <ScreenContainer className="px-5 pt-3">
       <ScrollView contentContainerStyle={{ paddingBottom: 48 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} colors={[colors.primary]} />}>
@@ -606,17 +725,16 @@ export default function StoriesScreen() {
               className="flex-row items-center justify-between"
             >
               <View className="flex-row items-center gap-3">
-                <View className="relative h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2" style={{ borderColor: colors.primary, borderRadius: 28 }}>
-                  <ExpoImage source={{ uri: groupedStories.find((g) => g.isSelf)?.stories[0]?.media_url }} style={{ width: 52, height: 52, borderRadius: 26 }} contentFit="cover" cachePolicy="memory-disk" />
-                </View>
+                <SegmentedStoryRing stories={groupedStories.find((g) => g.isSelf)?.stories ?? []} avatarUrl={groupedStories.find((g) => g.isSelf)?.avatarUrl ?? null} colors={colors} viewedStoryIds={viewedStoryIds} />
                 <View>
                   <Text className="text-base font-bold text-foreground">Mi estado</Text>
                   <Text className="text-xs text-muted">Pulsa para ver tus estados activos</Text>
                 </View>
               </View>
-              <Pressable onPress={pickMedia} accessibilityRole="button" accessibilityLabel="Añadir un estado" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}>
-                <IconSymbol name="plus" size={20} color="#FFFFFF" />
-              </Pressable>
+              <View className="flex-row items-center gap-2">
+                <Pressable onPress={() => setShowTextCreator(true)} accessibilityRole="button" accessibilityLabel="Crear estado de texto" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.background }}><IconSymbol name="pencil" size={19} color={colors.primary} /></Pressable>
+                <Pressable onPress={pickMedia} accessibilityRole="button" accessibilityLabel="Añadir un estado" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}><IconSymbol name="plus" size={20} color="#FFFFFF" /></Pressable>
+              </View>
             </Pressable>
           ) : (
             <Pressable onPress={pickMedia} className="flex-row items-center justify-between">
@@ -629,8 +747,9 @@ export default function StoriesScreen() {
                   <Text className="text-xs text-muted">Comparte una foto o vídeo por 24 horas</Text>
                 </View>
               </View>
-              <View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}>
-                <IconSymbol name="plus" size={20} color="#FFFFFF" />
+              <View className="flex-row items-center gap-2">
+                <Pressable onPress={() => setShowTextCreator(true)} accessibilityRole="button" accessibilityLabel="Crear estado de texto" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.background }}><IconSymbol name="pencil" size={19} color={colors.primary} /></Pressable>
+                <Pressable onPress={pickMedia} accessibilityRole="button" accessibilityLabel="Añadir un estado" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}><IconSymbol name="plus" size={20} color="#FFFFFF" /></Pressable>
               </View>
             </Pressable>
           )}
@@ -662,60 +781,45 @@ export default function StoriesScreen() {
             <Text className="text-sm font-medium text-muted text-center">No hay estados recientes de tus amigos.</Text>
           </View>
         ) : (
-          <View className="gap-3">
-            {friendGroups.map((group, groupIdx) => {
-              const realIndex = groupedStories.findIndex((g) => g.userId === group.userId);
-              return (
-                <Pressable
-                  key={group.userId}
-                  onPress={() => {
-                    setActiveGroupIndex(realIndex);
-                    setActiveStoryIndex(0);
-                    setProgressTimer(0);
-                  }}
-                  className="flex-row items-center justify-between rounded-2xl border p-3.5 shadow-sm"
-                  style={{ backgroundColor: colors.surface, borderColor: `${colors.border}AA` }}
-                >
-                  <View className="flex-row items-center gap-3">
-                    <View className="relative h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 p-0.5" style={{ borderColor: colors.primary, borderRadius: 28 }}>
-                      {group.avatarUrl ? (
-                        <ExpoImage source={{ uri: group.avatarUrl }} style={{ width: 52, height: 52, borderRadius: 26 }} contentFit="cover" cachePolicy="memory-disk" />
-                      ) : (
-                        <View className="h-full w-full items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}>
-                          <Text className="text-lg font-bold text-white">{group.userName[0]?.toUpperCase() ?? "?"}</Text>
-                        </View>
-                      )}
-                    </View>
-                    <View>
-                      <Text className="text-base font-bold text-foreground">{group.userName}</Text>
-                      <Text className="text-xs text-muted">{group.stories.length} estado{group.stories.length === 1 ? "" : "s"}</Text>
-                    </View>
-                  </View>
-                  <IconSymbol name="chevron.right" size={18} color={colors.muted} />
-                </Pressable>
-              );
-            })}
+          <View className="gap-5">
+            <View className="gap-3">
+              <Text className="text-xs font-bold uppercase tracking-wider text-muted">Actualizaciones recientes</Text>
+              {recentFriendGroups.length ? recentFriendGroups.map((group) => renderFriendGroup(group)) : <Text className="text-sm text-muted">Ya viste todas las actualizaciones nuevas.</Text>}
+            </View>
+            {viewedFriendGroups.length ? <View className="gap-3"><Text className="text-xs font-bold uppercase tracking-wider text-muted">Vistos</Text>{viewedFriendGroups.map((group) => renderFriendGroup(group, true))}</View> : null}
           </View>
         )}
       </ScrollView>
 
+      <Modal visible={showTextCreator} animationType="fade" presentationStyle="fullScreen" onRequestClose={() => setShowTextCreator(false)}>
+        <View className="flex-1" style={{ backgroundColor: textBackgroundColor, paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 16) }}>
+          <View className="flex-row items-center justify-between px-5">
+            <Pressable onPress={() => setShowTextCreator(false)} accessibilityRole="button" accessibilityLabel="Volver" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}><IconSymbol name="chevron.left" size={24} color="#FFFFFF" /></Pressable>
+            <View className="flex-row items-center gap-2">
+              <Pressable onPress={() => setTextFontFamily((current) => TEXT_STORY_FONTS[(TEXT_STORY_FONTS.indexOf(current) + 1) % TEXT_STORY_FONTS.length])} accessibilityRole="button" accessibilityLabel="Cambiar tipografía" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: "rgba(0,0,0,0.22)" }}><Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 18 }}>T</Text></Pressable>
+              <Pressable onPress={() => setTextBackgroundColor((current) => TEXT_STORY_BACKGROUNDS[(TEXT_STORY_BACKGROUNDS.indexOf(current) + 1) % TEXT_STORY_BACKGROUNDS.length])} accessibilityRole="button" accessibilityLabel="Cambiar color de fondo" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: "rgba(0,0,0,0.22)" }}><IconSymbol name="photo.fill" size={19} color="#FFFFFF" /></Pressable>
+            </View>
+          </View>
+          <View className="flex-1 items-center justify-center px-8">
+            <TextInput value={textDraft} onChangeText={setTextDraft} maxLength={500} multiline autoFocus placeholder="Escribe un estado…" placeholderTextColor="rgba(255,255,255,0.65)" style={{ width: "100%", color: "#FFFFFF", fontFamily: textFontFamily, fontSize: 30, fontWeight: "800", textAlign: "center", maxHeight: 220 }} />
+          </View>
+          <View className="items-end px-6"><Pressable onPress={() => void publishTextStory()} disabled={!textDraft.trim() || isPublishingText} accessibilityRole="button" accessibilityLabel="Publicar estado de texto" style={{ width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", backgroundColor: "#17120E", opacity: textDraft.trim() && !isPublishingText ? 1 : 0.5 }}><IconSymbol name="paperplane.fill" size={22} color="#FFFFFF" /></Pressable></View>
+        </View>
+      </Modal>
+
       {/* Modal Compositor / Previsualización antes de publicar */}
-      <Modal visible={Boolean(selectedMedia)} animationType="slide" presentationStyle="fullScreen">
-        <View className="flex-1" style={{ backgroundColor: colors.surface }}>
-          <View className="flex-1 p-6" style={{ backgroundColor: colors.surface }}>
-            <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-lg font-bold text-foreground">Nuevo Estado</Text>
-              <Pressable onPress={() => setSelectedMedia(null)} accessibilityRole="button" accessibilityLabel="Cerrar nuevo estado" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
-                <IconSymbol name="xmark.circle.fill" size={24} color={colors.muted} />
+      <Modal visible={Boolean(selectedMedia)} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setSelectedMedia(null)}>
+        <View className="flex-1" style={{ backgroundColor: colors.surface, paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 16) }}>
+          <View className="flex-1 px-5" style={{ backgroundColor: colors.surface }}>
+            <View className="mb-3 flex-row items-center gap-3">
+              <Pressable onPress={() => setSelectedMedia(null)} accessibilityRole="button" accessibilityLabel="Volver" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
+                <IconSymbol name="chevron.left" size={24} color={colors.foreground} />
               </Pressable>
+              <Text className="text-lg font-bold text-foreground">Nuevo Estado</Text>
             </View>
 
-            <View className="h-64 w-full overflow-hidden rounded-2xl bg-black mb-4">
-              {selectedMedia?.type === "image" ? (
-                <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} className="h-full w-full" contentFit="contain" cachePolicy="memory-disk" />
-              ) : (
-                <Text className="text-white text-center m-auto">Vídeo seleccionado</Text>
-              )}
+            <View className="mb-4 flex-1 w-full overflow-hidden rounded-2xl bg-black">
+              {selectedMedia?.type === "image" ? <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} className="h-full w-full" contentFit="contain" cachePolicy="memory-disk" /> : selectedMedia ? <PreviewVideo uri={selectedMedia.uri} /> : null}
             </View>
 
             <TextInput
@@ -769,6 +873,7 @@ export default function StoriesScreen() {
       <Modal visible={activeGroup !== null && activeStory !== null} animationType="fade" transparent onRequestClose={() => setActiveGroupIndex(null)}>
         {activeGroup && activeStory ? (
           <Animated.View onTouchStart={handleViewerTouchStart} onTouchEnd={handleViewerTouchEnd} onTouchCancel={handleViewerTouchEnd} style={[{ flex: 1, position: "relative", backgroundColor: "#000000" }, { transform: [{ perspective: 900 }, { rotateY: profileTransition.interpolate({ inputRange: [-1, 0, 1], outputRange: ["-90deg", "0deg", "90deg"] }) }] }]}>
+            <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0.72)", "rgba(0,0,0,0)"]} locations={[0, 1]} style={{ position: "absolute", top: 0, left: 0, right: 0, height: 170, zIndex: 2 }} />
             {!isChromeHidden ? <View pointerEvents="none" style={{ position: "absolute", top: Math.max(insets.top, 12), left: 12, right: 12, zIndex: 3, flexDirection: "row", gap: 5 }}>
               {activeGroup.stories.map((story, index) => {
                 const isPassed = index < activeStoryIndex;
@@ -796,6 +901,7 @@ export default function StoriesScreen() {
                 </View>
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                {activeStory.media_type === "video" ? <Pressable onPress={() => setVideoMuted((muted) => !muted)} hitSlop={8} accessibilityRole="button" accessibilityLabel={videoMuted ? "Activar sonido" : "Silenciar vídeo"} style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}><IconSymbol name={videoMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"} size={20} color="#FFFFFF" /></Pressable> : null}
                 {activeGroup.isSelf ? (
                   <Pressable onPress={() => void deleteStory(activeStory.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Eliminar estado" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
                     <IconSymbol name="trash.fill" size={20} color="#FF6B6B" />
@@ -805,7 +911,7 @@ export default function StoriesScreen() {
             </View> : null}
 
             <View pointerEvents="none" style={{ position: "absolute", inset: 0, zIndex: 1, alignItems: "center", justifyContent: "center" }}>
-              {activeStory.media_type === "video" ? <StoryVideo key={`story-video-${activeStory.id}`} uri={activeStory.media_url} onReady={() => setIsStoryMediaLoading(false)} /> : <ExpoImage source={{ uri: activeStory.media_url }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" transition={120} onLoad={() => setIsStoryMediaLoading(false)} onError={() => setIsStoryMediaLoading(false)} />}
+              {activeStory.media_type === "video" && activeStory.media_url ? <StoryVideo key={`story-video-${activeStory.id}`} uri={activeStory.media_url} muted={videoMuted} paused={isPaused || showViewers} onReady={() => setIsStoryMediaLoading(false)} onTimeUpdate={handleVideoTimeUpdate} /> : activeStory.media_type === "text" ? <View style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: activeStory.text_background_color || colors.primary }}><Text style={{ color: "#FFFFFF", fontFamily: activeStory.text_font_family || "System", fontSize: 30, fontWeight: "800", textAlign: "center" }}>{activeStory.text_content}</Text></View> : activeStory.media_url ? <ExpoImage source={{ uri: activeStory.media_url }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" transition={120} onLoad={() => setIsStoryMediaLoading(false)} onError={() => setIsStoryMediaLoading(false)} /> : null}
               {isStoryMediaLoading ? <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.22)" }}><View style={{ width: "72%", height: "58%", borderRadius: 18, backgroundColor: "rgba(255,255,255,0.08)" }} /><ActivityIndicator color="#FFFFFF" size="large" style={{ position: "absolute" }} /></View> : null}
             </View>
 
@@ -853,7 +959,7 @@ export default function StoriesScreen() {
               />
             </View>
 
-            <View style={{ position: "absolute", left: 16, right: 16, bottom: Math.max(insets.bottom + 12, 28), zIndex: 4 }}>
+            {!isChromeHidden ? <View style={{ position: "absolute", left: 16, right: 16, bottom: Math.max(insets.bottom + 12, 28), zIndex: 4 }}>
               {activeStory.caption ? <Text style={{ marginBottom: 12, paddingHorizontal: 14, color: "#FFFFFF", textAlign: "center", fontSize: 14, fontWeight: "600" }}>{activeStory.caption}</Text> : null}
               {activeGroup.isSelf ? (
                 <Pressable onPress={(event) => { stopEventPropagation(event); void loadViewers(activeStory.id); }} accessibilityRole="button" accessibilityLabel="Ver quién vio este estado" style={{ minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 24, paddingHorizontal: 18, backgroundColor: "rgba(0,0,0,0.68)" }}>
@@ -863,7 +969,7 @@ export default function StoriesScreen() {
               ) : (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <View style={{ flex: 1, minHeight: 46, flexDirection: "row", alignItems: "center", borderRadius: 24, paddingLeft: 14, paddingRight: 6, backgroundColor: "rgba(0,0,0,0.68)" }}>
-                    <TextInput value={storyReply} onChangeText={setStoryReply} placeholder="Responder" placeholderTextColor="rgba(255,255,255,0.65)" style={{ flex: 1, minHeight: 40, color: "#FFFFFF", fontSize: 14 }} returnKeyType="send" onSubmitEditing={() => void sendStoryReply()} />
+                    <TextInput value={storyReply} onChangeText={setStoryReply} placeholder="Responder" placeholderTextColor="rgba(255,255,255,0.65)" style={{ flex: 1, minHeight: 40, color: "#FFFFFF", fontSize: 14 }} returnKeyType="send" onFocus={() => setIsPaused(true)} onBlur={() => setIsPaused(false)} onSubmitEditing={() => void sendStoryReply()} />
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 1 }}>
                       {["😍", "😂", "😮"].map((emoji) => <Pressable key={emoji} onPress={(event) => { stopEventPropagation(event); void sendQuickReaction(emoji); }} hitSlop={5} style={{ padding: 5 }}><Text style={{ fontSize: 19 }}>{emoji}</Text></Pressable>)}
                     </View>
@@ -873,7 +979,7 @@ export default function StoriesScreen() {
                   </Pressable>
                 </View>
               )}
-            </View>
+            </View> : null}
           </Animated.View>
         ) : null}
       </Modal>
@@ -904,7 +1010,7 @@ export default function StoriesScreen() {
                   )}
                   <View className="flex-1">
                     <Text className="text-sm font-bold text-foreground">{viewer.name}</Text>
-                    <Text className="text-xs text-muted">Visto recientemente</Text>
+                    <Text className="text-xs text-muted">{formatStoryAge(viewer.viewed_at)}</Text>
                   </View>
                   <IconSymbol name="checkmark.circle.fill" size={18} color={colors.success} />
                 </View>

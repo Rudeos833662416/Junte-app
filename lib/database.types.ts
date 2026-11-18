@@ -355,7 +355,7 @@ export type Database = {
         Row: {
           id: number
           user_id: string
-          media_url: string
+          media_url: string | null
           media_type: string
           audio_url: string | null
           audio_name: string | null
@@ -368,11 +368,14 @@ export type Database = {
           music_source: string | null
           music_license_url: string | null
           privacy: string
+          text_content: string | null
+          text_background_color: string | null
+          text_font_family: string | null
         }
         Insert: {
           id?: number
           user_id: string
-          media_url: string
+          media_url?: string | null
           media_type?: string
           audio_url?: string | null
           audio_name?: string | null
@@ -385,11 +388,14 @@ export type Database = {
           music_source?: string | null
           music_license_url?: string | null
           privacy?: string
+          text_content?: string | null
+          text_background_color?: string | null
+          text_font_family?: string | null
         }
         Update: {
           id?: number
           user_id?: string
-          media_url?: string
+          media_url?: string | null
           media_type?: string
           audio_url?: string | null
           audio_name?: string | null
@@ -402,6 +408,9 @@ export type Database = {
           music_source?: string | null
           music_license_url?: string | null
           privacy?: string
+          text_content?: string | null
+          text_background_color?: string | null
+          text_font_family?: string | null
         }
         Relationships: []
       }

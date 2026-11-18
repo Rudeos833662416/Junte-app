@@ -44,6 +44,9 @@ const MAPPING = {
   "trash.fill": "delete",
   "xmark": "close",
   "eye": "visibility",
+  "chevron.left": "chevron-left",
+  "speaker.wave.2.fill": "volume-up",
+  "speaker.slash.fill": "volume-off",
 } as IconMapping;
 
 /**
