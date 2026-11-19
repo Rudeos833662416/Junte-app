@@ -46,7 +46,7 @@ export const unstable_settings = {
 async function prefetchNotificationChat(peerId: string, userId: string) {
   const { data, error } = await supabase
     .from("direct_messages")
-    .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, duration_ms")
+    .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, duration_ms, reply_to_message_id")
     .or(`and(sender_id.eq.${userId},recipient_id.eq.${peerId}),and(sender_id.eq.${peerId},recipient_id.eq.${userId})`)
     .order("created_at", { ascending: false })
     .limit(100);
@@ -207,8 +207,6 @@ function AuthGate() {
           return;
         }
 
-        // El toque normal sobre una solicitud no debe dejar al usuario en Amigos:
-        // lleva directamente al perfil de quien envió la solicitud.
         if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
           const route = routeForNotification(data);
           if (route && data.senderId && (data.screen === "chat" || data.directMessageId)) {
@@ -285,7 +283,7 @@ function AuthGate() {
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-background">
         <ActivityIndicator size="large" />
-        <Text className="text-sm text-muted">Comprobando tu sesión…</Text>
+        <Text className="text-sm text-muted">Comprobando tu sesi\u00f3n\u2026</Text>
       </View>
     );
   }
@@ -298,6 +296,13 @@ function AuthGate() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="oauth/callback" />
           <Stack.Screen name="auth/callback" />
+          <Stack.Screen
+            name="chat/[id]"
+            options={{
+              animation: Platform.OS === "android" ? "fade" : "default",
+              headerShown: false,
+            }}
+          />
         </Stack>
         {user ? <PermissionsOnboarding /> : null}
       </>
