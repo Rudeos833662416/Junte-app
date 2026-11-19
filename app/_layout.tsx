@@ -33,6 +33,8 @@ import {
 import { PermissionsOnboarding } from "@/components/permissions-onboarding";
 import { StoryUploadQueueProvider } from "@/lib/story-upload-queue";
 import { notificationResponseKey, routeForNotification } from "@/lib/notification-routing";
+import { setCachedConversation, type CachedChatMessage } from "@/lib/chat-store";
+import { supabase } from "@/lib/supabase";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -40,6 +42,16 @@ const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
 export const unstable_settings = {
   anchor: "(tabs)",
 };
+
+async function prefetchNotificationChat(peerId: string, userId: string) {
+  const { data, error } = await supabase
+    .from("direct_messages")
+    .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, duration_ms")
+    .or(`and(sender_id.eq.${userId},recipient_id.eq.${peerId}),and(sender_id.eq.${peerId},recipient_id.eq.${userId})`)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (!error && data) setCachedConversation(peerId, data as CachedChatMessage[]);
+}
 
 export default function RootLayout() {
   const initialInsets = initialWindowMetrics?.insets ?? DEFAULT_WEB_INSETS;
@@ -193,7 +205,9 @@ function AuthGate() {
         // lleva directamente al perfil de quien envió la solicitud.
         if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
           const route = routeForNotification(data);
-          if (route) router.push(route as never);
+          if (route && data.senderId && (data.screen === "chat" || data.directMessageId)) {
+            void prefetchNotificationChat(data.senderId, user.id).finally(() => router.push(route as never));
+          } else if (route) router.push(route as never);
           return;
         }
 
@@ -230,6 +244,7 @@ function AuthGate() {
             if (!edge.ok) {
               await sendDirectMessage(user.id, data.senderId!, body, clientMessageId);
             }
+            await prefetchNotificationChat(data.senderId!, user.id);
           })();
         }
 

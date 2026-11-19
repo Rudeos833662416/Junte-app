@@ -13,7 +13,7 @@ Estado verificado en Supabase durante esta revisión:
 - Elementos en procesamiento: **0**.
 - Elementos fallidos: **0**.
 - Elementos despachados históricamente: **170**.
-- Edge Function `notify-activity`: activa, versión 54.
+- Edge Function `notify-activity`: activa, versión 55.
 - Edge Function `notification-action`: activa, versión 12.
 
 ## 2. Flujo completo, de principio a fin
@@ -172,7 +172,7 @@ Se genera cuando un usuario publica un Estado vigente y visible para sus amigos.
 
 **Texto:** `Nombre acaba de subir una historia nueva`.
 
-**Al tocar la alerta:** abre Estados con el identificador del Estado y del usuario que lo publicó.
+**Al tocar la alerta:** abre Amigos en la subpestaña Estados con el identificador del Estado y del usuario que lo publicó.
 
 La actividad se deduplica por Estado y destinatario.
 
