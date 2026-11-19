@@ -18,6 +18,7 @@ export type StoryItem = {
   text_font_family?: string | null;
   trim_start_sec?: number | null;
   trim_end_sec?: number | null;
+  is_muted?: boolean | null;
   isOptimistic?: boolean;
 };
 
