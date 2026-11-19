@@ -189,7 +189,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const { jobs, enqueue, retry } = useStoryUploadQueue();
-  const userUploadJobs = useMemo(() => Object.values(jobs).filter((job) => job.userId === user?.id), [jobs, user?.id]);
+  const userUploadJobs = useMemo(() => jobs.filter((job) => job.userId === user?.id), [jobs, user?.id]);
   const activeUpload = userUploadJobs.find((job) => job.status === "queued" || job.status === "uploading");
   const failedUpload = userUploadJobs.find((job) => job.status === "failed");
   const isUploading = Boolean(activeUpload);
@@ -504,6 +504,31 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = null;
   }, []);
+
+  const openStoryPicker = () => {
+    Alert.alert("Añadir estado", undefined, [
+      { text: "Galería (Foto o Vídeo)", onPress: () => void pickMedia() },
+      {
+        text: "Cámara",
+        onPress: async () => {
+          try {
+            const perm = await ImagePicker.requestCameraPermissionsAsync();
+            if (!perm.granted) { Alert.alert("Permiso requerido", "Necesitamos acceso a la cámara."); return; }
+            const res = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.All, quality: 0.78, videoMaxDuration: 600 });
+            if (res.canceled || !res.assets[0]) return;
+            const a = res.assets[0];
+            if (a.type === "video") {
+              const d = a.duration ?? 90_000;
+              setVideoEditor({ uri: a.uri, durationMs: d, fileSizeBytes: a.fileSize ?? 0, autoTrimBanner: d > MAX_STORY_DURATION_SECONDS * 1000 });
+              return;
+            }
+            setSelectedMedia({ uri: a.uri, mimeType: a.mimeType ?? "image/jpeg", type: "image", name: a.fileName ?? `story_${Date.now()}.jpg` });
+          } catch { Alert.alert("Error", "No se pudo abrir la cámara."); }
+        },
+      },
+      { text: "Cancelar", style: "cancel" },
+    ]);
+  };
 
   const pickMedia = async () => {
     try {
@@ -978,11 +1003,11 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
               </View>
               <View className="flex-row items-center gap-2">
                 <Pressable onPress={() => setShowTextCreator(true)} accessibilityRole="button" accessibilityLabel="Crear estado de texto" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.background }}><IconSymbol name="pencil" size={19} color={colors.primary} /></Pressable>
-                <Pressable onPress={pickMedia} accessibilityRole="button" accessibilityLabel="Añadir un estado" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}><IconSymbol name="plus" size={20} color="#FFFFFF" /></Pressable>
+                <Pressable onPress={openStoryPicker} accessibilityRole="button" accessibilityLabel="Añadir un estado" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}><IconSymbol name="plus" size={20} color="#FFFFFF" /></Pressable>
               </View>
             </Pressable>
           ) : (
-            <Pressable onPress={pickMedia} className="flex-row items-center justify-between">
+            <Pressable onPress={openStoryPicker} className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-3">
                 <View className="h-14 w-14 items-center justify-center rounded-full border-2 border-dashed" style={{ borderColor: colors.primary, backgroundColor: `${colors.primary}12` }}>
                   <IconSymbol name="camera.fill" size={24} color={colors.primary} />
@@ -994,7 +1019,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
               </View>
               <View className="flex-row items-center gap-2">
                 <Pressable onPress={() => setShowTextCreator(true)} accessibilityRole="button" accessibilityLabel="Crear estado de texto" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.background }}><IconSymbol name="pencil" size={19} color={colors.primary} /></Pressable>
-                <Pressable onPress={pickMedia} accessibilityRole="button" accessibilityLabel="Añadir un estado" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}><IconSymbol name="plus" size={20} color="#FFFFFF" /></Pressable>
+                <Pressable onPress={openStoryPicker} accessibilityRole="button" accessibilityLabel="Añadir un estado" className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}><IconSymbol name="plus" size={20} color="#FFFFFF" /></Pressable>
               </View>
             </Pressable>
           )}

@@ -1208,7 +1208,8 @@ export function EventsScreen() {
       </Modal>
 
       <Modal visible={Boolean(fullVideo)} animationType="fade" onRequestClose={() => setFullVideo(null)}>
-        <View style={{ flex: 1, backgroundColor: "#000", justifyContent: "center" }}>
+        <View style={{ flex: 1, backgroundColor: "#000", justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator size="large" color="#FFFFFF" style={{ position: "absolute" }} />
           {fullVideo ? (
             <OfficialVideo
               uri={fullVideo}

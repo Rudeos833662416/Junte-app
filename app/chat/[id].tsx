@@ -5,6 +5,7 @@ import {
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   Text,
@@ -112,6 +113,7 @@ export default function ChatScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isMountedRef = useRef(true);
   const isRecordingRef = useRef(false);
+  const isStartingRecordingRef = useRef(false);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 250);
   const audioPlayer = useAudioPlayer();
@@ -353,19 +355,19 @@ export default function ChatScreen() {
       }
       return;
     }
+    if (isStartingRecordingRef.current) return;
     const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Permiso de micrófono", "Activa el micrófono en los ajustes de Android para grabar notas de voz.");
-      return;
-    }
+    if (!permission.granted) { Alert.alert("Permiso de micrófono", "Activa el micrófono en los ajustes para grabar notas de voz."); return; }
+    isStartingRecordingRef.current = true;
     try {
+      try { await recorder.stop(); } catch {}
       await recorder.prepareToRecordAsync();
       recorder.record();
       isRecordingRef.current = true;
-    } catch (error) {
+    } catch {
       isRecordingRef.current = false;
-      Alert.alert("No se pudo grabar", error instanceof Error ? error.message : "El micrófono no está disponible.");
-    }
+      Alert.alert("No se pudo grabar", "El micrófono no está disponible. Inténtalo de nuevo.");
+    } finally { isStartingRecordingRef.current = false; }
   };
 
   useEffect(() => {
@@ -568,7 +570,7 @@ export default function ChatScreen() {
                           accessibilityLabel={item.kind === "video" ? "Ver vídeo" : "Ver foto"}
                         >
                           <View style={{ position: "relative" }}>
-                            <Image source={{ uri: item.media_url ?? undefined }} style={{ width: 220, height: 220, borderRadius: 14, backgroundColor: "#00000022" }} contentFit="cover" cachePolicy="disk" />
+                            <Image source={{ uri: item.media_url ?? undefined }} style={{ width: 240, maxHeight: 300, minHeight: 160, borderRadius: 14, backgroundColor: "#00000022" }} contentFit="contain" cachePolicy="disk" />
                             {item.kind === "video" ? (
                               <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}>
                                 <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#00000088", alignItems: "center", justifyContent: "center" }}>
@@ -632,35 +634,17 @@ export default function ChatScreen() {
             </Text>
           ) : null}
           {chatMedia.pending ? (
-            <View className="mb-2 rounded-2xl border p-3" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
-              <View className="flex-row items-center gap-3">
-                <Image source={{ uri: chatMedia.pending.uri }} style={{ width: 72, height: 72, borderRadius: 12 }} contentFit="cover" cachePolicy="disk" />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: colors.primary, fontSize: 11, fontWeight: "800" }}>
-                    {chatMedia.pending.kind === "video" ? "Vídeo listo para enviar" : "Foto lista para enviar"}
-                  </Text>
-                  <TextInput
-                    value={chatMedia.caption}
-                    onChangeText={chatMedia.setCaption}
-                    placeholder="Añade un comentario…"
-                    placeholderTextColor={colors.muted}
-                    style={{ marginTop: 4, borderBottomWidth: 1, borderBottomColor: colors.border, color: colors.foreground, paddingVertical: 4 }}
-                  />
+            <Modal visible animationType="slide" onRequestClose={chatMedia.clearPending}>
+              <View style={{ flex: 1, backgroundColor: "#0A0A0A", paddingTop: insets.top + 8, paddingBottom: Math.max(insets.bottom, 8) + (keyboardHeight > 0 ? keyboardHeight : 0) }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingVertical: 8 }}>
+                  <Pressable onPress={chatMedia.clearPending} disabled={chatMedia.uploading} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}><MaterialIcons name="close" size={28} color="#FFFFFF" /></Pressable>
+                  <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 15 }}>{chatMedia.pending.kind === "video" ? "Enviar vídeo" : "Enviar foto"}</Text>
+                  <Pressable onPress={() => void sendPendingMedia()} disabled={chatMedia.uploading} style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.primary, opacity: chatMedia.uploading ? 0.6 : 1 }}><Text style={{ color: colors.background, fontWeight: "800", fontSize: 14 }}>{chatMedia.uploading ? "Enviando…" : "Enviar"}</Text></Pressable>
                 </View>
+                <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}><Image source={{ uri: chatMedia.pending.uri }} style={{ width: "100%", height: "85%" }} contentFit="contain" cachePolicy="disk" /></View>
+                <TextInput value={chatMedia.caption} onChangeText={chatMedia.setCaption} placeholder="Añade un comentario…" placeholderTextColor="#9CA3AF" style={{ margin: 16, color: "#FFFFFF", backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12, fontSize: 15 }} />
               </View>
-              <View className="mt-3 flex-row justify-end gap-3">
-                <Pressable onPress={chatMedia.clearPending} disabled={chatMedia.uploading} style={{ minHeight: 36, paddingHorizontal: 12, justifyContent: "center" }}>
-                  <Text style={{ color: colors.muted, fontWeight: "600" }}>Cancelar</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => void sendPendingMedia()}
-                  disabled={chatMedia.uploading}
-                  style={{ minHeight: 36, paddingHorizontal: 16, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", opacity: chatMedia.uploading ? 0.6 : 1 }}
-                >
-                  <Text style={{ color: colors.background, fontWeight: "800" }}>{chatMedia.uploading ? "Enviando…" : "Enviar"}</Text>
-                </Pressable>
-              </View>
-            </View>
+            </Modal>
           ) : null}
           <View className="flex-row items-end gap-2">
             <Pressable
