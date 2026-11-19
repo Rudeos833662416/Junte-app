@@ -29,7 +29,9 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio";
-import { resolveCachedChatAudio, uploadUriToStorage } from "@/lib/media-upload";
+import { resolveCachedChatAudio, resolveCachedChatMedia, uploadUriToStorage } from "@/lib/media-upload";
+import { useChatMedia } from "@/hooks/use-chat-media";
+import { ChatMediaViewer } from "@/components/chat-media-viewer";
 import {
   formatChatDateLabel,
   getCachedConversation,
@@ -55,6 +57,9 @@ type Message = {
   kind?: string;
   audio_path?: string | null;
   audio_url?: string | null;
+  media_path?: string | null;
+  media_type?: string | null;
+  media_url?: string | null;
   duration_ms?: number | null;
   reply_to_message_id?: string | null;
   reply_to_body?: string | null;
@@ -65,6 +70,12 @@ async function withSignedAudioUrl(message: Message) {
   if (!message.audio_path || message.audio_url) return message;
   const localOrSigned = await resolveCachedChatAudio(message.audio_path);
   return { ...message, audio_url: localOrSigned };
+}
+
+async function withSignedMediaUrl(message: Message) {
+  if (!message.media_path || message.media_url) return message;
+  const url = await resolveCachedChatMedia(message.media_path);
+  return { ...message, media_url: url };
 }
 
 function newClientMessageId() {
@@ -96,6 +107,8 @@ export default function ChatScreen() {
   const [voiceSending, setVoiceSending] = useState(false);
   const [playingAudioPath, setPlayingAudioPath] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  const chatMedia = useChatMedia();
+  const [viewer, setViewer] = useState<{ uri: string; kind: "image" | "video" } | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isMountedRef = useRef(true);
   const isRecordingRef = useRef(false);
@@ -163,11 +176,11 @@ export default function ChatScreen() {
     try {
       const { data, error } = await supabase
         .from("direct_messages")
-        .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, duration_ms, reply_to_message_id")
+        .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id")
         .or(`and(sender_id.eq.${user.id},recipient_id.eq.${otherId}),and(sender_id.eq.${otherId},recipient_id.eq.${user.id})`)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      const confirmed = await Promise.all((data ?? []).map((row) => withSignedAudioUrl(row as Message)));
+      const confirmed = await Promise.all((data ?? []).map(async (row) => withSignedMediaUrl(await withSignedAudioUrl(row as Message))));
       const withReplies = confirmed.map((msg) => {
         if (!msg.reply_to_message_id) return msg;
         const parent = confirmed.find((m) => m.id === msg.reply_to_message_id);
@@ -204,7 +217,7 @@ export default function ChatScreen() {
     if (!user || !otherId) return;
     const channel = supabase.channel(`direct-messages-${user.id}-${otherId}`);
     const upsertRow = async (row: Message) => {
-      const hydrated = await withSignedAudioUrl(row);
+      const hydrated = await withSignedMediaUrl(await withSignedAudioUrl(row));
       setMessages((current) => {
         const next = mergeCachedMessage(current, { ...hydrated, pending: false });
         setCachedConversation(otherId, next);
@@ -323,7 +336,7 @@ export default function ChatScreen() {
             audio_path: audioPath,
             duration_ms: Math.max(0, Math.round(durationMs)),
           })
-          .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, duration_ms, reply_to_message_id")
+          .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id")
           .single();
         if (error) throw error;
         if (data) {
@@ -375,6 +388,40 @@ export default function ChatScreen() {
     };
   }, [recorder, audioPlayer]);
 
+  const sendPendingMedia = async () => {
+    if (!user || !otherId || !chatMedia.pending) return;
+    const clientMessageId = newClientMessageId();
+    const fields = await chatMedia.uploadAndBuildFields(user.id, otherId, clientMessageId);
+    if (!fields) return;
+    const { data, error } = await supabase
+      .from("direct_messages")
+      .insert({
+        sender_id: user.id,
+        recipient_id: otherId,
+        body: fields.body || "",
+        kind: fields.kind,
+        media_path: fields.media_path,
+        media_type: fields.media_type,
+        duration_ms: fields.duration_ms,
+        client_message_id: clientMessageId,
+        reply_to_message_id: replyTarget?.id ?? null,
+      })
+      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id")
+      .single();
+    if (!error && data) {
+      const hydrated = await withSignedMediaUrl(data as Message);
+      setMessages((c) => {
+        const next = mergeCachedMessage(c, hydrated);
+        setCachedConversation(otherId, next);
+        return next as Message[];
+      });
+      setReplyTarget(null);
+      chatMedia.clearPending();
+    } else if (error) {
+      Alert.alert("No se pudo enviar", friendlyChatError(error));
+    }
+  };
+
   const sendMessage = async () => {
     const body = draft.trim();
     if (!user || !otherId || !body || sending) return;
@@ -411,7 +458,7 @@ export default function ChatScreen() {
         client_message_id: clientMessageId,
         reply_to_message_id: replyingTo && !String(replyingTo.id).startsWith("local-") ? replyingTo.id : null,
       })
-      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, duration_ms, reply_to_message_id")
+      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id")
       .single();
     setSending(false);
     if (error) {
@@ -514,7 +561,30 @@ export default function ChatScreen() {
                           <Text style={{ color: mine ? `${colors.background}CC` : colors.muted, fontSize: 11 }} numberOfLines={2}>{item.reply_to_body || "Mensaje"}</Text>
                         </View>
                       ) : null}
-                      {item.kind === "voice_note" ? (
+                      {item.kind === "image" || item.kind === "video" ? (
+                        <Pressable
+                          onPress={() => item.media_url && setViewer({ uri: item.media_url, kind: item.kind === "video" ? "video" : "image" })}
+                          accessibilityRole="button"
+                          accessibilityLabel={item.kind === "video" ? "Ver vídeo" : "Ver foto"}
+                        >
+                          <View style={{ position: "relative" }}>
+                            <Image source={{ uri: item.media_url ?? undefined }} style={{ width: 220, height: 220, borderRadius: 14, backgroundColor: "#00000022" }} contentFit="cover" cachePolicy="disk" />
+                            {item.kind === "video" ? (
+                              <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}>
+                                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#00000088", alignItems: "center", justifyContent: "center" }}>
+                                  <MaterialIcons name="play-arrow" size={28} color="#FFFFFF" />
+                                </View>
+                              </View>
+                            ) : null}
+                            {item.kind === "video" && item.duration_ms ? (
+                              <Text style={{ position: "absolute", bottom: 8, right: 10, color: "#FFFFFF", fontSize: 11, fontWeight: "700", backgroundColor: "#00000088", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                                {Math.max(1, Math.floor(item.duration_ms / 1000))}s
+                              </Text>
+                            ) : null}
+                          </View>
+                          {item.body ? <Text style={{ marginTop: 6, color: mine ? colors.background : colors.foreground }}>{item.body}</Text> : null}
+                        </Pressable>
+                      ) : item.kind === "voice_note" ? (
                         <Pressable onPress={() => playVoiceMessage(item)} accessibilityRole="button" accessibilityLabel="Reproducir nota de voz" style={{ minHeight: 40, minWidth: 150, flexDirection: "row", alignItems: "center", gap: 8 }}>
                           <MaterialIcons name={audioPlayerStatus.playing && playingAudioPath === (item.audio_path ?? item.id) ? "pause" : "play-arrow"} size={22} color={mine ? colors.background : colors.foreground} />
                           <Text style={{ color: mine ? colors.background : colors.foreground }}>Nota de voz · {Math.max(1, Math.round((item.duration_ms ?? 0) / 1000))}s</Text>
@@ -561,7 +631,53 @@ export default function ChatScreen() {
               Grabando nota de voz · {Math.max(1, Math.round(recorderState.durationMillis / 1000))}s · toca detener y enviar
             </Text>
           ) : null}
+          {chatMedia.pending ? (
+            <View className="mb-2 rounded-2xl border p-3" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
+              <View className="flex-row items-center gap-3">
+                <Image source={{ uri: chatMedia.pending.uri }} style={{ width: 72, height: 72, borderRadius: 12 }} contentFit="cover" cachePolicy="disk" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: colors.primary, fontSize: 11, fontWeight: "800" }}>
+                    {chatMedia.pending.kind === "video" ? "Vídeo listo para enviar" : "Foto lista para enviar"}
+                  </Text>
+                  <TextInput
+                    value={chatMedia.caption}
+                    onChangeText={chatMedia.setCaption}
+                    placeholder="Añade un comentario…"
+                    placeholderTextColor={colors.muted}
+                    style={{ marginTop: 4, borderBottomWidth: 1, borderBottomColor: colors.border, color: colors.foreground, paddingVertical: 4 }}
+                  />
+                </View>
+              </View>
+              <View className="mt-3 flex-row justify-end gap-3">
+                <Pressable onPress={chatMedia.clearPending} disabled={chatMedia.uploading} style={{ minHeight: 36, paddingHorizontal: 12, justifyContent: "center" }}>
+                  <Text style={{ color: colors.muted, fontWeight: "600" }}>Cancelar</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void sendPendingMedia()}
+                  disabled={chatMedia.uploading}
+                  style={{ minHeight: 36, paddingHorizontal: 16, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", opacity: chatMedia.uploading ? 0.6 : 1 }}
+                >
+                  <Text style={{ color: colors.background, fontWeight: "800" }}>{chatMedia.uploading ? "Enviando…" : "Enviar"}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
           <View className="flex-row items-end gap-2">
+            <Pressable
+              onPress={() =>
+                Alert.alert("Adjuntar", undefined, [
+                  { text: "Galería (Foto o Vídeo)", onPress: () => void chatMedia.pickMedia("library") },
+                  { text: "Cámara", onPress: () => void chatMedia.pickMedia("camera") },
+                  { text: "Cancelar", style: "cancel" },
+                ])
+              }
+              disabled={sending || voiceSending || chatMedia.uploading}
+              accessibilityRole="button"
+              accessibilityLabel="Adjuntar foto o vídeo"
+              style={{ width: 44, height: 48, alignItems: "center", justifyContent: "center" }}
+            >
+              <MaterialIcons name="add-circle-outline" size={26} color={colors.primary} />
+            </Pressable>
             <TextInput
               accessibilityLabel="Mensaje"
               value={draft}
@@ -585,6 +701,7 @@ export default function ChatScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+      <ChatMediaViewer visible={!!viewer} uri={viewer?.uri ?? null} kind={viewer?.kind ?? null} onClose={() => setViewer(null)} />
     </ScreenContainer>
   );
 }

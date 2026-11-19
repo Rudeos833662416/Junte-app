@@ -27,8 +27,8 @@ type SelectedMedia = {
   name: string;
 };
 
-const MAX_STORY_VIDEO_BYTES = 10_000_000;
-const MAX_STORY_DURATION_SECONDS = 15;
+const MAX_STORY_VIDEO_BYTES = 45_000_000;
+const MAX_STORY_DURATION_SECONDS = 90;
 const TEXT_STORY_BACKGROUNDS = ["#FF6B00", "#1E88E5", "#8E24AA", "#00897B", "#D81B60", "#212121"];
 const TEXT_STORY_FONTS = ["System", "serif", "monospace"];
 const resolvedVideoCache = new Map<string, string>();
@@ -514,11 +514,11 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
         const durationMs = asset.duration ?? undefined;
         const fileSize = asset.fileSize ?? undefined;
         if (type === "video" && durationMs !== undefined && durationMs > MAX_STORY_DURATION_SECONDS * 1000) {
-          Alert.alert("Vídeo demasiado largo", "Máximo 15 segundos. Elige o recorta un fragmento más corto antes de subirlo.");
+          Alert.alert("Vídeo demasiado largo", "Máximo 90 segundos (1 min 30 s). Elige o recorta un fragmento más corto antes de subirlo.");
           return;
         }
         if (type === "video" && fileSize !== undefined && fileSize > MAX_STORY_VIDEO_BYTES) {
-          Alert.alert("Vídeo demasiado pesado", "El vídeo supera 10 MB. Usa un clip más corto o con menor resolución.");
+          Alert.alert("Vídeo demasiado pesado", "El vídeo supera 45 MB. Usa un clip más corto o con menor resolución.");
           return;
         }
         const filename = uri.split("/").pop() ?? `story_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
