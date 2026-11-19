@@ -54,7 +54,7 @@ function asJob(value: unknown): StoryUploadJob | null {
   const candidate = value as Partial<StoryUploadJob>;
   if (!candidate.id || !candidate.userId || !candidate.uri || !candidate.type) return null;
   return {
-    ...candidate as StoryUploadJob,
+    ...(candidate as StoryUploadJob),
     status: candidate.status === "completed" || candidate.status === "failed" ? candidate.status : "queued",
     progress: typeof candidate.progress === "number" ? candidate.progress : 0,
     error: typeof candidate.error === "string" ? candidate.error : null,
@@ -222,5 +222,13 @@ export function useStoryUploadQueue() {
   if (!queue) throw new Error("useStoryUploadQueue must be used within StoryUploadQueueProvider");
   const [, setTick] = useState(0);
   useEffect(() => queue.subscribe(() => setTick((value) => value + 1)), [queue]);
-  return queue;
+  // Bound helpers so callers can destructure { jobs, enqueue, retry }
+  // without losing `this` on class methods (was: "undefined is not a function").
+  return {
+    jobs: queue.list(),
+    enqueue: (input: StoryUploadJobInput) => queue.enqueue(input),
+    retry: (id: string) => queue.retry(id),
+    remove: (id: string) => queue.remove(id),
+    list: () => queue.list(),
+  };
 }
