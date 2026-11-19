@@ -2,10 +2,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   clearChatStore,
   formatChatDateLabel,
+  getCachedInbox,
   getDraft,
   isSameMessageGroup,
+  markInboxConversationRead,
   mergeCachedMessage,
   setCachedConversation,
+  setCachedInbox,
   setDraft,
 } from "../lib/chat-store";
 
@@ -40,6 +43,15 @@ describe("chat-store", () => {
   it("conserva borradores por conversación", () => {
     setDraft("b", "te escribo luego");
     expect(getDraft("b")).toBe("te escribo luego");
+  });
+
+  it("marca como leído solo la conversación abierta", () => {
+    setCachedInbox([
+      { otherId: "b", name: "B", avatarUrl: null, lastBody: "hola", lastAt: base.created_at, unread: 2 },
+      { otherId: "c", name: "C", avatarUrl: null, lastBody: "hey", lastAt: base.created_at, unread: 1 },
+    ]);
+    markInboxConversationRead("b");
+    expect(getCachedInbox().map((item) => item.unread)).toEqual([0, 1]);
   });
 
   it("agrupa mensajes del mismo usuario dentro de dos minutos", () => {

@@ -83,6 +83,10 @@ const CHAT_ACTIONS = [
     buttonTitle: "Responder",
     textInput: { submitButtonTitle: "Enviar", placeholder: "Escribe una respuesta…" },
   },
+  {
+    identifier: "CHAT_MARK_READ",
+    buttonTitle: "Marcar como leído",
+  },
 ];
 const BRINDAR_ACTIONS = [
   { identifier: "BRINDAR_HEALTH", buttonTitle: "Salud 🍻" },

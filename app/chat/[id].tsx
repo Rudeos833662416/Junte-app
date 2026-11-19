@@ -34,6 +34,7 @@ import {
   getCachedConversation,
   getDraft,
   isSameMessageGroup,
+  markInboxConversationRead,
   mergeCachedMessage,
   setCachedConversation,
   setDraft,
@@ -121,6 +122,7 @@ export default function ChatScreen() {
         if (otherId) setCachedConversation(otherId, next);
         return next;
       });
+      markInboxConversationRead(friendId);
     },
     [otherId, user],
   );

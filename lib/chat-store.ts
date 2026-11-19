@@ -37,6 +37,10 @@ export function setCachedInbox(items: CachedConversation[]) {
   inboxCache = items;
 }
 
+export function markInboxConversationRead(otherId: string) {
+  inboxCache = inboxCache.map((item) => item.otherId === otherId ? { ...item, unread: 0 } : item);
+}
+
 export function getCachedConversation(otherId: string) {
   return conversationCache.get(otherId) ?? [];
 }

@@ -201,6 +201,12 @@ function AuthGate() {
           void Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => undefined);
         }
 
+        if (response.actionIdentifier === "CHAT_MARK_READ") {
+          void invokeNotificationAction({ actionToken, action: "mark_read" });
+          void Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => undefined);
+          return;
+        }
+
         // El toque normal sobre una solicitud no debe dejar al usuario en Amigos:
         // lleva directamente al perfil de quien envió la solicitud.
         if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
