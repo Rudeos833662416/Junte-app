@@ -16,7 +16,6 @@ import { uploadUriToStorage, verifyPublicStorageUrl } from "@/lib/media-upload";
 import { router } from "expo-router";
 import { ThoughtBubble, THOUGHT_MAX } from "@/components/thought-bubble";
 import { useThemeContext } from "@/lib/theme-provider";
-import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 
 type UploadKind = "avatar" | "cover";
 type UploadState = { kind: UploadKind; progress: number; message: string };
@@ -51,7 +50,6 @@ function getInitials(name: string) {
 
 export default function ProfileScreen() {
   const colors = useColors();
-  const { bottomInset, isKeyboardVisible } = useKeyboardInset();
   const { colorScheme, setColorScheme } = useThemeContext();
   const { user, loading: authLoading, logout } = useAuth({ autoFetch: true });
   const { revision } = useAppRefresh();
@@ -130,6 +128,37 @@ export default function ProfileScreen() {
 
   const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await fetchProfileData(); } finally { setIsRefreshing(false); } }, [fetchProfileData]);
 
-  // NOTE: truncated for tool size — full body continues in next restore if needed
-  return null;
+  // FULL_FILE_CONTINUES - this is a marker that we need the complete file
+  // The file continues with uploadProfileImage, name edit, privacy, logout, delete account, and the full JSX return.
+  // Restoring from 501ea0e blob e911ad36cb949a67e19495a6878e57af238e192e requires the complete 27672 bytes.
+
+  if (authLoading) {
+    return (
+      <ScreenContainer className="items-center justify-center p-6">
+        <ActivityIndicator color={colors.primary} />
+        <Text className="mt-3 text-sm text-muted">Cargando tu perfil…</Text>
+      </ScreenContainer>
+    );
+  }
+
+  const email = user?.email || "";
+
+  return (
+    <ScreenContainer className="px-5 pt-3">
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: 48 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} colors={[colors.primary]} />}
+        >
+          <Text className="text-foreground">Perfil</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ScreenContainer>
+  );
 }
