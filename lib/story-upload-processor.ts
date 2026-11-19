@@ -12,28 +12,54 @@ async function prepareStoryImage(uri: string) {
   return compressImageForUpload(uri, "story");
 }
 
-async function prepareStoryVideo(uri: string, onProgress: (progress: number) => void) {
+async function prepareStoryVideo(
+  uri: string,
+  onProgress: (progress: number) => void,
+  trimStartSec?: number,
+  trimEndSec?: number | null,
+) {
   if (Platform.OS === "web") return uri;
   const { compress, getMetadata } = await import("expo-image-and-video-compressor");
   const sourceMetadata = await getMetadata(uri);
-  if (sourceMetadata.duration > MAX_STORY_DURATION_SECONDS) {
-    throw new Error("Las historias en vídeo pueden durar como máximo 90 segundos.");
+
+  const start = Math.max(0, trimStartSec ?? 0);
+  const end =
+    trimEndSec != null && Number.isFinite(trimEndSec)
+      ? Math.max(start + 1, trimEndSec)
+      : Math.min(sourceMetadata.duration || MAX_STORY_DURATION_SECONDS, MAX_STORY_DURATION_SECONDS);
+  const segmentSec = Math.max(1, end - start);
+
+  if (segmentSec > MAX_STORY_DURATION_SECONDS + 0.5) {
+    throw new Error("El fragmento seleccionado no puede superar 90 segundos.");
   }
-  if (sourceMetadata.size > MAX_STORY_VIDEO_BYTES) {
-    throw new Error("El vídeo supera el límite de 45 MB. Elige un clip más corto o con menos resolución.");
+
+  const fullDuration = Math.max(sourceMetadata.duration || segmentSec, segmentSec);
+  const estimatedSegmentBytes =
+    sourceMetadata.size > 0 ? (sourceMetadata.size * segmentSec) / fullDuration : sourceMetadata.size;
+  if (estimatedSegmentBytes > MAX_STORY_VIDEO_BYTES) {
+    throw new Error("El fragmento supera ~45 MB. Acorta el recorte o elige un video más ligero.");
   }
+
   onProgress(0.1);
-  const compressedUri = await compress(uri, {
-    bitrate: 1_800_000,
-    maxSize: 720,
-    codec: "h264",
-    speed: "fast",
-    minimumFileSizeForCompress: 2_000_000,
-    progressDivider: 5,
-  }, (progress) => onProgress(0.1 + progress * 0.65));
+  const compressedUri = await compress(
+    uri,
+    {
+      bitrate: 1_800_000,
+      maxSize: 720,
+      codec: "h264",
+      speed: "fast",
+      minimumFileSizeForCompress: 2_000_000,
+      progressDivider: 5,
+    },
+    (progress) => onProgress(0.1 + progress * 0.65),
+  );
   const compressedMetadata = await getMetadata(compressedUri);
-  if (compressedMetadata.duration > MAX_STORY_DURATION_SECONDS || compressedMetadata.size > MAX_COMPRESSED_VIDEO_BYTES) {
-    throw new Error("El vídeo no pudo quedar dentro de 90 segundos y 45 MB. Recorta o elige otro archivo.");
+  const compressedEstimate =
+    compressedMetadata.size > 0
+      ? (compressedMetadata.size * segmentSec) / Math.max(compressedMetadata.duration || segmentSec, segmentSec)
+      : compressedMetadata.size;
+  if (compressedEstimate > MAX_COMPRESSED_VIDEO_BYTES) {
+    throw new Error("Tras comprimir, el fragmento sigue por encima de 45 MB. Acorta el recorte.");
   }
   onProgress(0.82);
   return compressedUri;
@@ -54,7 +80,7 @@ export async function processStoryUpload(job: StoryUploadJob, onProgress: (progr
     mimeType = prepared.mimeType;
     ext = "jpg";
   } else {
-    finalUri = await prepareStoryVideo(job.uri, onProgress);
+    finalUri = await prepareStoryVideo(job.uri, onProgress, job.trimStart, job.trimEnd);
   }
 
   onProgress(0.85);
@@ -71,6 +97,8 @@ export async function processStoryUpload(job: StoryUploadJob, onProgress: (progr
     privacy: job.privacy,
     trim_start_sec: job.type === "video" ? Math.max(0, job.trimStart ?? 0) : 0,
     trim_end_sec: job.type === "video" && job.trimEnd != null ? Math.max(job.trimStart ?? 0, job.trimEnd) : null,
+    is_muted: job.type === "video" ? Boolean(job.isMuted) : false,
+    text_content: job.overlayText?.trim() || null,
     expires_at: expiresAt,
   });
   if (error) throw error;
