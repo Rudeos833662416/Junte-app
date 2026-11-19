@@ -128,9 +128,196 @@ export default function ProfileScreen() {
 
   const handleRefresh = useCallback(async () => { setIsRefreshing(true); try { await fetchProfileData(); } finally { setIsRefreshing(false); } }, [fetchProfileData]);
 
-  // FULL_FILE_CONTINUES - this is a marker that we need the complete file
-  // The file continues with uploadProfileImage, name edit, privacy, logout, delete account, and the full JSX return.
-  // Restoring from 501ea0e blob e911ad36cb949a67e19495a6878e57af238e192e requires the complete 27672 bytes.
+  const uploadProfileImage = async (kind: UploadKind) => {
+    if (!user || uploadState) return;
+    setUploadNotice(null);
+    let uploadedPath: string | null = null;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permiso necesario", "Permite el acceso a tus fotos para actualizar tu perfil.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: kind === "avatar" ? [1, 1] : [16, 9],
+        quality: 0.82,
+        base64: Platform.OS === "web",
+      });
+      if (result.canceled || !result.assets[0]) return;
+      const label = kind === "avatar" ? "foto de perfil" : "portada";
+      const previousUrl = kind === "avatar" ? avatarUrl : coverUrl;
+      setUploadState({ kind, progress: 10, message: `Preparando tu ${label}…` });
+      const asset = result.assets[0];
+      const sourceUri =
+        Platform.OS === "web" && asset.base64
+          ? `data:${asset.mimeType || "image/jpeg"};base64,${asset.base64}`
+          : asset.uri;
+      const prepared = await prepareProfileImage(sourceUri, kind);
+      setUploadState({ kind, progress: 32, message: "Procesando y comprimiendo la imagen…" });
+      const path = `${user.id}/profile/${kind}_${Date.now()}.png`;
+      uploadedPath = path;
+      setUploadState({ kind, progress: 58, message: "Subiendo una versión optimizada…" });
+      await uploadUriToStorage("profiles", path, prepared.uri, "image/png");
+      setUploadState({ kind, progress: 85, message: "Guardando en tu perfil…" });
+      const publicUrl = await verifyPublicStorageUrl("profiles", path, "image");
+      const column = kind === "avatar" ? "avatar_url" : "cover_url";
+      const { data: savedProfile, error: profileError } = await supabase
+        .from("profiles")
+        .update({ [column]: publicUrl } as never)
+        .eq("id", user.id)
+        .select(column)
+        .single();
+      if (profileError) throw profileError;
+      if ((savedProfile as Record<string, unknown> | null)?.[column] !== publicUrl) {
+        throw new Error("La imagen se subió, pero Supabase no confirmó la actualización del perfil.");
+      }
+      const bustedUrl = `${publicUrl}${publicUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
+      if (kind === "avatar") setAvatarUrl(bustedUrl);
+      else setCoverUrl(bustedUrl);
+      const previousReference = parseStorageReference(previousUrl);
+      const safePreviousPrefix = `${user.id}/profile/${kind}_`;
+      if (
+        previousReference &&
+        (previousReference.bucket === "profiles" || previousReference.bucket === "stories") &&
+        previousReference.path.startsWith(safePreviousPrefix) &&
+        previousReference.path !== path
+      ) {
+        setUploadState({ kind, progress: 92, message: "Limpiando la versión anterior…" });
+        const { error: cleanupError } = await supabase.storage
+          .from(previousReference.bucket)
+          .remove([previousReference.path]);
+        if (cleanupError) console.warn("No se pudo limpiar la imagen anterior:", cleanupError);
+      }
+      setUploadState({ kind, progress: 100, message: "Cambio guardado correctamente" });
+      setUploadNotice(kind === "avatar" ? "Tu foto de perfil se actualizó." : "Tu foto de portada se actualizó.");
+      await new Promise((resolve) => setTimeout(resolve, 650));
+      uploadedPath = null;
+    } catch (error) {
+      if (uploadedPath) {
+        const { error: rollbackError } = await supabase.storage.from("profiles").remove([uploadedPath]);
+        if (rollbackError) console.warn("No se pudo limpiar la nueva imagen tras el error:", rollbackError);
+      }
+      Alert.alert("No se pudo actualizar el perfil", error instanceof Error ? error.message : "Inténtalo de nuevo.");
+    } finally {
+      setUploadState(null);
+    }
+  };
+
+  const getNameAvailableAt = () => {
+    if (!nameLastChangedAt) return null;
+    return new Date(nameLastChangedAt).getTime() + 7 * 24 * 60 * 60 * 1000;
+  };
+
+  const handleStartNameEdit = () => {
+    const availableAt = getNameAvailableAt();
+    if (availableAt && Date.now() < availableAt) {
+      const days = Math.ceil((availableAt - Date.now()) / (24 * 60 * 60 * 1000));
+      Alert.alert(
+        "Cambio de nombre limitado",
+        `Podrás cambiar tu nombre nuevamente en ${days} día${days === 1 ? "" : "s"}.`,
+      );
+      return;
+    }
+    setNameDraft(profileName);
+    setIsEditingName(true);
+    setUploadNotice(null);
+  };
+
+  const handleCancelNameEdit = () => {
+    if (!isSavingName) {
+      setNameDraft(profileName);
+      setIsEditingName(false);
+    }
+  };
+
+  const handleSaveName = async () => {
+    if (!user || isSavingName) return;
+    const nextName = nameDraft.trim().replace(/\s+/g, " ");
+    if (nextName.length < 2 || nextName.length > 20) {
+      Alert.alert("Nombre no válido", "Usa un nombre de entre 2 y 20 caracteres.");
+      return;
+    }
+    try {
+      setIsSavingName(true);
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({ name: nextName })
+        .eq("id", user.id)
+        .select("name, last_name_changed_at")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("No se encontró tu perfil para guardar el nombre.");
+      setProfileName(data.name?.trim() || nextName);
+      setNameLastChangedAt(data.last_name_changed_at ?? new Date().toISOString());
+      setIsEditingName(false);
+      Alert.alert("Nombre actualizado", "Podrás modificarlo nuevamente dentro de 7 días.");
+    } catch (error) {
+      Alert.alert("No se pudo actualizar el nombre", error instanceof Error ? error.message : "Inténtalo de nuevo.");
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const updatePrivacySetting = async (
+    field: "is_public" | "discoverable_nearby" | "location_sharing",
+    value: boolean,
+  ) => {
+    if (!user) return;
+    try {
+      const { error } = await supabase.from("profiles").update({ [field]: value } as never).eq("id", user.id);
+      if (error) throw error;
+      if (field === "is_public") setIsPublicProfile(value);
+      if (field === "discoverable_nearby") setDiscoverableNearby(value);
+      if (field === "location_sharing") {
+        setLocationSharing(value);
+        if (!value) await clearProfileLocation(user.id);
+      }
+      if (Platform.OS !== "web") void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error) {
+      Alert.alert(
+        "No se pudo guardar",
+        error instanceof Error ? error.message : "Revisa la conexión e inténtalo de nuevo.",
+      );
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert("Cerrar sesión", "¿Quieres cerrar la sesión de esta cuenta?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Cerrar sesión",
+        style: "destructive",
+        onPress: () => {
+          void logout().catch((error) => {
+            Alert.alert("Error", error instanceof Error ? error.message : "No se pudo cerrar la sesión.");
+          });
+        },
+      },
+    ]);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user || isDeletingAccount) return;
+    if (deleteConfirmation.trim().toUpperCase() !== "ELIMINAR") {
+      setDeleteError("Escribe ELIMINAR para confirmar que deseas borrar la cuenta.");
+      return;
+    }
+    try {
+      setIsDeletingAccount(true);
+      setDeleteError(null);
+      const { error } = await supabase.functions.invoke("delete-account");
+      if (error) throw error;
+      await logout();
+      setIsDeleteModalVisible(false);
+      router.replace("/login");
+    } catch {
+      setDeleteError("No se pudo eliminar la cuenta. No se borró nada; revisa tu conexión e inténtalo de nuevo.");
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   if (authLoading) {
     return (
@@ -156,9 +343,245 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} tintColor={colors.primary} colors={[colors.primary]} />}
         >
-          <Text className="text-foreground">Perfil</Text>
+          <View
+            className="mb-6 overflow-hidden rounded-3xl border shadow-lg"
+            style={{ borderColor: `${colors.border}AA`, backgroundColor: colors.surface }}
+          >
+            <Pressable
+              disabled={Boolean(uploadState)}
+              onPress={() => void uploadProfileImage("cover")}
+              accessibilityLabel="Cambiar foto de portada"
+              style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
+            >
+              <View className="relative h-44 w-full bg-midnight">
+                {coverUrl ? (
+                  <ExpoImage
+                    source={{ uri: coverUrl }}
+                    style={{ width: "100%", height: "100%" }}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                ) : (
+                  <View
+                    className="h-full w-full items-center justify-center"
+                    style={{ backgroundColor: `${colors.primary}18` }}
+                  >
+                    <IconSymbol name="photo.fill" size={28} color={colors.muted} />
+                    <Text className="mt-2 text-xs font-bold uppercase tracking-wider text-muted">
+                      Toca para añadir foto de portada
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </Pressable>
+
+            <View className="items-center px-5 pb-5">
+              <Pressable
+                disabled={Boolean(uploadState)}
+                onPress={() => void uploadProfileImage("avatar")}
+                accessibilityLabel="Cambiar foto de perfil"
+                style={{ marginTop: -40 }}
+              >
+                <View
+                  className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border-4"
+                  style={{ borderColor: colors.surface, backgroundColor: colors.primary }}
+                >
+                  {avatarUrl ? (
+                    <ExpoImage
+                      source={{ uri: avatarUrl }}
+                      style={{ width: "100%", height: "100%" }}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                    />
+                  ) : (
+                    <Text className="text-3xl font-bold" style={{ color: colors.background }}>
+                      {getInitials(profileName || email)}
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+
+              {isEditingName ? (
+                <View className="mt-3 w-full flex-row items-center gap-2">
+                  <TextInput
+                    value={nameDraft}
+                    onChangeText={setNameDraft}
+                    maxLength={20}
+                    className="flex-1 rounded-xl border px-3 py-2 text-center text-lg font-bold text-foreground"
+                    style={{ borderColor: colors.border, backgroundColor: colors.background }}
+                    placeholder="Tu nombre"
+                    placeholderTextColor={colors.muted}
+                    autoFocus
+                  />
+                  <Pressable onPress={() => void handleSaveName()} disabled={isSavingName} accessibilityRole="button" accessibilityLabel="Guardar nombre" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
+                    <Text style={{ color: colors.primary, fontWeight: "700" }}>{isSavingName ? "…" : "OK"}</Text>
+                  </Pressable>
+                  <Pressable onPress={handleCancelNameEdit}>
+                    <Text style={{ color: colors.muted }}>✕</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable onPress={handleStartNameEdit} className="mt-3 flex-row items-center gap-2">
+                  <Text className="text-2xl font-bold text-foreground">
+                    {profileName || email || "Tu perfil"}
+                  </Text>
+                  <IconSymbol name="pencil" size={16} color={colors.muted} />
+                </Pressable>
+              )}
+
+              {uploadNotice ? (
+                <Text className="mt-2 text-xs" style={{ color: colors.success }}>
+                  {uploadNotice}
+                </Text>
+              ) : null}
+              {loadError ? <View className="mt-2 w-full rounded-xl border p-3" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}12` }}><Text className="text-sm text-foreground">{loadError}</Text><Pressable onPress={() => void handleRefresh()} accessibilityRole="button" accessibilityLabel="Reintentar cargar perfil" style={{ minHeight: 44, justifyContent: "center" }}><Text className="font-bold" style={{ color: colors.primary }}>Reintentar</Text></Pressable></View> : null}
+              {uploadState ? (
+                <Text className="mt-2 text-xs text-muted">
+                  {uploadState.message} ({uploadState.progress}%)
+                </Text>
+              ) : null}
+
+              
+
+              <Text className="mt-1 text-sm text-muted">{email}</Text>
+
+              <View style={{ marginTop: 12, width: "100%", alignItems: "center", paddingHorizontal: 8 }}>
+                <ThoughtBubble
+                  text={bio}
+                  editable
+                  floating={false}
+                  placeholder="¿En qué estás pensando?"
+                  onSave={async (next) => {
+                    if (!user) return;
+                    const cleaned = next.trim().replace(/\s+/g, " ").slice(0, THOUGHT_MAX);
+                    const { error } = await supabase
+                      .from("profiles")
+                      .update({ bio: cleaned || null })
+                      .eq("id", user.id);
+                    if (error) {
+                      Alert.alert("No se pudo guardar", error.message);
+                      throw error;
+                    }
+                    setBio(cleaned);
+                  }}
+                />
+              </View>
+            </View>
+          </View>
+
+          <View
+            className="mb-4 rounded-2xl border p-4"
+            style={{ borderColor: colors.border, backgroundColor: colors.surface }}
+          >
+            <Text className="mb-1 text-base font-bold text-foreground">Apariencia</Text>
+            <Text className="mb-3 text-xs leading-5 text-muted">
+              Elige cómo quieres ver Junta2. Se guarda en este dispositivo.
+            </Text>
+            <View className="mb-5 flex-row gap-2">
+              {(["light", "dark"] as const).map((scheme) => {
+                const selected = colorScheme === scheme;
+                return (
+                  <Pressable
+                    key={scheme}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={scheme === "light" ? "Usar modo claro" : "Usar modo oscuro"}
+                    onPress={() => setColorScheme(scheme)}
+                    style={({ pressed }) => ({
+                      flex: 1,
+                      minHeight: 46,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: selected ? colors.primary : colors.border,
+                      backgroundColor: selected ? `${colors.primary}18` : colors.background,
+                      opacity: pressed ? 0.78 : 1,
+                    })}
+                  >
+                    <Text style={{ color: selected ? colors.primary : colors.foreground, fontWeight: "800" }}>
+                      {scheme === "light" ? "Claro" : "Oscuro"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text className="mb-3 text-base font-bold text-foreground">Privacidad</Text>
+            <View className="mb-3 flex-row items-center justify-between">
+              <Text className="flex-1 text-sm text-foreground">Perfil público</Text>
+              <Switch
+                value={isPublicProfile}
+                onValueChange={() => void updatePrivacySetting("is_public", !isPublicProfile)} accessibilityLabel="Perfil público"
+              />
+            </View>
+            <View className="mb-3 flex-row items-center justify-between">
+              <Text className="flex-1 text-sm text-foreground">Visible cerca</Text>
+              <Switch
+                value={discoverableNearby}
+                onValueChange={() => void updatePrivacySetting("discoverable_nearby", !discoverableNearby)} accessibilityLabel="Visible cerca"
+              />
+            </View>
+            <View className="flex-row items-center justify-between">
+              <Text className="flex-1 text-sm text-foreground">Compartir ubicación</Text>
+              <Switch
+                value={locationSharing}
+                onValueChange={() => void updatePrivacySetting("location_sharing", !locationSharing)} accessibilityLabel="Compartir ubicación"
+              />
+            </View>
+          </View>
+
+          <Pressable
+            onPress={handleLogout}
+            className="mb-6 items-center rounded-2xl border py-3"
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar sesión"
+            style={{ borderColor: colors.error }}
+          >
+            <Text style={{ color: colors.error, fontWeight: "700" }}>Cerrar sesión</Text>
+          </Pressable>
+          <View className="mb-6 rounded-2xl border p-4" style={{ borderColor: `${colors.error}66`, backgroundColor: `${colors.error}0D` }}>
+            <Text className="text-base font-bold text-foreground">Eliminar cuenta</Text>
+            <Text className="mt-1 text-xs leading-5 text-muted">Esta acción es permanente. Se eliminarán tu perfil, amistades, historias, mensajes y notificaciones.</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Eliminar cuenta permanentemente"
+              disabled={isDeletingAccount}
+              onPress={() => { setDeleteError(null); setDeleteConfirmation(""); setIsDeleteModalVisible(true); }}
+              style={({ pressed }) => ({ marginTop: 14, minHeight: 46, alignItems: "center", justifyContent: "center", borderRadius: 12, borderWidth: 1, borderColor: colors.error, opacity: pressed ? 0.78 : 1 })}
+            >
+              <Text style={{ color: colors.error, fontWeight: "800" }}>Eliminar cuenta permanentemente</Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <Modal visible={isDeleteModalVisible} transparent animationType="fade" onRequestClose={() => { if (!isDeletingAccount) setIsDeleteModalVisible(false); }}>
+        <View style={{ flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.62)" }}>
+          <View className="rounded-3xl p-5" style={{ backgroundColor: colors.surface }}>
+            <Text className="text-xl font-bold text-foreground">¿Eliminar tu cuenta?</Text>
+            <Text className="mt-2 text-sm leading-5 text-muted">No podrás recuperar esta cuenta. Para confirmar, escribe exactamente ELIMINAR.</Text>
+            <TextInput
+              accessibilityLabel="Escribe ELIMINAR para confirmar"
+              value={deleteConfirmation}
+              onChangeText={setDeleteConfirmation}
+              autoCapitalize="characters"
+              editable={!isDeletingAccount}
+              placeholder="ELIMINAR"
+              placeholderTextColor={colors.muted}
+              className="mt-4 rounded-xl border px-4 py-3 text-foreground"
+              style={{ borderColor: colors.border }}
+            />
+            {deleteError ? <Text accessibilityRole="alert" className="mt-3 text-sm" style={{ color: colors.error }}>{deleteError}</Text> : null}
+            <View className="mt-5 flex-row gap-3">
+              <Pressable disabled={isDeletingAccount} onPress={() => setIsDeleteModalVisible(false)} style={{ flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
+                <Text className="font-bold text-foreground">Cancelar</Text>
+              </Pressable>
+              <Pressable disabled={isDeletingAccount} onPress={() => void handleDeleteAccount()} style={{ flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: colors.error, opacity: isDeletingAccount ? 0.6 : 1 }}>
+                {isDeletingAccount ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={{ color: colors.onPrimary, fontWeight: "800" }}>Eliminar</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
