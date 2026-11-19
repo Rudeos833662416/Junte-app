@@ -37,11 +37,7 @@ type StorageAdapter = {
 };
 
 type QueueListener = () => void;
-
-type StoryUploadQueueOptions = {
-  storage?: StoryUploadStorage;
-  executor?: StoryUploadExecutor;
-};
+type StoryUploadQueueOptions = { storage?: StoryUploadStorage; executor?: StoryUploadExecutor };
 
 export const STORY_UPLOAD_QUEUE_KEY = "story-upload-queue:v1";
 
@@ -105,16 +101,17 @@ export class StoryUploadQueue {
 
   subscribe(listener: QueueListener) {
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
-  private emit() {
-    for (const listener of this.listeners) listener();
+  unsubscribeAll() {
+    this.listeners.clear();
   }
 
-  private async persist() {
-    const payload = JSON.stringify([...this.jobs.values()]);
-    await this.storage.setItem(STORY_UPLOAD_QUEUE_KEY, payload);
+  getSnapshot() {
+    return Object.fromEntries(this.jobs) as Record<string, StoryUploadJob>;
   }
 
   list() {
@@ -124,15 +121,7 @@ export class StoryUploadQueue {
   async enqueue(input: StoryUploadJobInput) {
     await this.hydrate();
     const now = Date.now();
-    const job: StoryUploadJob = {
-      ...input,
-      id: makeId(),
-      createdAt: now,
-      updatedAt: now,
-      status: "queued",
-      progress: 0,
-      error: null,
-    };
+    const job: StoryUploadJob = { ...input, id: makeId(), createdAt: now, updatedAt: now, status: "queued", progress: 0, error: null };
     this.jobs.set(job.id, job);
     await this.persist();
     this.emit();
@@ -143,7 +132,7 @@ export class StoryUploadQueue {
   async retry(id: string) {
     await this.hydrate();
     const job = this.jobs.get(id);
-    if (!job) return;
+    if (!job || job.status !== "failed") return;
     job.status = "queued";
     job.error = null;
     job.progress = 0;
@@ -158,6 +147,22 @@ export class StoryUploadQueue {
     this.jobs.delete(id);
     await this.persist();
     this.emit();
+  }
+
+  async waitForIdle() {
+    while (this.running) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+
+  resume() {
+    void this.pump();
+  }
+
+  private emit() {
+    for (const listener of this.listeners) listener();
+  }
+
+  private async persist() {
+    await this.storage.setItem(STORY_UPLOAD_QUEUE_KEY, JSON.stringify([...this.jobs.values()]));
   }
 
   private async pump() {
@@ -176,7 +181,7 @@ export class StoryUploadQueue {
           await this.executor(next, (progress) => {
             const current = this.jobs.get(next.id);
             if (!current) return;
-            current.progress = progress;
+            current.progress = Math.max(0, Math.min(1, progress));
             current.updatedAt = Date.now();
             this.emit();
           });
@@ -184,7 +189,6 @@ export class StoryUploadQueue {
           next.progress = 1;
           next.error = null;
           next.updatedAt = Date.now();
-          this.jobs.delete(next.id);
         } catch (error) {
           next.status = "failed";
           next.error = error instanceof Error ? error.message : "Error al subir";
@@ -199,10 +203,7 @@ export class StoryUploadQueue {
   }
 }
 
-async function defaultStoryUploadExecutor(
-  job: StoryUploadJob,
-  onProgress: (progress: number) => void,
-) {
+async function defaultStoryUploadExecutor(job: StoryUploadJob, onProgress: (progress: number) => void) {
   const { processStoryUpload } = await import("@/lib/story-upload-processor");
   await processStoryUpload(job, onProgress);
 }
@@ -222,8 +223,6 @@ export function useStoryUploadQueue() {
   if (!queue) throw new Error("useStoryUploadQueue must be used within StoryUploadQueueProvider");
   const [, setTick] = useState(0);
   useEffect(() => queue.subscribe(() => setTick((value) => value + 1)), [queue]);
-  // Bound helpers so callers can destructure { jobs, enqueue, retry }
-  // without losing `this` on class methods (was: "undefined is not a function").
   return {
     jobs: queue.list(),
     enqueue: (input: StoryUploadJobInput) => queue.enqueue(input),

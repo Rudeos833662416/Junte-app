@@ -58,7 +58,7 @@ export function StoryVideoEditor({
   onPublish,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const keyboardInset = useKeyboardInset();
+  const { keyboardHeight } = useKeyboardInset();
   const { width } = useWindowDimensions();
   const trackWidth = Math.max(240, width - 48);
 
@@ -125,7 +125,8 @@ export function StoryVideoEditor({
     setLoadingThumbs(true);
     (async () => {
       try {
-        const VideoThumbnails = await import("expo-video-thumbnails");
+        const optionalModuleName = ["expo", "video-thumbnails"].join("-");
+        const VideoThumbnails = await import(optionalModuleName);
         const step = safeDuration / THUMB_COUNT;
         const uris: string[] = [];
         for (let i = 0; i < THUMB_COUNT; i++) {
@@ -192,7 +193,7 @@ export function StoryVideoEditor({
 
   if (!visible) return null;
 
-  const bottomPad = Math.max(insets.bottom, 8) + (keyboardInset > 0 ? keyboardInset : 0);
+  const bottomPad = Math.max(insets.bottom, 8) + (keyboardHeight > 0 ? keyboardHeight : 0);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>

@@ -514,7 +514,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
           try {
             const perm = await ImagePicker.requestCameraPermissionsAsync();
             if (!perm.granted) { Alert.alert("Permiso requerido", "Necesitamos acceso a la cámara."); return; }
-            const res = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.All, quality: 0.78, videoMaxDuration: 600 });
+            const res = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.All, quality: 0.78, videoMaxDuration: MAX_STORY_DURATION_SECONDS });
             if (res.canceled || !res.assets[0]) return;
             const a = res.assets[0];
             if (a.type === "video") {
@@ -536,7 +536,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
         mediaTypes: ImagePicker.MediaTypeOptions.All,
         allowsEditing: false,
         quality: 0.78,
-        videoMaxDuration: 600,
+        videoMaxDuration: MAX_STORY_DURATION_SECONDS,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -560,13 +560,12 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
           });
           return;
         }
-        const filename = uri.split("/").pop() ?? `story_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
-        const mimeType = type === "video" ? "video/mp4" : "image/jpeg";
+        const filename = uri.split("/").pop() ?? `story_${Date.now()}.jpg`;
+        const mimeType = "image/jpeg";
         setSelectedMedia({ uri, mimeType, type, name: filename });
         setPreviewMuted(false);
-        const durationSeconds = type === "video" && durationMs ? Math.max(1, durationMs / 1000) : 1;
-        setVideoDuration(durationSeconds);
-        setTrimRange({ start: 0, end: durationSeconds });
+        setVideoDuration(1);
+        setTrimRange({ start: 0, end: 1 });
       }
     } catch {
       Alert.alert("Error", "No se pudo seleccionar el archivo multimedia.");

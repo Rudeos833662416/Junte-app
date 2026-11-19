@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Platform, Pressable, Share, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, Share, Text, View, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -17,6 +17,20 @@ function ViewerVideo({ uri }: { uri: string }) {
     p.loop = false;
     p.play();
   });
+  const [progress, setProgress] = useState(0);
+  const [speed, setSpeed] = useState<1 | 1.5 | 2>(1);
+  useEffect(() => {
+    player.playbackRate = speed;
+  }, [player, speed]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const duration = Number(player.duration);
+      const current = Number(player.currentTime);
+      if (duration > 0 && Number.isFinite(current)) setProgress(Math.max(0, Math.min(1, current / duration)));
+    }, 200);
+    return () => clearInterval(timer);
+  }, [player]);
+  const nextSpeed = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
   useEffect(() => {
     return () => {
       try {
@@ -27,12 +41,26 @@ function ViewerVideo({ uri }: { uri: string }) {
     };
   }, [player]);
   return (
-    <VideoView
-      player={player}
-      style={{ width: "100%", height: "70%" }}
-      contentFit="contain"
-      nativeControls
-    />
+    <View style={{ width: "100%", height: "70%", justifyContent: "center" }}>
+      <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" nativeControls={false} />
+      <View style={{ position: "absolute", left: 18, right: 18, bottom: 12, flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <Pressable
+          onPress={(event) => {
+            const duration = Number(player.duration);
+            if (duration > 0) player.currentTime = Math.max(0, Math.min(duration, (event.nativeEvent.locationX / 260) * duration));
+          }}
+          style={{ flex: 1, height: 28, justifyContent: "center" }}
+          accessibilityLabel="Buscar en el vídeo"
+        >
+          <View style={{ height: 4, borderRadius: 2, backgroundColor: "#FFFFFF66" }}>
+            <View style={{ width: `${progress * 100}%`, height: 4, borderRadius: 2, backgroundColor: "#FF6A00" }} />
+          </View>
+        </Pressable>
+        <Pressable onPress={() => setSpeed(nextSpeed)} accessibilityLabel={`Velocidad ${speed}x`} style={{ minWidth: 48, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 14, backgroundColor: "#000A" }}>
+          <Text style={{ color: "#FFF", fontSize: 12, fontWeight: "800" }}>{speed}x</Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 

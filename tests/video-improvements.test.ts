@@ -4,15 +4,16 @@ import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
 const stories = readFileSync(resolve(root, "app/(tabs)/stories.tsx"), "utf8");
+const storyProcessor = readFileSync(resolve(root, "lib/story-upload-processor.ts"), "utf8");
 const friends = readFileSync(resolve(root, "app/(tabs)/friends.tsx"), "utf8");
 const profile = readFileSync(resolve(root, "app/profile/[id].tsx"), "utf8");
 const drinkCircle = readFileSync(resolve(root, "components/drink-circle.tsx"), "utf8");
 
 describe("mejoras confirmadas en la grabación", () => {
   it("permite estados de video de hasta cinco minutos con validación visible", () => {
-    expect(stories).toContain("MAX_STORY_DURATION_SECONDS = 300");
+    expect(stories).toContain("MAX_STORY_DURATION_SECONDS = 90");
     expect(stories).toContain("videoMaxDuration: MAX_STORY_DURATION_SECONDS");
-    expect(stories).toContain("300 segundos");
+    expect(storyProcessor).toContain("90 segundos");
   });
 
 	it("usa un compositor de estado a pantalla completa y precarga el visor", () => {

@@ -128,6 +128,12 @@ export type Database = {
           created_at: string
           read_at: string | null
           client_message_id: string | null
+          media_path: string | null
+          media_type: string | null
+          edited_at: string | null
+          deleted_at: string | null
+          reactions: Record<string, string>
+          location_payload: Record<string, unknown> | null
         }
         Insert: {
           id?: string
@@ -142,6 +148,12 @@ export type Database = {
           created_at?: string
           read_at?: string | null
           client_message_id?: string | null
+          media_path?: string | null
+          media_type?: string | null
+          edited_at?: string | null
+          deleted_at?: string | null
+          reactions?: Record<string, string>
+          location_payload?: Record<string, unknown> | null
         }
         Update: {
           id?: string
@@ -156,6 +168,12 @@ export type Database = {
           created_at?: string
           read_at?: string | null
           client_message_id?: string | null
+          media_path?: string | null
+          media_type?: string | null
+          edited_at?: string | null
+          deleted_at?: string | null
+          reactions?: Record<string, string>
+          location_payload?: Record<string, unknown> | null
         }
         Relationships: []
       }
@@ -382,6 +400,7 @@ export type Database = {
           text_font_family: string | null
           trim_start_sec: number
           trim_end_sec: number | null
+          is_muted: boolean
         }
         Insert: {
           id?: number
@@ -404,6 +423,7 @@ export type Database = {
           text_font_family?: string | null
           trim_start_sec?: number
           trim_end_sec?: number | null
+          is_muted?: boolean
         }
         Update: {
           id?: number
@@ -426,6 +446,7 @@ export type Database = {
           text_font_family?: string | null
           trim_start_sec?: number
           trim_end_sec?: number | null
+          is_muted?: boolean
         }
         Relationships: []
       }
