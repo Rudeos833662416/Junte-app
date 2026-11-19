@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView } from "expo-video";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useStoryUploadQueue } from "@/lib/story-upload-queue";
+import { StoryVideoEditor, type StoryVideoEditorResult } from "@/components/story-video-editor";
 import { setActiveStoryUserId } from "@/lib/push-notifications";
 import { resolveCachedVideoUri } from "@/lib/video-cache";
 import { getCachedStoryGroups, setCachedStoryGroups, subscribeStoryGroups, type GroupedStoryUser, type StoryItem } from "@/lib/stories-store";
@@ -197,6 +198,12 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     : null;
 
   const [selectedMedia, setSelectedMedia] = useState<SelectedMedia | null>(null);
+  const [videoEditor, setVideoEditor] = useState<{
+    uri: string;
+    durationMs: number;
+    fileSizeBytes: number;
+    autoTrimBanner: boolean;
+  } | null>(null);
   const [videoDuration, setVideoDuration] = useState(1);
   const [trimRange, setTrimRange] = useState({ start: 0, end: 1 });
   const [optimisticStories, setOptimisticStories] = useState<StoryItem[]>([]);
@@ -353,7 +360,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       await supabase.rpc("purge_expired_stories");
       const { data, error } = await supabase
         .from("stories")
-        .select("id, user_id, media_url, media_type, audio_url, audio_name, music_title, caption, visibility, privacy, created_at, expires_at, text_content, text_background_color, text_font_family, trim_start_sec, trim_end_sec")
+        .select("id, user_id, media_url, media_type, audio_url, audio_name, music_title, caption, visibility, privacy, created_at, expires_at, text_content, text_background_color, text_font_family, trim_start_sec, trim_end_sec, is_muted")
         .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false });
 
@@ -502,9 +509,9 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.All,
-        allowsEditing: true,
+        allowsEditing: false,
         quality: 0.78,
-        videoMaxDuration: MAX_STORY_DURATION_SECONDS,
+        videoMaxDuration: 600,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -513,12 +520,19 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
         const type = asset.type === "video" ? "video" : "image";
         const durationMs = asset.duration ?? undefined;
         const fileSize = asset.fileSize ?? undefined;
-        if (type === "video" && durationMs !== undefined && durationMs > MAX_STORY_DURATION_SECONDS * 1000) {
-          Alert.alert("Vídeo demasiado largo", "Máximo 90 segundos (1 min 30 s). Elige o recorta un fragmento más corto antes de subirlo.");
-          return;
-        }
-        if (type === "video" && fileSize !== undefined && fileSize > MAX_STORY_VIDEO_BYTES) {
-          Alert.alert("Vídeo demasiado pesado", "El vídeo supera 45 MB. Usa un clip más corto o con menor resolución.");
+        if (type === "video") {
+          const durationMsSafe = durationMs ?? 90_000;
+          const autoTrim = durationMsSafe > MAX_STORY_DURATION_SECONDS * 1000;
+          if (fileSize !== undefined && fileSize > MAX_STORY_VIDEO_BYTES * 3) {
+            Alert.alert("Vídeo demasiado pesado", "El archivo supera el límite práctico del servidor. Elige un clip más ligero.");
+            return;
+          }
+          setVideoEditor({
+            uri,
+            durationMs: durationMsSafe,
+            fileSizeBytes: fileSize ?? 0,
+            autoTrimBanner: autoTrim,
+          });
           return;
         }
         const filename = uri.split("/").pop() ?? `story_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
@@ -531,6 +545,56 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       }
     } catch {
       Alert.alert("Error", "No se pudo seleccionar el archivo multimedia.");
+    }
+  };
+
+  const publishFromVideoEditor = async (result: StoryVideoEditorResult) => {
+    if (!user || !videoEditor) return;
+    const media = {
+      uri: videoEditor.uri,
+      mimeType: "video/mp4" as const,
+      type: "video" as const,
+      name: `story_${Date.now()}.mp4`,
+    };
+    const trimStart = result.startMs / 1000;
+    const trimEnd = result.endMs / 1000;
+    const tempStory: StoryItem = {
+      id: -Date.now(),
+      user_id: user.id,
+      media_url: media.uri,
+      media_type: "video",
+      audio_url: null,
+      audio_name: null,
+      caption: result.caption || null,
+      visibility: privacy === "public" ? "public" : "friends",
+      privacy,
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      user_name: "Mi estado",
+      isOptimistic: true,
+      trim_start_sec: trimStart,
+      trim_end_sec: trimEnd,
+      is_muted: result.isMuted,
+      text_content: result.overlayText,
+    };
+    setOptimisticStories((p) => [tempStory, ...p]);
+    setVideoEditor(null);
+    try {
+      await enqueue({
+        userId: user.id,
+        uri: media.uri,
+        mimeType: media.mimeType,
+        type: "video",
+        caption: result.caption,
+        privacy,
+        trimStart,
+        trimEnd,
+        isMuted: result.isMuted,
+        overlayText: result.overlayText,
+      });
+    } catch (err) {
+      setOptimisticStories((p) => p.filter((s) => s.id !== tempStory.id));
+      Alert.alert("No se pudo publicar", err instanceof Error ? err.message : "Inténtalo de nuevo.");
     }
   };
 
@@ -1053,7 +1117,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
             </View> : null}
 
             <View pointerEvents="none" style={{ position: "absolute", inset: 0, zIndex: 1, alignItems: "center", justifyContent: "center" }}>
-              {activeStory.media_type === "video" && activeStory.media_url ? <StoryVideo key={`story-video-${activeStory.id}`} uri={activeStory.media_url} muted={videoMuted} paused={isPaused || showViewers} trimStart={activeStory.trim_start_sec ?? 0} trimEnd={activeStory.trim_end_sec} onReady={() => setIsStoryMediaLoading(false)} onTimeUpdate={handleVideoTimeUpdate} /> : activeStory.media_type === "text" ? <View style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: activeStory.text_background_color || colors.primary }}><Text style={{ color: "#FFFFFF", fontFamily: activeStory.text_font_family || "System", fontSize: 30, fontWeight: "800", textAlign: "center" }}>{activeStory.text_content}</Text></View> : activeStory.media_url ? <ExpoImage source={{ uri: activeStory.media_url }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="disk" transition={120} onLoad={() => setIsStoryMediaLoading(false)} onError={() => setIsStoryMediaLoading(false)} /> : null}
+              {activeStory.media_type === "video" && activeStory.media_url ? <><StoryVideo key={`story-video-${activeStory.id}`} uri={activeStory.media_url} muted={videoMuted || Boolean(activeStory.is_muted)} paused={isPaused || showViewers} trimStart={activeStory.trim_start_sec ?? 0} trimEnd={activeStory.trim_end_sec} onReady={() => setIsStoryMediaLoading(false)} onTimeUpdate={handleVideoTimeUpdate} />{activeStory.text_content ? <View pointerEvents="none" style={{ position: "absolute", left: 24, right: 24, top: "42%", alignItems: "center" }}><Text style={{ color: "#FFFFFF", fontSize: 26, fontWeight: "800", textAlign: "center", textShadowColor: "rgba(0,0,0,0.7)", textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 6 }}>{activeStory.text_content}</Text></View> : null}</> : activeStory.media_type === "text" ? <View style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: activeStory.text_background_color || colors.primary }}><Text style={{ color: "#FFFFFF", fontFamily: activeStory.text_font_family || "System", fontSize: 30, fontWeight: "800", textAlign: "center" }}>{activeStory.text_content}</Text></View> : activeStory.media_url ? <ExpoImage source={{ uri: activeStory.media_url }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="disk" transition={120} onLoad={() => setIsStoryMediaLoading(false)} onError={() => setIsStoryMediaLoading(false)} /> : null}
               {isStoryMediaLoading ? <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.22)" }}><View style={{ width: "72%", height: "58%", borderRadius: 18, backgroundColor: "rgba(255,255,255,0.08)" }} /><ActivityIndicator color="#FFFFFF" size="large" style={{ position: "absolute" }} /></View> : null}
             </View>
 
@@ -1162,6 +1226,19 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
           </View>
         </View>
       </Modal>
+      {videoEditor ? (
+        <StoryVideoEditor
+          visible
+          uri={videoEditor.uri}
+          durationMs={videoEditor.durationMs}
+          fileSizeBytes={videoEditor.fileSizeBytes}
+          initialStartMs={0}
+          initialEndMs={Math.min(videoEditor.durationMs, 90_000)}
+          autoTrimBanner={videoEditor.autoTrimBanner}
+          onCancel={() => setVideoEditor(null)}
+          onPublish={(r) => void publishFromVideoEditor(r)}
+        />
+      ) : null}
     </ScreenContainer>
   );
 }
