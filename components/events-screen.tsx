@@ -777,7 +777,7 @@ export function EventsScreen() {
                     source={{ uri: venue.admin_photo_url }}
                     style={{ width: "100%", height: "100%" }}
                     contentFit="cover"
-                    cachePolicy="memory-disk"
+                    cachePolicy="disk"
                   />
                 ) : (
                   <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
@@ -1136,7 +1136,7 @@ export function EventsScreen() {
                 source={{ uri: venueProfile.admin_photo_url }}
                 style={{ width: "100%", height: 250 }}
                 contentFit="cover"
-                cachePolicy="memory-disk"
+                cachePolicy="disk"
               />
             </Pressable>
           ) : <View style={{ flex: 1, backgroundColor: colors.primary }} />}

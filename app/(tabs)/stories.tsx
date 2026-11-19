@@ -27,8 +27,8 @@ type SelectedMedia = {
   name: string;
 };
 
-const MAX_STORY_VIDEO_BYTES = 300_000_000;
-const MAX_STORY_DURATION_SECONDS = 300;
+const MAX_STORY_VIDEO_BYTES = 10_000_000;
+const MAX_STORY_DURATION_SECONDS = 15;
 const TEXT_STORY_BACKGROUNDS = ["#FF6B00", "#1E88E5", "#8E24AA", "#00897B", "#D81B60", "#212121"];
 const TEXT_STORY_FONTS = ["System", "serif", "monospace"];
 const resolvedVideoCache = new Map<string, string>();
@@ -167,7 +167,7 @@ function SegmentedStoryRing({ stories, avatarUrl, colors, viewedStoryIds }: { st
     <Svg width={size} height={size} style={{ position: "absolute" }}>
       {stories.map((story, index) => <Circle key={story.id} cx={size / 2} cy={size / 2} r={radius} fill="transparent" stroke={viewedStoryIds.has(story.id) ? "#9CA3AF" : colors.primary} strokeWidth={strokeWidth} strokeDasharray={`${(segment / 360) * circumference} ${circumference}`} strokeLinecap="round" transform={`rotate(${index * (360 / stories.length) - 90 + gap / 2} ${size / 2} ${size / 2})`} />)}
     </Svg>
-    {avatarUrl ? <ExpoImage source={{ uri: avatarUrl }} style={{ width: 50, height: 50, borderRadius: 25 }} contentFit="cover" cachePolicy="memory-disk" /> : <View style={{ width: 50, height: 50, borderRadius: 25, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary }}><Text style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "800" }}>?</Text></View>}
+    {avatarUrl ? <ExpoImage source={{ uri: avatarUrl }} style={{ width: 50, height: 50, borderRadius: 25 }} contentFit="cover" cachePolicy="disk" /> : <View style={{ width: 50, height: 50, borderRadius: 25, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary }}><Text style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "800" }}>?</Text></View>}
   </View>;
 }
 
@@ -503,7 +503,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.All,
         allowsEditing: true,
-        quality: 0.85,
+        quality: 0.78,
         videoMaxDuration: MAX_STORY_DURATION_SECONDS,
       });
 
@@ -514,11 +514,11 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
         const durationMs = asset.duration ?? undefined;
         const fileSize = asset.fileSize ?? undefined;
         if (type === "video" && durationMs !== undefined && durationMs > MAX_STORY_DURATION_SECONDS * 1000) {
-          Alert.alert("Vídeo demasiado largo", "Máximo 5 minutos (300 segundos). Elige un fragmento más corto antes de subirlo.");
+          Alert.alert("Vídeo demasiado largo", "Máximo 15 segundos. Elige o recorta un fragmento más corto antes de subirlo.");
           return;
         }
         if (type === "video" && fileSize !== undefined && fileSize > MAX_STORY_VIDEO_BYTES) {
-          Alert.alert("Vídeo demasiado pesado", "El vídeo seleccionado supera el límite de 300 MB.");
+          Alert.alert("Vídeo demasiado pesado", "El vídeo supera 10 MB. Usa un clip más corto o con menor resolución.");
           return;
         }
         const filename = uri.split("/").pop() ?? `story_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
@@ -992,7 +992,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       <Modal visible={Boolean(selectedMedia)} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setSelectedMedia(null)}>
         <View style={{ flex: 1, backgroundColor: "#000000" }}>
           <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}>
-            {selectedMedia?.type === "image" ? <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" /> : selectedMedia ? <PreviewVideo uri={selectedMedia.uri} trimStart={trimRange.start} trimEnd={trimRange.end} muted={previewMuted} onDuration={(duration) => { setVideoDuration(duration); setTrimRange((current) => ({ start: Math.min(current.start, Math.max(0, duration - 0.1)), end: Math.min(current.end, duration) })); }} /> : null}
+            {selectedMedia?.type === "image" ? <ExpoImage source={{ uri: selectedMedia.uri }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="disk" /> : selectedMedia ? <PreviewVideo uri={selectedMedia.uri} trimStart={trimRange.start} trimEnd={trimRange.end} muted={previewMuted} onDuration={(duration) => { setVideoDuration(duration); setTrimRange((current) => ({ start: Math.min(current.start, Math.max(0, duration - 0.1)), end: Math.min(current.end, duration) })); }} /> : null}
           </View>
           <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0.62)", "rgba(0,0,0,0)"]} style={{ position: "absolute", top: 0, left: 0, right: 0, height: 180 }} />
           <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.84)"]} style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 240 }} />
@@ -1032,7 +1032,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <View style={{ width: 38, height: 38, borderRadius: 19, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: colors.primary }}>
                   {activeGroup.avatarUrl ? (
-                    <ExpoImage source={{ uri: activeGroup.avatarUrl }} style={{ width: 38, height: 38, borderRadius: 19 }} contentFit="cover" cachePolicy="memory-disk" />
+                    <ExpoImage source={{ uri: activeGroup.avatarUrl }} style={{ width: 38, height: 38, borderRadius: 19 }} contentFit="cover" cachePolicy="disk" />
                   ) : (
                     <Text style={{ color: "#FFFFFF", fontWeight: "800" }}>{activeGroup.userName[0]?.toUpperCase() ?? "?"}</Text>
                   )}
@@ -1053,7 +1053,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
             </View> : null}
 
             <View pointerEvents="none" style={{ position: "absolute", inset: 0, zIndex: 1, alignItems: "center", justifyContent: "center" }}>
-              {activeStory.media_type === "video" && activeStory.media_url ? <StoryVideo key={`story-video-${activeStory.id}`} uri={activeStory.media_url} muted={videoMuted} paused={isPaused || showViewers} trimStart={activeStory.trim_start_sec ?? 0} trimEnd={activeStory.trim_end_sec} onReady={() => setIsStoryMediaLoading(false)} onTimeUpdate={handleVideoTimeUpdate} /> : activeStory.media_type === "text" ? <View style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: activeStory.text_background_color || colors.primary }}><Text style={{ color: "#FFFFFF", fontFamily: activeStory.text_font_family || "System", fontSize: 30, fontWeight: "800", textAlign: "center" }}>{activeStory.text_content}</Text></View> : activeStory.media_url ? <ExpoImage source={{ uri: activeStory.media_url }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="memory-disk" transition={120} onLoad={() => setIsStoryMediaLoading(false)} onError={() => setIsStoryMediaLoading(false)} /> : null}
+              {activeStory.media_type === "video" && activeStory.media_url ? <StoryVideo key={`story-video-${activeStory.id}`} uri={activeStory.media_url} muted={videoMuted} paused={isPaused || showViewers} trimStart={activeStory.trim_start_sec ?? 0} trimEnd={activeStory.trim_end_sec} onReady={() => setIsStoryMediaLoading(false)} onTimeUpdate={handleVideoTimeUpdate} /> : activeStory.media_type === "text" ? <View style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: activeStory.text_background_color || colors.primary }}><Text style={{ color: "#FFFFFF", fontFamily: activeStory.text_font_family || "System", fontSize: 30, fontWeight: "800", textAlign: "center" }}>{activeStory.text_content}</Text></View> : activeStory.media_url ? <ExpoImage source={{ uri: activeStory.media_url }} style={{ width: "100%", height: "100%" }} contentFit="contain" cachePolicy="disk" transition={120} onLoad={() => setIsStoryMediaLoading(false)} onError={() => setIsStoryMediaLoading(false)} /> : null}
               {isStoryMediaLoading ? <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.22)" }}><View style={{ width: "72%", height: "58%", borderRadius: 18, backgroundColor: "rgba(255,255,255,0.08)" }} /><ActivityIndicator color="#FFFFFF" size="large" style={{ position: "absolute" }} /></View> : null}
             </View>
 
@@ -1145,7 +1145,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
               ) : viewers.map((viewer) => (
                 <View key={viewer.viewer_id} className="mb-3 flex-row items-center gap-3 rounded-2xl border p-3" style={{ borderColor: colors.border }}>
                   {viewer.avatar_url ? (
-                    <ExpoImage source={{ uri: viewer.avatar_url }} style={{ width: 40, height: 40, borderRadius: 20 }} className="h-10 w-10 rounded-full" contentFit="cover" cachePolicy="memory-disk" />
+                    <ExpoImage source={{ uri: viewer.avatar_url }} style={{ width: 40, height: 40, borderRadius: 20 }} className="h-10 w-10 rounded-full" contentFit="cover" cachePolicy="disk" />
                   ) : (
                     <View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary }}>
                       <Text className="font-bold text-white">{viewer.name[0]?.toUpperCase() ?? "?"}</Text>

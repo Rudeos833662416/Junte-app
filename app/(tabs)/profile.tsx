@@ -23,9 +23,11 @@ type UploadState = { kind: UploadKind; progress: number; message: string };
 type StorageReference = { bucket: string; path: string };
 
 async function prepareProfileImage(uri: string, kind: UploadKind) {
-  const maxWidth = kind === "avatar" ? 720 : 1600;
+  const maxWidth = kind === "avatar" ? 320 : 1080;
+  const quality = kind === "avatar" ? 0.75 : 0.78;
   return ImageManipulator.manipulateAsync(uri, [{ resize: { width: maxWidth } }], {
-    format: ImageManipulator.SaveFormat.PNG,
+    compress: quality,
+    format: ImageManipulator.SaveFormat.JPEG,
   });
 }
 
@@ -158,10 +160,10 @@ export default function ProfileScreen() {
           : asset.uri;
       const prepared = await prepareProfileImage(sourceUri, kind);
       setUploadState({ kind, progress: 32, message: "Procesando y comprimiendo la imagen…" });
-      const path = `${user.id}/profile/${kind}_${Date.now()}.png`;
+      const path = `${user.id}/profile/${kind}_${Date.now()}.jpg`;
       uploadedPath = path;
       setUploadState({ kind, progress: 58, message: "Subiendo una versión optimizada…" });
-      await uploadUriToStorage("profiles", path, prepared.uri, "image/png");
+      await uploadUriToStorage("profiles", path, prepared.uri, "image/jpeg");
       setUploadState({ kind, progress: 85, message: "Guardando en tu perfil…" });
       const publicUrl = await verifyPublicStorageUrl("profiles", path, "image");
       const column = kind === "avatar" ? "avatar_url" : "cover_url";
@@ -361,7 +363,7 @@ export default function ProfileScreen() {
                     source={{ uri: coverUrl }}
                     style={{ width: "100%", height: "100%" }}
                     contentFit="cover"
-                    cachePolicy="memory-disk"
+                    cachePolicy="disk"
                   />
                 ) : (
                   <View
@@ -393,7 +395,7 @@ export default function ProfileScreen() {
                       source={{ uri: avatarUrl }}
                       style={{ width: "100%", height: "100%" }}
                       contentFit="cover"
-                      cachePolicy="memory-disk"
+                      cachePolicy="disk"
                     />
                   ) : (
                     <Text className="text-3xl font-bold" style={{ color: colors.background }}>

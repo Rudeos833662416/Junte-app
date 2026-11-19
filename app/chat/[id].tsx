@@ -29,7 +29,7 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio";
-import { uploadUriToStorage } from "@/lib/media-upload";
+import { resolveCachedChatAudio, uploadUriToStorage } from "@/lib/media-upload";
 import {
   formatChatDateLabel,
   getCachedConversation,
@@ -63,8 +63,8 @@ type Message = {
 
 async function withSignedAudioUrl(message: Message) {
   if (!message.audio_path || message.audio_url) return message;
-  const { data } = await supabase.storage.from("chat-audio").createSignedUrl(message.audio_path, 60 * 60 * 24);
-  return { ...message, audio_url: data?.signedUrl ?? null };
+  const localOrSigned = await resolveCachedChatAudio(message.audio_path);
+  return { ...message, audio_url: localOrSigned };
 }
 
 function newClientMessageId() {
@@ -265,11 +265,7 @@ export default function ChatScreen() {
     }, 80);
   };
 
-  const playVoiceMessage = (message: Message) => {
-    if (!message.audio_url) {
-      Alert.alert("Audio no disponible", "No se pudo obtener el audio privado de este mensaje.");
-      return;
-    }
+  const playVoiceMessage = async (message: Message) => {
     try {
       if (playingAudioPath === message.audio_path && audioPlayerStatus.playing) {
         try {
@@ -279,8 +275,16 @@ export default function ChatScreen() {
         }
         return;
       }
+      let uri = message.audio_url;
+      if (!uri && message.audio_path) {
+        uri = await resolveCachedChatAudio(message.audio_path);
+      }
+      if (!uri) {
+        Alert.alert("Audio no disponible", "No se pudo obtener el audio privado de este mensaje.");
+        return;
+      }
       setPlayingAudioPath(message.audio_path ?? message.id);
-      audioPlayer.replace(message.audio_url);
+      audioPlayer.replace(uri);
       audioPlayer.play();
     } catch {
       /* SharedObject de expo-audio ya liberado o no listo */
