@@ -86,7 +86,6 @@ export default function ActivityScreen() {
         .select("id, actor_id, type, message, created_at, venue_id, reaction, reaction_emoji, read_at")
         .eq("recipient_id", user.id)
         .order("created_at", { ascending: false }).limit(25)
-        .limit(100);
       if (error) throw error;
       const rows = (data ?? []) as ActivityRow[];
       const actorIds = [...new Set(rows.map((row) => row.actor_id))];
