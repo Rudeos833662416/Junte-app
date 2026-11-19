@@ -98,10 +98,15 @@ export default function ChatScreen() {
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isMountedRef = useRef(true);
+  const isRecordingRef = useRef(false);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 250);
   const audioPlayer = useAudioPlayer();
   const audioPlayerStatus = useAudioPlayerStatus(audioPlayer);
+
+  useEffect(() => {
+    isRecordingRef.current = Boolean(recorderState.isRecording);
+  }, [recorderState.isRecording]);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingSendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -265,22 +270,37 @@ export default function ChatScreen() {
       Alert.alert("Audio no disponible", "No se pudo obtener el audio privado de este mensaje.");
       return;
     }
-    if (playingAudioPath === message.audio_path && audioPlayerStatus.playing) {
-      audioPlayer.pause();
-      return;
+    try {
+      if (playingAudioPath === message.audio_path && audioPlayerStatus.playing) {
+        try {
+          audioPlayer.pause();
+        } catch {
+          /* SharedObject ya liberado */
+        }
+        return;
+      }
+      setPlayingAudioPath(message.audio_path ?? message.id);
+      audioPlayer.replace(message.audio_url);
+      audioPlayer.play();
+    } catch {
+      /* SharedObject de expo-audio ya liberado o no listo */
     }
-    setPlayingAudioPath(message.audio_path ?? message.id);
-    audioPlayer.replace(message.audio_url);
-    audioPlayer.play();
   };
 
   const toggleVoiceRecording = async () => {
     if (!user || !otherId || voiceSending) return;
-    if (recorderState.isRecording) {
+    if (recorderState.isRecording || isRecordingRef.current) {
       const durationMs = recorderState.durationMillis;
       setVoiceSending(true);
+      isRecordingRef.current = false;
       try {
-        await recorder.stop();
+        try {
+          await recorder.stop();
+        } catch {
+          /* SharedObject ya liberado al salir de la pantalla */
+          setVoiceSending(false);
+          return;
+        }
         const uri = recorder.uri;
         if (!uri) throw new Error("La grabación no produjo un archivo de audio.");
         const clientMessageId = newClientMessageId();
@@ -324,14 +344,32 @@ export default function ChatScreen() {
     try {
       await recorder.prepareToRecordAsync();
       recorder.record();
+      isRecordingRef.current = true;
     } catch (error) {
+      isRecordingRef.current = false;
       Alert.alert("No se pudo grabar", error instanceof Error ? error.message : "El micrófono no está disponible.");
     }
   };
 
-  useEffect(() => () => {
-    if (recorder.isRecording) void recorder.stop();
-  }, [recorder]);
+  useEffect(() => {
+    return () => {
+      // No llamar a SharedObjects de expo-audio si el runtime nativo ya los liberó
+      // al desmontar la pantalla (crash: "Cannot use shared object that was already released").
+      if (isRecordingRef.current) {
+        try {
+          recorder.stop();
+        } catch {
+          /* already released */
+        }
+        isRecordingRef.current = false;
+      }
+      try {
+        audioPlayer.pause();
+      } catch {
+        /* already released */
+      }
+    };
+  }, [recorder, audioPlayer]);
 
   const sendMessage = async () => {
     const body = draft.trim();
