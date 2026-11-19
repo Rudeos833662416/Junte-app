@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
+import * as VideoThumbnails from "expo-video-thumbnails";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 
@@ -125,8 +126,6 @@ export function StoryVideoEditor({
     setLoadingThumbs(true);
     (async () => {
       try {
-        const optionalModuleName = ["expo", "video-thumbnails"].join("-");
-        const VideoThumbnails = await import(optionalModuleName);
         const step = safeDuration / THUMB_COUNT;
         const uris: string[] = [];
         for (let i = 0; i < THUMB_COUNT; i++) {
