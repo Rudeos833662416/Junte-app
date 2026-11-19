@@ -14,6 +14,9 @@ export type CachedChatMessage = {
   audio_path?: string | null;
   duration_ms?: number | null;
   audio_url?: string | null;
+  reply_to_message_id?: string | null;
+  reply_to_body?: string | null;
+  reply_to_sender_id?: string | null;
 };
 
 export type CachedConversation = {
