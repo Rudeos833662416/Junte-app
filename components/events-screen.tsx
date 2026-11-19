@@ -341,7 +341,7 @@ export function EventsScreen() {
         if (!silent) setLoading(false);
       }
     },
-    [user],
+    [user, venueId],
   );
 
   useEffect(() => {
@@ -424,6 +424,10 @@ export function EventsScreen() {
       if ("id" in venue && venue.id != null) params.focusVenueId = String(venue.id);
     }
     router.push({ pathname: "/(tabs)/map", params });
+  };
+  const openAuthorChat = (post: OfficialPost) => {
+    if (!user || post.created_by === user.id) return;
+    router.push({ pathname: "/chat/[id]", params: { id: post.created_by, name: post.authorName, ...(post.authorAvatarUrl ? { avatarUrl: post.authorAvatarUrl } : {}) } });
   };
 
   const toggleLike = async (post: OfficialPost) => {
@@ -930,6 +934,12 @@ export function EventsScreen() {
                   <MaterialIcons name="chat-bubble-outline" size={20} color={colors.muted} />
                   <Text style={{ color: colors.foreground }}>{item.commentCount}</Text>
                 </Pressable>
+                {item.created_by !== user?.id ? (
+                  <Pressable onPress={() => openAuthorChat(item)} accessibilityRole="button" accessibilityLabel={`Abrir chat con ${item.authorName}`} hitSlop={8} className="flex-row items-center gap-1">
+                    <MaterialIcons name="message" size={20} color={colors.muted} />
+                    <Text style={{ color: colors.foreground }}>Chat</Text>
+                  </Pressable>
+                ) : null}
                 <Pressable onPress={() => void sharePost(item)} hitSlop={8}>
                   <MaterialIcons name="share" size={20} color={colors.muted} />
                 </Pressable>

@@ -479,6 +479,24 @@ export default function HomeScreen() {
               >
                 <Text className="font-semibold text-foreground">Ver amigos en el mapa</Text>
               </Pressable>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Pressable
+                  onPress={() => router.push({ pathname: "/(tabs)/friends", params: { subTab: "chat" } })}
+                  accessibilityRole="button"
+                  accessibilityLabel="Abrir Chat"
+                  style={({ pressed }) => ({ flex: 1, minHeight: 46, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: colors.primary, opacity: pressed ? 0.78 : 1 })}
+                >
+                  <Text style={{ color: colors.background, fontWeight: "800" }}>Abrir Chat</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push("/(tabs)/events")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ver Eventos"
+                  style={({ pressed }) => ({ flex: 1, minHeight: 46, alignItems: "center", justifyContent: "center", borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: `${colors.surface}E8`, opacity: pressed ? 0.78 : 1 })}
+                >
+                  <Text style={{ color: colors.foreground, fontWeight: "800" }}>Ver Eventos</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         </ScrollView>

@@ -393,6 +393,30 @@ export default function FriendsScreen() {
             ) : (
               <Text className="text-sm text-muted">Sin brindis activo</Text>
             )}
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+              <Pressable
+                onPress={(event) => {
+                  event.stopPropagation();
+                  router.push({ pathname: "/chat/[id]", params: { id: friend.id, name: friend.name, ...(friend.avatarUrl ? { avatarUrl: friend.avatarUrl } : {}) } });
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Abrir chat con ${friend.name}`}
+                style={{ minHeight: 34, borderRadius: 10, paddingHorizontal: 10, justifyContent: "center", backgroundColor: `${colors.primary}18` }}
+              >
+                <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "800" }}>Chat</Text>
+              </Pressable>
+              {isInBar ? <Pressable
+                onPress={(event) => {
+                  event.stopPropagation();
+                  router.push("/(tabs)/map");
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Ver a ${friend.name} en el mapa`}
+                style={{ minHeight: 34, borderRadius: 10, paddingHorizontal: 10, justifyContent: "center", borderWidth: 1, borderColor: colors.border }}
+              >
+                <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: "700" }}>Mapa</Text>
+              </Pressable> : null}
+            </View>
           </View>
           {isInBar ? <IconSymbol name="chevron.right" size={20} color={colors.primary} /> : null}
         </View>
