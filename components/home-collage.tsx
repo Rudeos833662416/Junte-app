@@ -74,7 +74,7 @@ function CollageLayer({
         source={{ uri: image.image_url }}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-        cachePolicy="memory-disk"
+        cachePolicy="disk"
         contentFit="cover"
         transition={0}
         onLoad={() => onTileReady(index)}
