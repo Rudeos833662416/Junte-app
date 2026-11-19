@@ -2,9 +2,44 @@ import { File } from "expo-file-system";
 import * as LegacyFileSystem from "expo-file-system/legacy";
 import { fetch as expoFetch } from "expo/fetch";
 import { Platform } from "react-native";
+import * as ImageManipulator from "expo-image-manipulator";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 
 export type VerifiedMediaKind = "image" | "video";
+
+/** 1 year — stable public URLs can be cached aggressively by CDN and clients. */
+export const STORAGE_CACHE_CONTROL = "31536000";
+
+export type ImageUploadKind = "avatar" | "cover" | "story" | "collage" | "feed" | "generic";
+
+const IMAGE_LIMITS: Record<ImageUploadKind, { maxWidth: number; quality: number }> = {
+  avatar: { maxWidth: 320, quality: 0.75 },
+  cover: { maxWidth: 1080, quality: 0.78 },
+  story: { maxWidth: 1080, quality: 0.78 },
+  collage: { maxWidth: 1080, quality: 0.78 },
+  feed: { maxWidth: 1080, quality: 0.78 },
+  generic: { maxWidth: 1080, quality: 0.78 },
+};
+
+/**
+ * Resize + JPEG-compress before upload to cut Storage egress/ingress.
+ * Returns a local file URI and the MIME type to use on upload.
+ */
+export async function compressImageForUpload(
+  uri: string,
+  kind: ImageUploadKind = "generic",
+): Promise<{ uri: string; mimeType: "image/jpeg" }> {
+  const { maxWidth, quality } = IMAGE_LIMITS[kind];
+  const result = await ImageManipulator.manipulateAsync(
+    uri,
+    [{ resize: { width: maxWidth } }],
+    {
+      compress: quality,
+      format: ImageManipulator.SaveFormat.JPEG,
+    },
+  );
+  return { uri: result.uri, mimeType: "image/jpeg" };
+}
 
 function publicStorageUrl(bucket: string, path: string) {
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
@@ -80,7 +115,7 @@ async function uploadWithExpoFetch(
       Authorization: `Bearer ${accessToken}`,
       apikey: SUPABASE_ANON_KEY,
       "Content-Type": mimeType,
-      "Cache-Control": "3600",
+      "Cache-Control": STORAGE_CACHE_CONTROL,
       "x-upsert": "false",
     },
     body: file,
@@ -113,7 +148,7 @@ export async function uploadUriToStorage(
     const blob = await response.blob();
     const result = await supabase.storage.from(bucket).upload(path, blob, {
       contentType: mimeType,
-      cacheControl: "3600",
+      cacheControl: STORAGE_CACHE_CONTROL,
       upsert: false,
     });
     if (result.error) throw result.error;
@@ -137,4 +172,38 @@ export async function uploadUriToStorage(
       await LegacyFileSystem.deleteAsync(cacheUri, { idempotent: true });
     }
   }
+}
+
+/**
+ * Download a private chat-audio object once into the device cache and reuse the local file.
+ * Avoids re-signing + re-downloading the same voice note on every play / re-open.
+ */
+export async function resolveCachedChatAudio(audioPath: string): Promise<string | null> {
+  if (!audioPath) return null;
+  const safeName = audioPath.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const cacheDir = LegacyFileSystem.cacheDirectory;
+  if (!cacheDir) return null;
+  const localUri = `${cacheDir}chat-audio_${safeName}`;
+
+  try {
+    const info = await LegacyFileSystem.getInfoAsync(localUri);
+    if (info.exists && "size" in info && (info.size ?? 0) > 0) {
+      return localUri;
+    }
+  } catch {
+    /* continue to download */
+  }
+
+  const { data, error } = await supabase.storage.from("chat-audio").createSignedUrl(audioPath, 60 * 60 * 6);
+  if (error || !data?.signedUrl) return null;
+
+  try {
+    const result = await LegacyFileSystem.downloadAsync(data.signedUrl, localUri);
+    if (result.status >= 200 && result.status < 300) return result.uri;
+  } catch {
+    /* fall through */
+  }
+
+  // Fallback: play from signed URL without caching
+  return data.signedUrl;
 }
