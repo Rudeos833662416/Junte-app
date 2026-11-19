@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Alert, Animated, BackHandler, Easing, Image as RNImage, Modal, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -179,6 +180,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
   const requestedStoryId = embeddedStoryId ?? routeStoryId;
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { keyboardHeight, isKeyboardVisible } = useKeyboardInset();
 
   const [groupedStories, setGroupedStories] = useState<GroupedStoryUser[]>(() => getCachedStoryGroups());
   const [isLoading, setIsLoading] = useState(() => getCachedStoryGroups().length === 0);
@@ -971,7 +973,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       </ScrollView>
 
       <Modal visible={showTextCreator} animationType="fade" presentationStyle="fullScreen" onRequestClose={() => setShowTextCreator(false)}>
-        <View className="flex-1" style={{ backgroundColor: textBackgroundColor, paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 16) }}>
+        <View className="flex-1" style={{ backgroundColor: textBackgroundColor, paddingTop: Math.max(insets.top, 16), paddingBottom: isKeyboardVisible ? keyboardHeight + 8 : Math.max(insets.bottom, 16) }}>
           <View className="flex-row items-center justify-between px-5">
             <Pressable onPress={() => setShowTextCreator(false)} accessibilityRole="button" accessibilityLabel="Volver" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}><IconSymbol name="chevron.left" size={24} color="#FFFFFF" /></Pressable>
             <View className="flex-row items-center gap-2">
@@ -1002,7 +1004,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
             {selectedMedia?.type === "video" ? <Pressable onPress={() => setPreviewMuted((muted) => !muted)} accessibilityRole="button" accessibilityLabel={previewMuted ? "Activar sonido de la vista previa" : "Silenciar vista previa"} style={{ width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.5)" }}><IconSymbol name={previewMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"} size={20} color="#FFFFFF" /></Pressable> : <View style={{ width: 42 }} />}
           </View>
           {selectedMedia?.type === "video" ? <View style={{ zIndex: 10, paddingHorizontal: 14 }}><TrimRangeControl duration={videoDuration} range={trimRange} colors={colors} onChange={setTrimRange} /></View> : null}
-          <View style={{ zIndex: 10, marginTop: "auto", paddingHorizontal: 14, paddingBottom: Math.max(insets.bottom + 12, 24), paddingTop: 12, flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={{ zIndex: 10, marginTop: "auto", paddingHorizontal: 14, paddingBottom: isKeyboardVisible ? keyboardHeight + 12 : Math.max(insets.bottom + 12, 24), paddingTop: 12, flexDirection: "row", alignItems: "center", gap: 10 }}>
             <TextInput value={caption} onChangeText={setCaption} placeholder="Añade un comentario…" placeholderTextColor="rgba(255,255,255,0.65)" style={{ flex: 1, minHeight: 48, borderRadius: 24, paddingHorizontal: 18, color: "#FFFFFF", fontSize: 15, backgroundColor: "rgba(28,28,30,0.88)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" }} />
             <Pressable onPress={() => void publishStory()} disabled={isUploading} accessibilityRole="button" accessibilityLabel="Publicar estado" style={{ width: 50, height: 50, borderRadius: 25, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, opacity: isUploading ? 0.6 : 1 }}><IconSymbol name="paperplane.fill" size={21} color="#FFFFFF" /></Pressable>
           </View>
@@ -1099,7 +1101,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
               />
             </View>
 
-            {!isChromeHidden ? <View style={{ position: "absolute", left: 16, right: 16, bottom: Math.max(insets.bottom + 12, 28), zIndex: 4 }}>
+            {!isChromeHidden ? <View style={{ position: "absolute", left: 16, right: 16, bottom: isKeyboardVisible ? keyboardHeight + 8 : Math.max(insets.bottom + 12, 28), zIndex: 4 }}>
               {activeStory.caption ? <Text style={{ marginBottom: 12, paddingHorizontal: 14, color: "#FFFFFF", textAlign: "center", fontSize: 14, fontWeight: "600" }}>{activeStory.caption}</Text> : null}
               {activeGroup.isSelf ? (
                 <Pressable onPress={(event) => { stopEventPropagation(event); void loadViewers(activeStory.id); }} accessibilityRole="button" accessibilityLabel="Ver quién vio este estado" style={{ minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 24, paddingHorizontal: 18, backgroundColor: "rgba(0,0,0,0.68)" }}>

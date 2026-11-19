@@ -16,6 +16,7 @@ import { uploadUriToStorage, verifyPublicStorageUrl } from "@/lib/media-upload";
 import { router } from "expo-router";
 import { ThoughtBubble, THOUGHT_MAX } from "@/components/thought-bubble";
 import { useThemeContext } from "@/lib/theme-provider";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 
 type UploadKind = "avatar" | "cover";
 type UploadState = { kind: UploadKind; progress: number; message: string };
@@ -50,6 +51,7 @@ function getInitials(name: string) {
 
 export default function ProfileScreen() {
   const colors = useColors();
+  const { bottomInset, isKeyboardVisible } = useKeyboardInset();
   const { colorScheme, setColorScheme } = useThemeContext();
   const { user, loading: authLoading, logout } = useAuth({ autoFetch: true });
   const { revision } = useAppRefresh();
@@ -331,7 +333,7 @@ export default function ProfileScreen() {
   const email = user?.email || "";
 
   return (
-    <ScreenContainer className="px-5 pt-3">
+    <ScreenContainer className="px-5 pt-3" keyboardAware>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -555,7 +557,7 @@ export default function ProfileScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
       <Modal visible={isDeleteModalVisible} transparent animationType="fade" onRequestClose={() => { if (!isDeletingAccount) setIsDeleteModalVisible(false); }}>
-        <View style={{ flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.62)" }}>
+        <View style={{ flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.62)", paddingBottom: isKeyboardVisible ? bottomInset + 24 : 24 }}>
           <View className="rounded-3xl p-5" style={{ backgroundColor: colors.surface }}>
             <Text className="text-xl font-bold text-foreground">¿Eliminar tu cuenta?</Text>
             <Text className="mt-2 text-sm leading-5 text-muted">No podrás recuperar esta cuenta. Para confirmar, escribe exactamente ELIMINAR.</Text>

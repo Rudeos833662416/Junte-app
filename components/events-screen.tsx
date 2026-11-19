@@ -40,6 +40,7 @@ import {
   type ViewToken,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -119,6 +120,7 @@ type FeaturedVenue = {
 export function EventsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { keyboardHeight, isKeyboardVisible } = useKeyboardInset();
   const { user } = useAuth({ autoFetch: true });
   const { postId: requestedPostId, venueId: requestedVenueId } = useLocalSearchParams<{ postId?: string; venueId?: string }>();
   const postId = typeof requestedPostId === "string" ? requestedPostId : undefined;
@@ -953,8 +955,8 @@ export function EventsScreen() {
       >
         <KeyboardAvoidingView
           style={{ flex: 1, backgroundColor: colors.background }}
-          behavior="padding"
-          keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 24}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
         >
           <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: insets.top + 16 }}>
             {commentsLoading && comments.length === 0 ? (
@@ -1074,7 +1076,7 @@ export function EventsScreen() {
                 flexDirection: "row",
                 gap: 8,
                 alignItems: "flex-end",
-                paddingBottom: Math.max(insets.bottom, 12),
+                paddingBottom: isKeyboardVisible ? keyboardHeight + 8 : Math.max(insets.bottom, 12),
                 borderTopWidth: 1,
                 borderTopColor: colors.border,
                 paddingTop: 10,
