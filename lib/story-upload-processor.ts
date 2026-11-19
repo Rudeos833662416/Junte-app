@@ -3,10 +3,10 @@ import { compressImageForUpload, uploadUriToStorage, verifyPublicStorageUrl } fr
 import { supabase } from "@/lib/supabase";
 import type { StoryUploadJob } from "@/lib/story-upload-queue";
 
-/** Phase-1 egress limits for Stories video. */
-export const MAX_STORY_VIDEO_BYTES = 10_000_000; // 10 MB
-export const MAX_COMPRESSED_VIDEO_BYTES = 10_000_000;
-export const MAX_STORY_DURATION_SECONDS = 15;
+/** WhatsApp-style story video limits (within Supabase Storage Free 50 MB). */
+export const MAX_STORY_VIDEO_BYTES = 45_000_000; // 45 MB
+export const MAX_COMPRESSED_VIDEO_BYTES = 45_000_000;
+export const MAX_STORY_DURATION_SECONDS = 90;
 
 async function prepareStoryImage(uri: string) {
   return compressImageForUpload(uri, "story");
@@ -17,23 +17,23 @@ async function prepareStoryVideo(uri: string, onProgress: (progress: number) => 
   const { compress, getMetadata } = await import("expo-image-and-video-compressor");
   const sourceMetadata = await getMetadata(uri);
   if (sourceMetadata.duration > MAX_STORY_DURATION_SECONDS) {
-    throw new Error("Las historias en vídeo pueden durar como máximo 15 segundos.");
+    throw new Error("Las historias en vídeo pueden durar como máximo 90 segundos.");
   }
   if (sourceMetadata.size > MAX_STORY_VIDEO_BYTES) {
-    throw new Error("El vídeo supera el límite de 10 MB. Elige un clip más corto o con menos resolución.");
+    throw new Error("El vídeo supera el límite de 45 MB. Elige un clip más corto o con menos resolución.");
   }
   onProgress(0.1);
   const compressedUri = await compress(uri, {
-    bitrate: 1_200_000,
+    bitrate: 1_800_000,
     maxSize: 720,
     codec: "h264",
     speed: "fast",
-    minimumFileSizeForCompress: 1_000_000,
+    minimumFileSizeForCompress: 2_000_000,
     progressDivider: 5,
   }, (progress) => onProgress(0.1 + progress * 0.65));
   const compressedMetadata = await getMetadata(compressedUri);
   if (compressedMetadata.duration > MAX_STORY_DURATION_SECONDS || compressedMetadata.size > MAX_COMPRESSED_VIDEO_BYTES) {
-    throw new Error("El vídeo no pudo quedar dentro de 15 segundos y 10 MB. Recorta o elige otro archivo.");
+    throw new Error("El vídeo no pudo quedar dentro de 90 segundos y 45 MB. Recorta o elige otro archivo.");
   }
   onProgress(0.82);
   return compressedUri;
