@@ -207,3 +207,38 @@ export async function resolveCachedChatAudio(audioPath: string): Promise<string 
   // Fallback: play from signed URL without caching
   return data.signedUrl;
 }
+
+/**
+ * Cache a private chat-media object (image/video) on disk after the first signed download.
+ */
+export async function resolveCachedChatMedia(
+  mediaPath: string,
+  bucket: "chat-media" | "chat-audio" = "chat-media",
+): Promise<string | null> {
+  if (!mediaPath) return null;
+  const safeName = mediaPath.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const cacheDir = LegacyFileSystem.cacheDirectory;
+  if (!cacheDir) return null;
+  const localUri = `${cacheDir}${bucket}_${safeName}`;
+
+  try {
+    const info = await LegacyFileSystem.getInfoAsync(localUri);
+    if (info.exists && "size" in info && (info.size ?? 0) > 0) {
+      return localUri;
+    }
+  } catch {
+    /* download */
+  }
+
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(mediaPath, 60 * 60 * 6);
+  if (error || !data?.signedUrl) return null;
+
+  try {
+    const result = await LegacyFileSystem.downloadAsync(data.signedUrl, localUri);
+    if (result.status >= 200 && result.status < 300) return result.uri;
+  } catch {
+    /* fall through */
+  }
+
+  return data.signedUrl;
+}
