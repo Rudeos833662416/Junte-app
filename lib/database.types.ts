@@ -134,6 +134,10 @@ export type Database = {
           deleted_at: string | null
           reactions: Record<string, string>
           location_payload: Record<string, unknown> | null
+          trim_start_ms: number | null
+          trim_end_ms: number | null
+          is_muted: boolean
+          overlay_text: string | null
         }
         Insert: {
           id?: string
@@ -154,6 +158,10 @@ export type Database = {
           deleted_at?: string | null
           reactions?: Record<string, string>
           location_payload?: Record<string, unknown> | null
+          trim_start_ms?: number | null
+          trim_end_ms?: number | null
+          is_muted?: boolean
+          overlay_text?: string | null
         }
         Update: {
           id?: string
@@ -174,6 +182,10 @@ export type Database = {
           deleted_at?: string | null
           reactions?: Record<string, string>
           location_payload?: Record<string, unknown> | null
+          trim_start_ms?: number | null
+          trim_end_ms?: number | null
+          is_muted?: boolean
+          overlay_text?: string | null
         }
         Relationships: []
       }
@@ -584,6 +596,10 @@ export type Database = {
         Args: { p_lat: number; p_lng: number; p_radius_km: number }
         Returns: Json
       }
+      find_pin_at_toast: {
+        Args: { p_lat: number; p_lng: number; p_radius_meters?: number }
+        Returns: { id: number; name: string; distance_meters: number }[]
+      }
       search_public_profiles: { Args: { p_query: string }; Returns: Json }
       purge_expired_stories: { Args: Record<string, never>; Returns: undefined }
       get_official_post_authors: { Args: { p_post_ids: string[] }; Returns: Json }
@@ -597,6 +613,10 @@ export type Database = {
       set_friendship_status: {
         Args: { p_friendship_id: number; p_status: string }
         Returns: Json
+      }
+      toggle_message_reaction: {
+        Args: { p_message_id: string; p_emoji: string }
+        Returns: Tables<"direct_messages">
       }
     }
     Enums: Record<string, never>

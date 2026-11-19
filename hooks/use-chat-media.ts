@@ -6,7 +6,6 @@ import {
   resolveCachedChatMedia,
   uploadUriToStorage,
 } from "@/lib/media-upload";
-import { supabase } from "@/lib/supabase";
 
 export const MAX_CHAT_VIDEO_BYTES = 45_000_000;
 
@@ -16,6 +15,10 @@ export type PendingChatMedia = {
   mimeType: string;
   fileSize?: number;
   durationMs?: number;
+  trimStartMs?: number;
+  trimEndMs?: number;
+  isMuted?: boolean;
+  overlayText?: string | null;
 };
 
 export type ChatMediaMessageFields = {
@@ -24,12 +27,21 @@ export type ChatMediaMessageFields = {
   media_type: string;
   body: string;
   duration_ms: number | null;
+  trim_start_ms: number | null;
+  trim_end_ms: number | null;
+  is_muted: boolean;
+  overlay_text: string | null;
 };
 
 export function useChatMedia() {
   const [pending, setPending] = useState<PendingChatMedia | null>(null);
   const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
+
+  const setPendingMedia = useCallback((media: PendingChatMedia) => {
+    setPending(media);
+    setCaption(media.overlayText ?? "");
+  }, []);
 
   const clearPending = useCallback(() => {
     setPending(null);
@@ -121,6 +133,10 @@ export function useChatMedia() {
           media_type: mimeType,
           body: caption.trim(),
           duration_ms: pending.kind === "video" ? (pending.durationMs ?? null) : null,
+          trim_start_ms: pending.kind === "video" ? (pending.trimStartMs ?? 0) : null,
+          trim_end_ms: pending.kind === "video" ? (pending.trimEndMs ?? pending.durationMs ?? null) : null,
+          is_muted: pending.kind === "video" ? Boolean(pending.isMuted) : false,
+          overlay_text: pending.kind === "video" ? pending.overlayText ?? null : null,
         };
       } finally {
         setUploading(false);
@@ -134,6 +150,7 @@ export function useChatMedia() {
     caption,
     setCaption,
     uploading,
+    setPendingMedia,
     pickMedia,
     clearPending,
     uploadAndBuildFields,

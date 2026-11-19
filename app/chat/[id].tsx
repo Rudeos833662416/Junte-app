@@ -3,9 +3,12 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  GestureResponderEvent,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
+  PanResponderGestureState,
   Platform,
   Pressable,
   Text,
@@ -22,6 +25,9 @@ import { setActiveChatId } from "@/lib/push-notifications";
 import { friendlyChatError } from "@/lib/chat-errors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -33,6 +39,9 @@ import {
 import { resolveCachedChatAudio, resolveCachedChatMedia, uploadUriToStorage } from "@/lib/media-upload";
 import { useChatMedia } from "@/hooks/use-chat-media";
 import { ChatMediaViewer } from "@/components/chat-media-viewer";
+import { ChatMessageActions } from "@/components/chat-message-actions";
+import { ChatQuickCamera, type QuickCameraAsset } from "@/components/chat-quick-camera";
+import { StoryVideoEditor, type StoryVideoEditorResult } from "@/components/story-video-editor";
 import {
   formatChatDateLabel,
   getCachedConversation,
@@ -65,6 +74,14 @@ type Message = {
   reply_to_message_id?: string | null;
   reply_to_body?: string | null;
   reply_to_sender_id?: string | null;
+  edited_at?: string | null;
+  deleted_at?: string | null;
+  reactions?: Record<string, string>;
+  location_payload?: { name?: string; address?: string; lat?: number; lng?: number; venue_id?: number | null } | null;
+  trim_start_ms?: number | null;
+  trim_end_ms?: number | null;
+  is_muted?: boolean;
+  overlay_text?: string | null;
 };
 
 async function withSignedAudioUrl(message: Message) {
@@ -108,8 +125,11 @@ export default function ChatScreen() {
   const [voiceSending, setVoiceSending] = useState(false);
   const [playingAudioPath, setPlayingAudioPath] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  const [actionsMessage, setActionsMessage] = useState<Message | null>(null);
+  const [quickCameraVisible, setQuickCameraVisible] = useState(false);
+  const [videoEditor, setVideoEditor] = useState<{ asset: QuickCameraAsset; durationMs: number } | null>(null);
   const chatMedia = useChatMedia();
-  const [viewer, setViewer] = useState<{ uri: string; kind: "image" | "video" } | null>(null);
+  const [viewer, setViewer] = useState<{ uri: string; kind: "image" | "video"; trimStartMs?: number | null; trimEndMs?: number | null; muted?: boolean; overlayText?: string | null } | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isMountedRef = useRef(true);
   const isRecordingRef = useRef(false);
@@ -178,7 +198,7 @@ export default function ChatScreen() {
     try {
       const { data, error } = await supabase
         .from("direct_messages")
-        .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id")
+        .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id, edited_at, deleted_at, reactions, location_payload, trim_start_ms, trim_end_ms, is_muted, overlay_text")
         .or(`and(sender_id.eq.${user.id},recipient_id.eq.${otherId}),and(sender_id.eq.${otherId},recipient_id.eq.${user.id})`)
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -280,6 +300,125 @@ export default function ChatScreen() {
     }, 80);
   };
 
+  const cancelVoiceRecording = async () => {
+    if (!recorderState.isRecording && !isRecordingRef.current) return;
+    isRecordingRef.current = false;
+    try { await recorder.stop(); } catch { /* already stopped or released */ }
+  };
+
+  const sendLocationMessage = async () => {
+    if (!user || !otherId || sending) return;
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permiso de ubicación", "Activa la ubicación para compartir tu local actual.");
+      return;
+    }
+    setSending(true);
+    try {
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { data: nearby } = await supabase.rpc("find_pin_at_toast", {
+        p_lat: position.coords.latitude,
+        p_lng: position.coords.longitude,
+        p_radius_meters: 35,
+      });
+      const pin = Array.isArray(nearby) ? nearby[0] as { id?: number; name?: string } | undefined : undefined;
+      const locationPayload = {
+        name: pin?.name ?? "Ubicación actual",
+        address: "",
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        venue_id: pin?.id ?? null,
+      };
+      const clientMessageId = newClientMessageId();
+      const { data, error } = await supabase.from("direct_messages").insert({
+        sender_id: user.id,
+        recipient_id: otherId,
+        body: pin?.name ? `Estoy en ${pin.name}` : "Te comparto mi ubicación",
+        kind: "location",
+        location_payload: locationPayload,
+        client_message_id: clientMessageId,
+        reply_to_message_id: replyTarget?.id && !String(replyTarget.id).startsWith("local-") ? replyTarget.id : null,
+      }).select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, location_payload, reply_to_message_id, edited_at, deleted_at, reactions").single();
+      if (error) throw error;
+      if (data) {
+        setMessages((current) => {
+          const next = mergeCachedMessage(current, { ...(data as Message), pending: false });
+          if (otherId) setCachedConversation(otherId, next);
+          return next as Message[];
+        });
+        setReplyTarget(null);
+      }
+    } catch (error) {
+      Alert.alert("No se pudo compartir la ubicación", friendlyChatError(error as { code?: string; message?: string }));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleQuickCameraAsset = (asset: QuickCameraAsset) => {
+    setQuickCameraVisible(false);
+    if (asset.kind === "video") {
+      setVideoEditor({ asset, durationMs: asset.durationMs ?? 90_000 });
+      return;
+    }
+    chatMedia.setPendingMedia({ uri: asset.uri, kind: "image", mimeType: asset.mimeType, fileSize: asset.fileSize });
+  };
+
+  const publishEditedVideo = (result: StoryVideoEditorResult) => {
+    if (!videoEditor) return;
+    const { asset } = videoEditor;
+    chatMedia.setPendingMedia({
+      uri: asset.uri,
+      kind: "video",
+      mimeType: asset.mimeType,
+      fileSize: asset.fileSize,
+      durationMs: Math.max(1_000, result.endMs - result.startMs),
+      trimStartMs: result.startMs,
+      trimEndMs: result.endMs,
+      isMuted: result.isMuted,
+      overlayText: result.caption || result.overlayText,
+    });
+    setVideoEditor(null);
+  };
+
+  const editMessage = async (message: Message, body: string) => {
+    if (!user || !otherId) return;
+    const { data, error } = await supabase.from("direct_messages").update({ body, edited_at: new Date().toISOString() }).eq("id", message.id).eq("sender_id", user.id).select("*").single();
+    if (error) { Alert.alert("No se pudo editar", friendlyChatError(error)); return; }
+    if (data) setMessages((current) => { const next = mergeCachedMessage(current, data as Message); setCachedConversation(otherId, next); return next as Message[]; });
+  };
+
+  const deleteMessage = async (message: Message) => {
+    if (!user || !otherId) return;
+    const { error } = await supabase.from("direct_messages").update({ body: "", deleted_at: new Date().toISOString() }).eq("id", message.id).eq("sender_id", user.id);
+    if (error) { Alert.alert("No se pudo eliminar", friendlyChatError(error)); return; }
+    if (message.media_path) await supabase.storage.from("chat-media").remove([message.media_path]);
+    if (message.audio_path) await supabase.storage.from("chat-audio").remove([message.audio_path]);
+    setMessages((current) => { const next = current.map((item) => item.id === message.id ? { ...item, body: "", deleted_at: new Date().toISOString() } : item); setCachedConversation(otherId, next); return next; });
+  };
+
+  const reactToMessage = async (message: Message, emoji: string) => {
+    const { data, error } = await supabase.rpc("toggle_message_reaction", { p_message_id: message.id, p_emoji: emoji });
+    if (error) { Alert.alert("No se pudo reaccionar", friendlyChatError(error)); return; }
+    if (data && otherId) setMessages((current) => { const next = mergeCachedMessage(current, data as Message); setCachedConversation(otherId, next); return next as Message[]; });
+  };
+
+  const openMessageActions = (message: Message) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    setActionsMessage(message);
+  };
+
+  const createSwipeResponder = (message: Message) => PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_: GestureResponderEvent, gesture: PanResponderGestureState) => Math.abs(gesture.dx) > 12,
+    onPanResponderRelease: (_: GestureResponderEvent, gesture: PanResponderGestureState) => {
+      if (gesture.dx > 45) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+        setReplyTarget(message);
+      }
+    },
+  });
+
   const playVoiceMessage = async (message: Message) => {
     try {
       if (playingAudioPath === message.audio_path && audioPlayerStatus.playing) {
@@ -338,7 +477,7 @@ export default function ChatScreen() {
             audio_path: audioPath,
             duration_ms: Math.max(0, Math.round(durationMs)),
           })
-          .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id")
+          .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id, edited_at, deleted_at, reactions, location_payload, trim_start_ms, trim_end_ms, is_muted, overlay_text")
           .single();
         if (error) throw error;
         if (data) {
@@ -405,10 +544,14 @@ export default function ChatScreen() {
         media_path: fields.media_path,
         media_type: fields.media_type,
         duration_ms: fields.duration_ms,
+        trim_start_ms: fields.trim_start_ms,
+        trim_end_ms: fields.trim_end_ms,
+        is_muted: fields.is_muted,
+        overlay_text: fields.overlay_text,
         client_message_id: clientMessageId,
-        reply_to_message_id: replyTarget?.id ?? null,
+        reply_to_message_id: replyTarget?.id && !String(replyTarget.id).startsWith("local-") ? replyTarget.id : null,
       })
-      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id")
+      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id, edited_at, deleted_at, reactions, location_payload, trim_start_ms, trim_end_ms, is_muted, overlay_text")
       .single();
     if (!error && data) {
       const hydrated = await withSignedMediaUrl(data as Message);
@@ -460,7 +603,7 @@ export default function ChatScreen() {
         client_message_id: clientMessageId,
         reply_to_message_id: replyingTo && !String(replyingTo.id).startsWith("local-") ? replyingTo.id : null,
       })
-      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id")
+      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id, edited_at, deleted_at, reactions, location_payload, trim_start_ms, trim_end_ms, is_muted, overlay_text")
       .single();
     setSending(false);
     if (error) {
@@ -540,10 +683,11 @@ export default function ChatScreen() {
                 return (
                   <View style={{ width: "100%" }}>
                     <Pressable
-                      onLongPress={() => setReplyTarget(item)}
+                      {...createSwipeResponder(item).panHandlers}
+                      onLongPress={() => openMessageActions(item)}
                       delayLongPress={280}
                       accessibilityRole="button"
-                      accessibilityLabel="Citar mensaje"
+                      accessibilityLabel="Abrir acciones del mensaje"
                       style={{
                         alignSelf: mine ? "flex-end" : "flex-start",
                         maxWidth: "82%",
@@ -565,7 +709,7 @@ export default function ChatScreen() {
                       ) : null}
                       {item.kind === "image" || item.kind === "video" ? (
                         <Pressable
-                          onPress={() => item.media_url && setViewer({ uri: item.media_url, kind: item.kind === "video" ? "video" : "image" })}
+                          onPress={() => item.media_url && !item.deleted_at && setViewer({ uri: item.media_url, kind: item.kind === "video" ? "video" : "image", trimStartMs: item.trim_start_ms, trimEndMs: item.trim_end_ms, muted: item.is_muted, overlayText: item.overlay_text })}
                           accessibilityRole="button"
                           accessibilityLabel={item.kind === "video" ? "Ver vídeo" : "Ver foto"}
                         >
@@ -586,17 +730,22 @@ export default function ChatScreen() {
                           </View>
                           {item.body ? <Text style={{ marginTop: 6, color: mine ? colors.background : colors.foreground }}>{item.body}</Text> : null}
                         </Pressable>
-                      ) : item.kind === "voice_note" ? (
+                      ) : item.kind === "location" && item.location_payload ? (
+                        <Pressable onPress={() => { const lat = item.location_payload?.lat; const lng = item.location_payload?.lng; if (typeof lat === "number" && typeof lng === "number") router.push({ pathname: "/(tabs)/map", params: { focusLat: String(lat), focusLng: String(lng), focusName: item.location_payload?.name ?? "Ubicación compartida", ...(item.location_payload?.venue_id ? { focusVenueId: String(item.location_payload.venue_id) } : {}) } }); }} accessibilityRole="button" accessibilityLabel="Abrir ubicación compartida" style={{ minWidth: 210, paddingVertical: 4 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><MaterialIcons name="location-on" size={30} color={mine ? colors.background : colors.primary} /><View style={{ flex: 1 }}><Text style={{ color: mine ? colors.background : colors.foreground, fontWeight: "800" }}>{item.location_payload.name || "Ubicación compartida"}</Text><Text style={{ color: mine ? `${colors.background}CC` : colors.muted, fontSize: 11, marginTop: 2 }}>Toca para abrir en el mapa</Text></View></View>
+                        </Pressable>
+                      ) : item.kind === "voice_note" && !item.deleted_at ? (
                         <Pressable onPress={() => playVoiceMessage(item)} accessibilityRole="button" accessibilityLabel="Reproducir nota de voz" style={{ minHeight: 40, minWidth: 150, flexDirection: "row", alignItems: "center", gap: 8 }}>
                           <MaterialIcons name={audioPlayerStatus.playing && playingAudioPath === (item.audio_path ?? item.id) ? "pause" : "play-arrow"} size={22} color={mine ? colors.background : colors.foreground} />
                           <Text style={{ color: mine ? colors.background : colors.foreground }}>Nota de voz · {Math.max(1, Math.round((item.duration_ms ?? 0) / 1000))}s</Text>
                         </Pressable>
                       ) : (
-                        <Text style={{ color: mine ? colors.background : colors.foreground }}>{item.body}</Text>
+                        <Text style={{ color: item.deleted_at ? colors.muted : mine ? colors.background : colors.foreground, fontStyle: item.deleted_at ? "italic" : "normal" }}>{item.deleted_at ? "Mensaje eliminado" : item.body}</Text>
                       )}
+                      {item.reactions && Object.keys(item.reactions).length > 0 ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 }}>{Object.entries(item.reactions).map(([emoji, count]) => <Text key={emoji} style={{ color: mine ? colors.background : colors.foreground, fontSize: 12, backgroundColor: mine ? `${colors.background}33` : `${colors.primary}18`, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 }}>{emoji} {count}</Text>)}</View> : null}
                       <View className="mt-1 flex-row items-center justify-end gap-1">
                         <Text style={{ fontSize: 10, color: mine ? `${colors.background}CC` : colors.muted }}>
-                          {new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}{item.edited_at ? " · editado" : ""}
                         </Text>
                         {mine ? (
                           deliveryStatus === "sending" ? <MaterialIcons name="schedule" size={12} color={`${colors.background}CC`} /> :
@@ -629,9 +778,7 @@ export default function ChatScreen() {
             </View>
           ) : null}
           {recorderState.isRecording ? (
-            <Text className="mb-2 text-xs font-bold" style={{ color: colors.error }}>
-              Grabando nota de voz · {Math.max(1, Math.round(recorderState.durationMillis / 1000))}s · toca detener y enviar
-            </Text>
+            <View className="mb-2 flex-row items-center gap-2"><Text className="flex-1 text-xs font-bold" style={{ color: colors.error }}>Grabando nota de voz · {Math.max(1, Math.round(recorderState.durationMillis / 1000))}s</Text><Pressable onPress={() => void cancelVoiceRecording()} accessibilityRole="button" accessibilityLabel="Cancelar nota de voz" style={{ minHeight: 36, paddingHorizontal: 10, justifyContent: "center" }}><Text style={{ color: colors.muted, fontWeight: "800" }}>Cancelar</Text></Pressable></View>
           ) : null}
           {chatMedia.pending ? (
             <Modal visible animationType="slide" onRequestClose={chatMedia.clearPending}>
@@ -652,6 +799,8 @@ export default function ChatScreen() {
                 Alert.alert("Adjuntar", undefined, [
                   { text: "Galería (Foto o Vídeo)", onPress: () => void chatMedia.pickMedia("library") },
                   { text: "Cámara", onPress: () => void chatMedia.pickMedia("camera") },
+                  { text: "Cámara rápida", onPress: () => setQuickCameraVisible(true) },
+                  { text: "Compartir ubicación/local", onPress: () => void sendLocationMessage() },
                   { text: "Cancelar", style: "cancel" },
                 ])
               }
@@ -685,7 +834,23 @@ export default function ChatScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
-      <ChatMediaViewer visible={!!viewer} uri={viewer?.uri ?? null} kind={viewer?.kind ?? null} onClose={() => setViewer(null)} />
+      <ChatQuickCamera visible={quickCameraVisible} onClose={() => setQuickCameraVisible(false)} onPick={handleQuickCameraAsset} />
+      {videoEditor ? <StoryVideoEditor visible uri={videoEditor.asset.uri} durationMs={videoEditor.durationMs} fileSizeBytes={videoEditor.asset.fileSize} onCancel={() => setVideoEditor(null)} onPublish={publishEditedVideo} /> : null}
+      {actionsMessage ? <ChatMessageActions
+        visible
+        messageId={actionsMessage.id}
+        body={actionsMessage.body}
+        mine={actionsMessage.sender_id === user?.id}
+        deleted={Boolean(actionsMessage.deleted_at)}
+        hasMedia={Boolean(actionsMessage.media_path || actionsMessage.audio_path || actionsMessage.location_payload)}
+        onClose={() => setActionsMessage(null)}
+        onReply={() => setReplyTarget(actionsMessage)}
+        onCopy={() => void Clipboard.setStringAsync(actionsMessage.body)}
+        onReact={(emoji) => void reactToMessage(actionsMessage, emoji)}
+        onEdit={(body) => void editMessage(actionsMessage, body)}
+        onDelete={() => void deleteMessage(actionsMessage)}
+      /> : null}
+      <ChatMediaViewer visible={!!viewer} uri={viewer?.uri ?? null} kind={viewer?.kind ?? null} trimStartMs={viewer?.trimStartMs} trimEndMs={viewer?.trimEndMs} muted={viewer?.muted} overlayText={viewer?.overlayText} onClose={() => setViewer(null)} />
     </ScreenContainer>
   );
 }

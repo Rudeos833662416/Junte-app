@@ -10,26 +10,42 @@ type Props = {
   uri: string | null;
   kind: "image" | "video" | null;
   onClose: () => void;
+  trimStartMs?: number | null;
+  trimEndMs?: number | null;
+  muted?: boolean;
+  overlayText?: string | null;
 };
 
-function ViewerVideo({ uri }: { uri: string }) {
+function ViewerVideo({ uri, trimStartMs, trimEndMs, muted }: Pick<Props, "uri" | "trimStartMs" | "trimEndMs" | "muted"> & { uri: string }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = false;
+    p.muted = Boolean(muted);
     p.play();
   });
   const [progress, setProgress] = useState(0);
   const [speed, setSpeed] = useState<1 | 1.5 | 2>(1);
+  const startSeconds = Math.max(0, (trimStartMs ?? 0) / 1000);
+  const endSeconds = trimEndMs != null ? Math.max(startSeconds + 0.1, trimEndMs / 1000) : null;
   useEffect(() => {
     player.playbackRate = speed;
   }, [player, speed]);
+  useEffect(() => {
+    player.muted = Boolean(muted);
+  }, [muted, player]);
+  useEffect(() => {
+    try { player.currentTime = startSeconds; } catch { /* player not ready */ }
+  }, [player, startSeconds]);
   useEffect(() => {
     const timer = setInterval(() => {
       const duration = Number(player.duration);
       const current = Number(player.currentTime);
       if (duration > 0 && Number.isFinite(current)) setProgress(Math.max(0, Math.min(1, current / duration)));
+      if (endSeconds != null && current >= endSeconds) {
+        try { player.currentTime = startSeconds; player.play(); } catch { /* released */ }
+      }
     }, 200);
     return () => clearInterval(timer);
-  }, [player]);
+  }, [endSeconds, player, startSeconds]);
   const nextSpeed = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
   useEffect(() => {
     return () => {
@@ -64,7 +80,7 @@ function ViewerVideo({ uri }: { uri: string }) {
   );
 }
 
-export function ChatMediaViewer({ visible, uri, kind, onClose }: Props) {
+export function ChatMediaViewer({ visible, uri, kind, onClose, trimStartMs, trimEndMs, muted, overlayText }: Props) {
   const { width, height } = useWindowDimensions();
   const [saving, setSaving] = useState(false);
 
@@ -114,16 +130,19 @@ export function ChatMediaViewer({ visible, uri, kind, onClose }: Props) {
             <MaterialIcons name="close" size={26} color="#FFFFFF" />
           </Pressable>
         </View>
-        {kind === "image" ? (
+      {kind === "image" ? (
           <Image
             source={{ uri }}
             style={{ width: width, height: height * 0.8 }}
             contentFit="contain"
             cachePolicy="disk"
           />
-        ) : (
-          <ViewerVideo uri={uri} />
-        )}
+      ) : (
+        <View style={{ width: "100%", height: "70%" }}>
+          <ViewerVideo uri={uri} trimStartMs={trimStartMs} trimEndMs={trimEndMs} muted={muted} />
+          {overlayText ? <Text style={{ position: "absolute", left: 24, right: 24, top: "42%", color: "#FFF", fontSize: 24, fontWeight: "800", textAlign: "center", textShadowColor: "#000", textShadowRadius: 6 }}>{overlayText}</Text> : null}
+        </View>
+      )}
       </View>
     </Modal>
   );
