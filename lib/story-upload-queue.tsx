@@ -12,6 +12,8 @@ export type StoryUploadJobInput = {
   privacy: "all_friends" | "close_friends" | "public";
   trimStart?: number;
   trimEnd?: number | null;
+  isMuted?: boolean;
+  overlayText?: string | null;
 };
 
 export type StoryUploadJob = StoryUploadJobInput & {
@@ -78,22 +80,25 @@ export class StoryUploadQueue {
   async hydrate() {
     if (this.hydrated) return;
     if (!this.hydrating) {
-      this.hydrating = this.storage.getItem(STORY_UPLOAD_QUEUE_KEY).then((raw) => {
-        if (raw) {
-          try {
-            const values = JSON.parse(raw) as unknown[];
-            for (const value of values) {
-              const job = asJob(value);
+      this.hydrating = (async () => {
+        try {
+          const raw = await this.storage.getItem(STORY_UPLOAD_QUEUE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as unknown[];
+            for (const item of parsed) {
+              const job = asJob(item);
               if (job && job.status !== "completed") this.jobs.set(job.id, job);
             }
-          } catch {
-            // Un JSON corrupto no debe impedir publicar un estado nuevo.
           }
+        } catch {
+          /* ignore corrupt queue */
+        } finally {
+          this.hydrated = true;
+          this.hydrating = null;
+          this.emit();
+          void this.pump();
         }
-        this.hydrated = true;
-        this.hydrating = null;
-        this.notify();
-      });
+      })();
     }
     await this.hydrating;
   }
@@ -103,12 +108,17 @@ export class StoryUploadQueue {
     return () => this.listeners.delete(listener);
   }
 
-  unsubscribeAll() {
-    this.listeners.clear();
+  private emit() {
+    for (const listener of this.listeners) listener();
   }
 
-  getSnapshot() {
-    return Object.fromEntries(this.jobs) as Record<string, StoryUploadJob>;
+  private async persist() {
+    const payload = JSON.stringify([...this.jobs.values()]);
+    await this.storage.setItem(STORY_UPLOAD_QUEUE_KEY, payload);
+  }
+
+  list() {
+    return [...this.jobs.values()].sort((a, b) => a.createdAt - b.createdAt);
   }
 
   async enqueue(input: StoryUploadJobInput) {
@@ -125,6 +135,7 @@ export class StoryUploadQueue {
     };
     this.jobs.set(job.id, job);
     await this.persist();
+    this.emit();
     void this.pump();
     return job;
   }
@@ -132,88 +143,84 @@ export class StoryUploadQueue {
   async retry(id: string) {
     await this.hydrate();
     const job = this.jobs.get(id);
-    if (!job || job.status !== "failed") return;
-    this.update(job, { status: "queued", progress: 0, error: null });
+    if (!job) return;
+    job.status = "queued";
+    job.error = null;
+    job.progress = 0;
+    job.updatedAt = Date.now();
     await this.persist();
+    this.emit();
     void this.pump();
   }
 
-  async waitForIdle() {
-    while (this.running) await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-
-  resume() {
-    void this.pump();
+  async remove(id: string) {
+    await this.hydrate();
+    this.jobs.delete(id);
+    await this.persist();
+    this.emit();
   }
 
   private async pump() {
     if (this.running) return;
     this.running = true;
     try {
+      await this.hydrate();
       while (true) {
-        const job = [...this.jobs.values()].find((candidate) => candidate.status === "queued");
-        if (!job) break;
-        this.update(job, { status: "uploading", progress: Math.max(job.progress, 0), error: null });
+        const next = this.list().find((job) => job.status === "queued");
+        if (!next) break;
+        next.status = "uploading";
+        next.updatedAt = Date.now();
         await this.persist();
+        this.emit();
         try {
-          await this.executor(job, (progress) => {
-            this.update(job, { progress: Math.max(0, Math.min(1, progress)) });
-            void this.persist();
+          await this.executor(next, (progress) => {
+            const current = this.jobs.get(next.id);
+            if (!current) return;
+            current.progress = progress;
+            current.updatedAt = Date.now();
+            this.emit();
           });
-          this.update(job, { status: "completed", progress: 1, error: null });
+          next.status = "completed";
+          next.progress = 1;
+          next.error = null;
+          next.updatedAt = Date.now();
+          this.jobs.delete(next.id);
         } catch (error) {
-          this.update(job, {
-            status: "failed",
-            error: error instanceof Error ? error.message : "No se pudo publicar el estado.",
-          });
+          next.status = "failed";
+          next.error = error instanceof Error ? error.message : "Error al subir";
+          next.updatedAt = Date.now();
         }
         await this.persist();
+        this.emit();
       }
     } finally {
       this.running = false;
-      this.notify();
     }
-  }
-
-  private update(job: StoryUploadJob, patch: Partial<StoryUploadJob>) {
-    Object.assign(job, patch, { updatedAt: Date.now() });
-    this.notify();
-  }
-
-  private async persist() {
-    await this.storage.setItem(STORY_UPLOAD_QUEUE_KEY, JSON.stringify([...this.jobs.values()]));
-    this.notify();
-  }
-
-  private notify() {
-    for (const listener of this.listeners) listener();
   }
 }
 
-async function defaultStoryUploadExecutor(job: StoryUploadJob, onProgress: (progress: number) => void) {
+async function defaultStoryUploadExecutor(
+  job: StoryUploadJob,
+  onProgress: (progress: number) => void,
+) {
   const { processStoryUpload } = await import("@/lib/story-upload-processor");
   await processStoryUpload(job, onProgress);
 }
 
-export const storyUploadQueue = new StoryUploadQueue();
-
-const StoryUploadQueueContext = createContext<StoryUploadQueue>(storyUploadQueue);
+const StoryUploadQueueContext = createContext<StoryUploadQueue | null>(null);
 
 export function StoryUploadQueueProvider({ children }: { children: ReactNode }) {
+  const [queue] = useState(() => new StoryUploadQueue());
   useEffect(() => {
-    void storyUploadQueue.hydrate().then(() => storyUploadQueue.resume());
-  }, []);
-  return <StoryUploadQueueContext.Provider value={storyUploadQueue}>{children}</StoryUploadQueueContext.Provider>;
+    void queue.hydrate();
+  }, [queue]);
+  return <StoryUploadQueueContext.Provider value={queue}>{children}</StoryUploadQueueContext.Provider>;
 }
 
 export function useStoryUploadQueue() {
   const queue = useContext(StoryUploadQueueContext);
-  const [, rerender] = useState(0);
-  useEffect(() => {
-    const unsubscribe = queue.subscribe(() => rerender((value) => value + 1));
-    return () => {
-      unsubscribe();
-    };
-  }, [queue]);
-  return { queue, jobs: queue.getSnapshot(), retry: queue.retry.bind(queue), enqueue: queue.enqueue.bind(queue) };
+  if (!queue) throw new Error("useStoryUploadQueue must be used within StoryUploadQueueProvider");
+  const [, setTick] = useState(0);
+  useEffect(() => queue.subscribe(() => setTick((value) => value + 1)), [queue]);
+  return queue;
 }
