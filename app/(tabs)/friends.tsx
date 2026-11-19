@@ -252,22 +252,27 @@ export default function FriendsScreen() {
   useEffect(() => {
     void fetchFriends();
     void fetchPendingRequests();
-    const channel = supabase
-      .channel("sky-night-friends-checkins")
-      .on("postgres_changes", { event: "*", schema: "public", table: "checkins" }, () => void fetchFriends())
-      .on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
         void fetchFriends();
         void fetchPendingRequests();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "stories" }, () => void fetchFriends())
+      }, 400);
+    };
+    const channel = supabase
+      .channel("sky-night-friends-checkins")
+      .on("postgres_changes", { event: "*", schema: "public", table: "checkins" }, schedule)
+      .on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, schedule)
+      .on("postgres_changes", { event: "*", schema: "public", table: "stories" }, schedule)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "story_views", filter: `viewer_id=eq.${user?.id ?? ""}` },
-        () => void fetchFriends(),
+        schedule,
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => void fetchFriends())
       .subscribe();
     return () => {
+      if (timer) clearTimeout(timer);
       void supabase.removeChannel(channel);
     };
   }, [fetchFriends, fetchPendingRequests, revision, user?.id]);

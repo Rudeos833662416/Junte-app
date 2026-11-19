@@ -85,7 +85,7 @@ export default function ActivityScreen() {
         .from("activities")
         .select("id, actor_id, type, message, created_at, venue_id, reaction, reaction_emoji, read_at")
         .eq("recipient_id", user.id)
-        .order("created_at", { ascending: false })
+        .order("created_at", { ascending: false }).limit(25)
         .limit(100);
       if (error) throw error;
       const rows = (data ?? []) as ActivityRow[];
@@ -136,15 +136,20 @@ export default function ActivityScreen() {
   useEffect(() => {
     void loadActivities();
     if (!user) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
       .channel(`activities-${user.id}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "activities", filter: `recipient_id=eq.${user.id}` },
-        () => void loadActivities(),
+        () => {
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => void loadActivities(), 350);
+        },
       )
       .subscribe();
     return () => {
+      if (timer) clearTimeout(timer);
       void supabase.removeChannel(channel);
     };
   }, [loadActivities, revision, user]);
