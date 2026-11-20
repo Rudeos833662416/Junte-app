@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Animated,
   ActivityIndicator,
   Alert,
   FlatList,
-  GestureResponderEvent,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  PanResponder,
-  PanResponderGestureState,
   Platform,
   Pressable,
   Text,
@@ -42,6 +40,8 @@ import { ChatMediaViewer } from "@/components/chat-media-viewer";
 import { ChatMessageActions } from "@/components/chat-message-actions";
 import { ChatQuickCamera, type QuickCameraAsset } from "@/components/chat-quick-camera";
 import { StoryVideoEditor, type StoryVideoEditorResult } from "@/components/story-video-editor";
+import { SwipeableMessageBubble } from "@/components/swipeable-message-bubble";
+import { VoiceRecordGestureButton } from "@/components/voice-record-gesture-button";
 import {
   formatChatDateLabel,
   getCachedConversation,
@@ -123,6 +123,7 @@ export default function ChatScreen() {
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [isOtherOnline, setIsOtherOnline] = useState(false);
   const [voiceSending, setVoiceSending] = useState(false);
+  const [voiceLocked, setVoiceLocked] = useState(false);
   const [playingAudioPath, setPlayingAudioPath] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [actionsMessage, setActionsMessage] = useState<Message | null>(null);
@@ -131,6 +132,10 @@ export default function ChatScreen() {
   const chatMedia = useChatMedia();
   const [viewer, setViewer] = useState<{ uri: string; kind: "image" | "video"; trimStartMs?: number | null; trimEndMs?: number | null; muted?: boolean; overlayText?: string | null } | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const listRef = useRef<FlatList<Message>>(null);
+  const replyPreviewOpacity = useRef(new Animated.Value(0)).current;
+  const replyPreviewTranslateY = useRef(new Animated.Value(8)).current;
   const isMountedRef = useRef(true);
   const isRecordingRef = useRef(false);
   const isStartingRecordingRef = useRef(false);
@@ -303,6 +308,7 @@ export default function ChatScreen() {
   const cancelVoiceRecording = async () => {
     if (!recorderState.isRecording && !isRecordingRef.current) return;
     isRecordingRef.current = false;
+    setVoiceLocked(false);
     try { await recorder.stop(); } catch { /* already stopped or released */ }
   };
 
@@ -408,16 +414,12 @@ export default function ChatScreen() {
     setActionsMessage(message);
   };
 
-  const createSwipeResponder = (message: Message) => PanResponder.create({
-    onStartShouldSetPanResponder: () => false,
-    onMoveShouldSetPanResponder: (_: GestureResponderEvent, gesture: PanResponderGestureState) => Math.abs(gesture.dx) > 12,
-    onPanResponderRelease: (_: GestureResponderEvent, gesture: PanResponderGestureState) => {
-      if (gesture.dx > 45) {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-        setReplyTarget(message);
-      }
-    },
-  });
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(replyPreviewOpacity, { toValue: replyTarget ? 1 : 0, duration: replyTarget ? 180 : 120, useNativeDriver: true }),
+      Animated.spring(replyPreviewTranslateY, { toValue: replyTarget ? 0 : 8, useNativeDriver: true, speed: 22, bounciness: 5 }),
+    ]).start();
+  }, [replyPreviewOpacity, replyPreviewTranslateY, replyTarget]);
 
   const playVoiceMessage = async (message: Message) => {
     try {
@@ -450,6 +452,7 @@ export default function ChatScreen() {
     if (recorderState.isRecording || isRecordingRef.current) {
       const durationMs = recorderState.durationMillis;
       setVoiceSending(true);
+      setVoiceLocked(false);
       isRecordingRef.current = false;
       try {
         try {
@@ -502,6 +505,7 @@ export default function ChatScreen() {
       try { await recorder.stop(); } catch {}
       await recorder.prepareToRecordAsync();
       recorder.record();
+      setVoiceLocked(false);
       isRecordingRef.current = true;
     } catch {
       isRecordingRef.current = false;
@@ -667,8 +671,11 @@ export default function ChatScreen() {
               </View>
             ) : null}
             <FlatList
+              ref={listRef}
               data={messages}
               inverted
+              onScroll={(event) => setShowScrollToBottom(event.nativeEvent.contentOffset.y > 180)}
+              scrollEventThrottle={16}
               removeClippedSubviews={false}
               keyExtractor={(item) => item.id}
               keyboardShouldPersistTaps="handled"
@@ -682,8 +689,10 @@ export default function ChatScreen() {
                 const deliveryStatus = item.pending ? "sending" : item.read_at ? "read" : "delivered";
                 return (
                   <View style={{ width: "100%" }}>
-                    <Pressable
-                      {...createSwipeResponder(item).panHandlers}
+                    <SwipeableMessageBubble
+                      onReply={() => setReplyTarget(item)}
+                      color={colors.primary}
+                      iconColor={colors.background}
                       onLongPress={() => openMessageActions(item)}
                       delayLongPress={280}
                       accessibilityRole="button"
@@ -752,7 +761,7 @@ export default function ChatScreen() {
                           <MaterialIcons name="done-all" size={14} color={deliveryStatus === "read" ? "#7DD3FC" : `${colors.background}CC`} />
                         ) : null}
                       </View>
-                    </Pressable>
+                    </SwipeableMessageBubble>
                     {showDateSeparator ? (
                       <View style={{ width: "100%", alignItems: "center", marginTop: 12, marginBottom: 4 }}>
                         <Text style={{ color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.6 }}>{formatChatDateLabel(item.created_at)}</Text>
@@ -767,7 +776,7 @@ export default function ChatScreen() {
 
         <View style={{ paddingBottom: Math.max(keyboardHeight > 0 ? 8 : insets.bottom, 8) + (keyboardHeight > 0 ? keyboardHeight : 0), paddingTop: 8 }}>
           {replyTarget ? (
-            <View className="mb-2 flex-row items-center gap-2 rounded-xl border px-3 py-2" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
+            <Animated.View style={{ opacity: replyPreviewOpacity, transform: [{ translateY: replyPreviewTranslateY }] }} className="mb-2 flex-row items-center gap-2 rounded-xl border px-3 py-2" >
               <View style={{ flex: 1, borderLeftWidth: 3, borderLeftColor: colors.primary, paddingLeft: 8 }}>
                 <Text style={{ color: colors.primary, fontSize: 11, fontWeight: "800" }}>Respondiendo</Text>
                 <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 12 }}>{replyTarget.body}</Text>
@@ -775,10 +784,15 @@ export default function ChatScreen() {
               <Pressable onPress={() => setReplyTarget(null)} accessibilityRole="button" accessibilityLabel="Cancelar cita" style={{ minHeight: 44, minWidth: 44, alignItems: "center", justifyContent: "center" }}>
                 <MaterialIcons name="close" size={18} color={colors.muted} />
               </Pressable>
-            </View>
+            </Animated.View>
+          ) : null}
+          {showScrollToBottom ? (
+            <Pressable onPress={() => { listRef.current?.scrollToOffset({ offset: 0, animated: true }); setShowScrollToBottom(false); }} accessibilityRole="button" accessibilityLabel="Bajar al último mensaje" style={{ position: "absolute", right: 8, bottom: 76, width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", zIndex: 4 }}>
+              <MaterialIcons name="keyboard-arrow-down" size={24} color={colors.primary} />
+            </Pressable>
           ) : null}
           {recorderState.isRecording ? (
-            <View className="mb-2 flex-row items-center gap-2"><Text className="flex-1 text-xs font-bold" style={{ color: colors.error }}>Grabando nota de voz · {Math.max(1, Math.round(recorderState.durationMillis / 1000))}s</Text><Pressable onPress={() => void cancelVoiceRecording()} accessibilityRole="button" accessibilityLabel="Cancelar nota de voz" style={{ minHeight: 36, paddingHorizontal: 10, justifyContent: "center" }}><Text style={{ color: colors.muted, fontWeight: "800" }}>Cancelar</Text></Pressable></View>
+            <View className="mb-2 flex-row items-center gap-2"><Text className="flex-1 text-xs font-bold" style={{ color: colors.error }}>{voiceLocked ? "Grabación bloqueada" : "Grabando nota de voz · desliza ↑ para bloquear"} · {Math.max(1, Math.round(recorderState.durationMillis / 1000))}s</Text><Pressable onPress={() => void cancelVoiceRecording()} accessibilityRole="button" accessibilityLabel="Cancelar nota de voz" style={{ minHeight: 36, paddingHorizontal: 10, justifyContent: "center" }}><Text style={{ color: colors.muted, fontWeight: "800" }}>Cancelar</Text></Pressable></View>
           ) : null}
           {chatMedia.pending ? (
             <Modal visible animationType="slide" onRequestClose={chatMedia.clearPending}>
@@ -822,15 +836,17 @@ export default function ChatScreen() {
               maxLength={2000}
               style={{ flex: 1, minHeight: 44, maxHeight: 120, borderWidth: 1, borderRadius: 18, borderColor: colors.border, color: colors.foreground, backgroundColor: colors.surface, paddingHorizontal: 14, paddingVertical: 12 }}
             />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={draft.trim() ? "Enviar mensaje" : recorderState.isRecording ? "Detener y enviar nota de voz" : "Grabar nota de voz"}
-              onPress={() => (draft.trim() ? void sendMessage() : void toggleVoiceRecording())}
+            <VoiceRecordGestureButton
+              recording={recorderState.isRecording}
+              onTap={() => (draft.trim() ? void sendMessage() : void toggleVoiceRecording())}
+              onCancel={() => void cancelVoiceRecording()}
+              onLock={() => setVoiceLocked(true)}
               disabled={sending || voiceSending}
+              accessibilityLabel={draft.trim() ? "Enviar mensaje" : recorderState.isRecording ? "Detener y enviar nota de voz; desliza a la izquierda para cancelar o arriba para bloquear" : "Grabar nota de voz"}
               style={({ pressed }) => ({ borderRadius: 18, backgroundColor: colors.primary, width: 48, height: 48, alignItems: "center", justifyContent: "center", opacity: pressed || sending || voiceSending ? 0.55 : 1 })}
             >
-              <MaterialIcons name={draft.trim() ? "send" : recorderState.isRecording ? "stop" : "mic"} size={21} color={colors.background} />
-            </Pressable>
+              <MaterialIcons name={draft.trim() ? "send" : recorderState.isRecording ? (voiceLocked ? "lock" : "stop") : "mic"} size={21} color={colors.background} />
+            </VoiceRecordGestureButton>
           </View>
         </View>
       </KeyboardAvoidingView>

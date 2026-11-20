@@ -1,4 +1,4 @@
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Animated, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, Text, TextInput, TouchableOpacity, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Location from "expo-location";
@@ -64,8 +64,19 @@ export default function FriendsScreen() {
   const [requestsError, setRequestsError] = useState<string | null>(null);
   const [respondingRequestId, setRespondingRequestId] = useState<number | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<"friends" | "requests" | "chat" | "stories">("friends");
+  const tabMotion = useRef(new Animated.Value(1)).current;
+  const tabIndicator = useRef(new Animated.Value(0)).current;
+  const [tabBarWidth, setTabBarWidth] = useState(0);
   const [storyViewerUserId, setStoryViewerUserId] = useState<string | null>(null);
   const [storyViewerStoryId, setStoryViewerStoryId] = useState<string | null>(null);
+  const tabIndex = ["friends", "requests", "chat", "stories"].indexOf(activeSubTab);
+  useEffect(() => {
+    tabMotion.setValue(0.96);
+    Animated.parallel([
+      Animated.spring(tabMotion, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 4 }),
+      Animated.spring(tabIndicator, { toValue: tabIndex, useNativeDriver: true, speed: 24, bounciness: 5 }),
+    ]).start();
+  }, [activeSubTab, tabIndex, tabIndicator, tabMotion]);
   const [publicSearchResults, setPublicSearchResults] = useState<PublicSearchProfile[]>([]);
   const [isSearchingPublic, setIsSearchingPublic] = useState(false);
   const handleStoryViewerClose = useCallback(() => {
@@ -440,7 +451,8 @@ export default function FriendsScreen() {
           </View>
 
           {/* Contratos UX: accessibilityLabel="Abrir chat", accessibilityLabel="Abrir Estados", friendsSection === "friends" */}
-          <View className="mb-4 flex-row rounded-xl border p-1" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
+          <View onLayout={(event) => setTabBarWidth(event.nativeEvent.layout.width)} className="mb-4 flex-row rounded-xl border p-1" style={{ borderColor: colors.border, backgroundColor: colors.surface, position: "relative" }}>
+            <Animated.View pointerEvents="none" style={{ position: "absolute", bottom: 3, left: "1.5%", width: tabBarWidth > 0 ? tabBarWidth / 4 - 4 : 0, height: 3, borderRadius: 2, backgroundColor: colors.primary, transform: [{ translateX: tabIndicator.interpolate({ inputRange: [0, 1, 2, 3], outputRange: [0, Math.max(0, tabBarWidth / 4), Math.max(0, tabBarWidth / 2), Math.max(0, (tabBarWidth * 3) / 4)] }) }] }} />
             {(["friends", "requests", "chat", "stories"] as const).map((section) => (
               <Pressable
                 key={section}
@@ -448,15 +460,16 @@ export default function FriendsScreen() {
                 accessibilityRole="tab"
                 accessibilityState={{ selected: activeSubTab === section }}
                 accessibilityLabel={section === "friends" ? "Ver mis amigos" : section === "requests" ? `Ver solicitudes${pendingRequests.length ? `, ${pendingRequests.length} pendientes` : ""}` : section === "chat" ? "Abrir chat" : "Abrir Estados"}
-                style={{ flex: section === "requests" ? 1.28 : 0.9, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingHorizontal: 3, paddingVertical: 9, backgroundColor: activeSubTab === section ? colors.primary : "transparent" }}
+                style={{ flex: section === "requests" ? 1.28 : 0.9, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingHorizontal: 3, paddingVertical: 9, backgroundColor: "transparent" }}
               >
-                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={{ color: activeSubTab === section ? colors.background : colors.foreground, fontSize: 12.5, fontWeight: activeSubTab === section ? "800" : "600" }}>
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={{ color: activeSubTab === section ? colors.primary : colors.foreground, fontSize: 12.5, fontWeight: activeSubTab === section ? "800" : "600" }}>
                   {section === "friends" ? "Amigos" : section === "requests" ? `Solicitudes${pendingRequests.length ? ` (${pendingRequests.length})` : ""}` : section === "chat" ? "Chat" : "Estados"}
                 </Text>
               </Pressable>
             ))}
           </View>
 
+          <Animated.View style={{ flex: 1, opacity: tabMotion, transform: [{ translateX: tabMotion.interpolate({ inputRange: [0.96, 1], outputRange: [10, 0] }) }] }}>
           {activeSubTab === "requests" ? (
             <View className="mb-5 flex-1 rounded-2xl border p-4" style={{ backgroundColor: colors.surface, borderColor: colors.border }}>
               <View className="flex-row items-center justify-between">
@@ -649,6 +662,7 @@ export default function FriendsScreen() {
               onViewerClose={handleStoryViewerClose}
             />
           </View>
+          </Animated.View>
         </View>
 
         {activeSubTab === "friends" ? (
