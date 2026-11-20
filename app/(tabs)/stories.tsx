@@ -754,18 +754,23 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     // No insertamos otro mensaje de chat para evitar inflar el historial.
   };
 
+  const isDuplicateStoryActivityError = (err: { code?: string; message?: string } | null | undefined) =>
+    Boolean(err && (err.code === "23505" || err.message?.includes("activities_reaction_story_unique")));
+
   const sendQuickReaction = async (emoji: string) => {
     if (!user || !activeGroup || activeGroup.isSelf) return;
     animateQuickReaction(emoji);
     const { error } = await supabase.from("direct_messages").insert({ sender_id: user.id, recipient_id: activeGroup.userId, body: emoji, story_id: activeStory?.id ?? null, kind: "story_quick_reaction" });
-    if (error) Alert.alert("No se pudo enviar la reacción", friendlyChatError(error));
+    if (error && !isDuplicateStoryActivityError(error)) {
+      Alert.alert("No se pudo enviar la reacción", friendlyChatError(error));
+    }
   };
 
   const sendStoryReply = async () => {
     const body = storyReply.trim();
     if (!user || !activeGroup || activeGroup.isSelf || !body) return;
     const { error } = await supabase.from("direct_messages").insert({ sender_id: user.id, recipient_id: activeGroup.userId, body, story_id: activeStory?.id ?? null, kind: "story_reply" });
-    if (error) {
+    if (error && !isDuplicateStoryActivityError(error)) {
       Alert.alert("No se pudo enviar la respuesta", friendlyChatError(error));
       return;
     }
