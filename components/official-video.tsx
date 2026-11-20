@@ -10,6 +10,7 @@ type Props = {
   fullscreen?: boolean;
   isVisible?: boolean;
   onOpenFullscreen: () => void;
+  onDoubleTap?: () => void;
 };
 
 const HIDE_MS = 2800;
@@ -27,6 +28,7 @@ function OfficialVideo({
   fullscreen = false,
   isVisible = true,
   onOpenFullscreen,
+  onDoubleTap,
 }: Props) {
   const [sourceUri, setSourceUri] = useState(uri);
   const player = useVideoPlayer(sourceUri, (videoPlayer) => {
@@ -43,6 +45,7 @@ function OfficialVideo({
   const [barWidth, setBarWidth] = useState(0);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastTapAtRef = useRef<number | null>(null);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
@@ -68,12 +71,19 @@ function OfficialVideo({
 
   /** Tap en el video: muestra controles o los oculta si ya estaban visibles. */
   const handleSurfacePress = useCallback(() => {
+    const now = Date.now();
+    if (onDoubleTap && lastTapAtRef.current !== null && now - lastTapAtRef.current <= 280) {
+      lastTapAtRef.current = null;
+      onDoubleTap();
+      return;
+    }
+    lastTapAtRef.current = now;
     if (controlsVisible) {
       hideControls();
       return;
     }
     revealControls();
-  }, [controlsVisible, hideControls, revealControls]);
+  }, [controlsVisible, hideControls, onDoubleTap, revealControls]);
 
   useEffect(() => {
     let cancelled = false;

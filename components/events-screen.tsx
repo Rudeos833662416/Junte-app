@@ -1,5 +1,6 @@
 import { ScreenContainer } from "@/components/screen-container";
 import { SecureMediaViewer } from "@/components/secure-media-viewer";
+import { ChatMediaViewer } from "@/components/chat-media-viewer";
 import { OfficialVideo } from "@/components/official-video";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
@@ -41,6 +42,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
+import * as Haptics from "expo-haptics";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -150,6 +152,7 @@ export function EventsScreen() {
   const venueCarouselPaused = useRef(false);
   const commentsListRef = useRef<FlatList<CommentRow>>(null);
   const postsListRef = useRef<FlatList<OfficialPost>>(null);
+  const mediaTapAtRef = useRef<number | null>(null);
 
 
   useFocusEffect(
@@ -449,6 +452,18 @@ export function EventsScreen() {
         current.map((item) => (item.id === post.id ? { ...item, liked: post.liked, likeCount: post.likeCount } : item)),
       );
     }
+  };
+
+  const handlePostImagePress = (post: OfficialPost) => {
+    const now = Date.now();
+    if (mediaTapAtRef.current !== null && now - mediaTapAtRef.current <= 280) {
+      mediaTapAtRef.current = null;
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+      void toggleLike(post);
+      return;
+    }
+    mediaTapAtRef.current = now;
+    setFullImage(post.media_url);
   };
 
   const toggleCommentReaction = async (item: CommentRow) => {
@@ -897,7 +912,7 @@ export function EventsScreen() {
               </View>
               {item.caption ? <Text className="mb-2 text-sm text-muted">{item.caption}</Text> : null}
               {item.media_type === "image" ? (
-                <Pressable onPress={() => setFullImage(item.media_url)}>
+                <Pressable onPress={() => handlePostImagePress(item)} accessibilityLabel="Abrir imagen o reaccionar con doble toque">
                   <ExpoImage
                     source={{ uri: item.media_url }}
                     style={{ width: "100%", aspectRatio: ratio, borderRadius: 12 }}
@@ -910,6 +925,10 @@ export function EventsScreen() {
                   aspectRatio={ratio}
                   isVisible={screenFocused && visiblePostIds.has(item.id) && !fullVideo}
                   onOpenFullscreen={() => setFullVideo(item.media_url)}
+                  onDoubleTap={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+                    void toggleLike(item);
+                  }}
                 />
               )}
               <View className="mt-3 flex-row items-center gap-4">
@@ -1217,20 +1236,7 @@ export function EventsScreen() {
         </View>
       </Modal>
 
-      <Modal visible={Boolean(fullVideo)} animationType="fade" onRequestClose={() => setFullVideo(null)}>
-        <View style={{ flex: 1, backgroundColor: "#000", justifyContent: "center", alignItems: "center" }}>
-          <ActivityIndicator size="large" color="#FFFFFF" style={{ position: "absolute" }} />
-          {fullVideo ? (
-            <OfficialVideo
-              uri={fullVideo}
-              aspectRatio={9 / 16}
-              fullscreen
-              isVisible
-              onOpenFullscreen={() => undefined}
-            />
-          ) : null}
-        </View>
-      </Modal>
+      <ChatMediaViewer visible={Boolean(fullVideo)} uri={fullVideo} kind="video" onClose={() => setFullVideo(null)} />
     </ScreenContainer>
   );
 }
