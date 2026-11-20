@@ -74,7 +74,7 @@ function CollageLayer({
         source={{ uri: image.image_url }}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-        cachePolicy="disk"
+        cachePolicy="memory-disk"
         contentFit="cover"
         transition={0}
         onLoad={() => onTileReady(index)}
@@ -140,7 +140,7 @@ export function HomeCollage() {
       if (!cancelled) { setIsAdmin(Boolean(data?.is_admin)); setPreviewEnabled(requested); }
     });
     return () => { cancelled = true; };
-  }, [selectedTheme, user?.id]);
+  }, [selectedTheme, user, user?.id]);
 
   useEffect(() => {
     void load();

@@ -1,4 +1,4 @@
-import { Alert, ActivityIndicator, Modal, RefreshControl, ScrollView, Text, TextInput, View, Pressable, Switch, Platform } from "react-native";
+import { Alert, ActivityIndicator, KeyboardAvoidingView, Modal, RefreshControl, ScrollView, Text, TextInput, View, Pressable, Switch, Platform } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
@@ -6,7 +6,6 @@ import { useAppRefresh } from "@/lib/app-refresh";
 import { supabase } from "@/lib/supabase";
 import { clearProfileLocation } from "@/lib/location-sharing";
 import { useCallback, useEffect, useState } from "react";
-import { KeyboardAvoidingView } from "react-native";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -363,7 +362,7 @@ export default function ProfileScreen() {
                     source={{ uri: coverUrl }}
                     style={{ width: "100%", height: "100%" }}
                     contentFit="cover"
-                    cachePolicy="disk"
+                    cachePolicy="memory-disk"
                   />
                 ) : (
                   <View
@@ -395,7 +394,7 @@ export default function ProfileScreen() {
                       source={{ uri: avatarUrl }}
                       style={{ width: "100%", height: "100%" }}
                       contentFit="cover"
-                      cachePolicy="disk"
+                       cachePolicy="memory-disk"
                     />
                   ) : (
                     <Text className="text-3xl font-bold" style={{ color: colors.background }}>
