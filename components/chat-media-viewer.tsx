@@ -24,6 +24,7 @@ function ViewerVideo({ uri, trimStartMs, trimEndMs, muted }: Pick<Props, "uri" |
     p.play();
   });
   const [progress, setProgress] = useState(0);
+  const [ready, setReady] = useState(false);
   const [speed, setSpeed] = useState<1 | 1.5 | 2>(1);
   const startSeconds = Math.max(0, (trimStartMs ?? 0) / 1000);
   const endSeconds = trimEndMs != null ? Math.max(startSeconds + 0.1, trimEndMs / 1000) : null;
@@ -59,7 +60,8 @@ function ViewerVideo({ uri, trimStartMs, trimEndMs, muted }: Pick<Props, "uri" |
   }, [player]);
   return (
     <View style={{ width: "100%", height: "70%", justifyContent: "center" }}>
-      <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" nativeControls={false} />
+      <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" nativeControls={false} onFirstFrameRender={() => setReady(true)} />
+      {!ready ? <View pointerEvents="none" style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}><ActivityIndicator color="#FFFFFF" /></View> : null}
       <View style={{ position: "absolute", left: 18, right: 18, bottom: 12, flexDirection: "row", alignItems: "center", gap: 10 }}>
         <Pressable
           onPress={(event) => {

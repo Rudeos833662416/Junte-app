@@ -105,6 +105,12 @@ function newClientMessageId() {
   });
 }
 
+function countMessageReactions(reactions?: Record<string, string>) {
+  const counts: Record<string, number> = {};
+  Object.values(reactions ?? {}).forEach((emoji) => { counts[emoji] = (counts[emoji] ?? 0) + 1; });
+  return counts;
+}
+
 export default function ChatScreen() {
   const colors = useColors();
   const { user } = useAuth({ autoFetch: true });
@@ -388,25 +394,56 @@ export default function ChatScreen() {
   };
 
   const editMessage = async (message: Message, body: string) => {
-    if (!user || !otherId) return;
-    const { data, error } = await supabase.from("direct_messages").update({ body, edited_at: new Date().toISOString() }).eq("id", message.id).eq("sender_id", user.id).select("*").single();
-    if (error) { Alert.alert("No se pudo editar", friendlyChatError(error)); return; }
-    if (data) setMessages((current) => { const next = mergeCachedMessage(current, data as Message); setCachedConversation(otherId, next); return next as Message[]; });
+    if (!user || !otherId || message.sender_id !== user.id || !body.trim()) return;
+    const previous = message;
+    const editedAt = new Date().toISOString();
+    const optimistic = { ...message, body: body.trim(), edited_at: editedAt };
+    setMessages((current) => { const next = current.map((item) => item.id === message.id ? optimistic : item); setCachedConversation(otherId, next); return next; });
+    const { error } = await supabase
+      .from("direct_messages")
+      .update({ body: body.trim(), edited_at: editedAt })
+      .eq("id", message.id)
+      .eq("sender_id", user.id);
+    if (error) {
+      setMessages((current) => { const next = current.map((item) => item.id === message.id ? previous : item); setCachedConversation(otherId, next); return next; });
+      Alert.alert("No se pudo editar", friendlyChatError(error));
+    }
   };
 
   const deleteMessage = async (message: Message) => {
-    if (!user || !otherId) return;
-    const { error } = await supabase.from("direct_messages").update({ body: "", deleted_at: new Date().toISOString() }).eq("id", message.id).eq("sender_id", user.id);
-    if (error) { Alert.alert("No se pudo eliminar", friendlyChatError(error)); return; }
+    if (!user || !otherId || message.sender_id !== user.id) return;
+    const deletedAt = new Date().toISOString();
+    const optimistic = { ...message, body: "", deleted_at: deletedAt };
+    setMessages((current) => { const next = current.map((item) => item.id === message.id ? optimistic : item); setCachedConversation(otherId, next); return next; });
+    const { error } = await supabase
+      .from("direct_messages")
+      .update({ body: "", deleted_at: deletedAt })
+      .eq("id", message.id)
+      .eq("sender_id", user.id);
+    if (error) {
+      setMessages((current) => { const next = current.map((item) => item.id === message.id ? message : item); setCachedConversation(otherId, next); return next; });
+      Alert.alert("No se pudo eliminar", friendlyChatError(error));
+      return;
+    }
     if (message.media_path) await supabase.storage.from("chat-media").remove([message.media_path]);
     if (message.audio_path) await supabase.storage.from("chat-audio").remove([message.audio_path]);
-    setMessages((current) => { const next = current.map((item) => item.id === message.id ? { ...item, body: "", deleted_at: new Date().toISOString() } : item); setCachedConversation(otherId, next); return next; });
   };
 
   const reactToMessage = async (message: Message, emoji: string) => {
+    if (!user || !otherId) return;
+    const previousReactions = message.reactions ?? {};
+    const currentEmoji = previousReactions[user.id];
+    const nextReactions = { ...previousReactions };
+    if (currentEmoji === emoji) delete nextReactions[user.id];
+    else nextReactions[user.id] = emoji;
+    setMessages((current) => { const next = current.map((item) => item.id === message.id ? { ...item, reactions: nextReactions } : item); setCachedConversation(otherId, next); return next; });
     const { data, error } = await supabase.rpc("toggle_message_reaction", { p_message_id: message.id, p_emoji: emoji });
-    if (error) { Alert.alert("No se pudo reaccionar", friendlyChatError(error)); return; }
-    if (data && otherId) setMessages((current) => { const next = mergeCachedMessage(current, data as Message); setCachedConversation(otherId, next); return next as Message[]; });
+    if (error) {
+      setMessages((current) => { const next = current.map((item) => item.id === message.id ? { ...item, reactions: previousReactions } : item); setCachedConversation(otherId, next); return next; });
+      Alert.alert("No se pudo reaccionar", friendlyChatError(error));
+      return;
+    }
+    if (data) setMessages((current) => { const next = mergeCachedMessage(current, data as Message); setCachedConversation(otherId, next); return next as Message[]; });
   };
 
   const openMessageActions = (message: Message) => {
@@ -535,39 +572,50 @@ export default function ChatScreen() {
 
   const sendPendingMedia = async () => {
     if (!user || !otherId || !chatMedia.pending) return;
+    const pendingMedia = chatMedia.pending;
     const clientMessageId = newClientMessageId();
-    const fields = await chatMedia.uploadAndBuildFields(user.id, otherId, clientMessageId);
-    if (!fields) return;
-    const { data, error } = await supabase
-      .from("direct_messages")
-      .insert({
-        sender_id: user.id,
-        recipient_id: otherId,
-        body: fields.body || "",
-        kind: fields.kind,
-        media_path: fields.media_path,
-        media_type: fields.media_type,
-        duration_ms: fields.duration_ms,
-        trim_start_ms: fields.trim_start_ms,
-        trim_end_ms: fields.trim_end_ms,
-        is_muted: fields.is_muted,
-        overlay_text: fields.overlay_text,
-        client_message_id: clientMessageId,
-        reply_to_message_id: replyTarget?.id && !String(replyTarget.id).startsWith("local-") ? replyTarget.id : null,
-      })
-      .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id, edited_at, deleted_at, reactions, location_payload, trim_start_ms, trim_end_ms, is_muted, overlay_text")
-      .single();
-    if (!error && data) {
-      const hydrated = await withSignedMediaUrl(data as Message);
-      setMessages((c) => {
-        const next = mergeCachedMessage(c, hydrated);
-        setCachedConversation(otherId, next);
-        return next as Message[];
-      });
+    const optimistic: Message = {
+      id: `local-${clientMessageId}`,
+      sender_id: user.id,
+      recipient_id: otherId,
+      body: chatMedia.caption.trim(),
+      created_at: new Date().toISOString(),
+      read_at: null,
+      client_message_id: clientMessageId,
+      kind: pendingMedia.kind,
+      media_url: pendingMedia.uri,
+      duration_ms: pendingMedia.durationMs ?? null,
+      trim_start_ms: pendingMedia.trimStartMs ?? 0,
+      trim_end_ms: pendingMedia.trimEndMs ?? pendingMedia.durationMs ?? null,
+      is_muted: pendingMedia.isMuted,
+      overlay_text: pendingMedia.overlayText ?? null,
+      pending: true,
+    };
+    setMessages((current) => { const next = [optimistic, ...current]; setCachedConversation(otherId, next); return next; });
+    chatMedia.clearPending();
+    try {
+      const fields = await chatMedia.uploadAndBuildFields(user.id, otherId, clientMessageId);
+      if (!fields) throw new Error("No se pudo preparar el archivo multimedia.");
+      const { data, error } = await supabase
+        .from("direct_messages")
+        .insert({
+          sender_id: user.id, recipient_id: otherId, body: fields.body || "", kind: fields.kind,
+          media_path: fields.media_path, media_type: fields.media_type, duration_ms: fields.duration_ms,
+          trim_start_ms: fields.trim_start_ms, trim_end_ms: fields.trim_end_ms, is_muted: fields.is_muted,
+          overlay_text: fields.overlay_text, client_message_id: clientMessageId,
+          reply_to_message_id: replyTarget?.id && !String(replyTarget.id).startsWith("local-") ? replyTarget.id : null,
+        })
+        .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id, edited_at, deleted_at, reactions, location_payload, trim_start_ms, trim_end_ms, is_muted, overlay_text")
+        .single();
+      if (error) throw error;
+      if (data) {
+        const hydrated = await withSignedMediaUrl(data as Message);
+        setMessages((current) => { const next = mergeCachedMessage(current, hydrated); setCachedConversation(otherId, next); return next as Message[]; });
+      }
       setReplyTarget(null);
-      chatMedia.clearPending();
-    } else if (error) {
-      Alert.alert("No se pudo enviar", friendlyChatError(error));
+    } catch (error) {
+      setMessages((current) => { const next = current.filter((item) => item.id !== optimistic.id); setCachedConversation(otherId, next); return next; });
+      Alert.alert("No se pudo enviar", friendlyChatError(error as { code?: string; message?: string }));
     }
   };
 
@@ -724,6 +772,7 @@ export default function ChatScreen() {
                         >
                           <View style={{ position: "relative" }}>
                             <Image source={{ uri: item.media_url ?? undefined }} style={{ width: 240, maxHeight: 300, minHeight: 160, borderRadius: 14, backgroundColor: "#00000022" }} contentFit="contain" cachePolicy="disk" />
+                            {item.pending ? <View pointerEvents="none" style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}><ActivityIndicator color="#FFFFFF" /></View> : null}
                             {item.kind === "video" ? (
                               <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}>
                                 <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#00000088", alignItems: "center", justifyContent: "center" }}>
@@ -749,9 +798,9 @@ export default function ChatScreen() {
                           <Text style={{ color: mine ? colors.background : colors.foreground }}>Nota de voz · {Math.max(1, Math.round((item.duration_ms ?? 0) / 1000))}s</Text>
                         </Pressable>
                       ) : (
-                        <Text style={{ color: item.deleted_at ? colors.muted : mine ? colors.background : colors.foreground, fontStyle: item.deleted_at ? "italic" : "normal" }}>{item.deleted_at ? "Mensaje eliminado" : item.body}</Text>
+                        <Text selectable style={{ color: item.deleted_at ? colors.muted : mine ? colors.background : colors.foreground, fontStyle: item.deleted_at ? "italic" : "normal", flexShrink: 1, maxWidth: "100%" }}>{item.deleted_at ? "Mensaje eliminado" : item.body}</Text>
                       )}
-                      {item.reactions && Object.keys(item.reactions).length > 0 ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 }}>{Object.entries(item.reactions).map(([emoji, count]) => <Text key={emoji} style={{ color: mine ? colors.background : colors.foreground, fontSize: 12, backgroundColor: mine ? `${colors.background}33` : `${colors.primary}18`, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 }}>{emoji} {count}</Text>)}</View> : null}
+                      {Object.keys(countMessageReactions(item.reactions)).length > 0 ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 }}>{Object.entries(countMessageReactions(item.reactions)).map(([emoji, count]) => <Text key={emoji} style={{ color: mine ? colors.background : colors.foreground, fontSize: 12, backgroundColor: mine ? `${colors.background}33` : `${colors.primary}18`, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 }}>{emoji} {count}</Text>)}</View> : null}
                       <View className="mt-1 flex-row items-center justify-end gap-1">
                         <Text style={{ fontSize: 10, color: mine ? `${colors.background}CC` : colors.muted }}>
                           {new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}{item.edited_at ? " · editado" : ""}

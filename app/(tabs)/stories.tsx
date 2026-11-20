@@ -19,6 +19,7 @@ import { StoryVideoEditor, type StoryVideoEditorResult } from "@/components/stor
 import { setActiveStoryUserId } from "@/lib/push-notifications";
 import { resolveCachedVideoUri } from "@/lib/video-cache";
 import { getCachedStoryGroups, setCachedStoryGroups, subscribeStoryGroups, type GroupedStoryUser, type StoryItem } from "@/lib/stories-store";
+import { friendlyChatError } from "@/lib/chat-errors";
 import { isDoubleTap } from "@/lib/interaction-gestures";
 import * as Haptics from "expo-haptics";
 import Svg, { Circle } from "react-native-svg";
@@ -746,7 +747,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       : await supabase.from("story_reactions").delete().eq("story_id", storyId).eq("user_id", user.id);
     if (result.error) {
       setReactionByStory((previous) => ({ ...previous, [storyId]: current }));
-      Alert.alert("No se pudo guardar", "Ejecuta la migración 0011 en Supabase y vuelve a intentarlo.");
+      Alert.alert("No se pudo guardar la reacción", friendlyChatError(result.error));
       return;
     }
     // La reacción ya genera una actividad/notificación deduplicada en Supabase.
@@ -757,7 +758,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     if (!user || !activeGroup || activeGroup.isSelf) return;
     animateQuickReaction(emoji);
     const { error } = await supabase.from("direct_messages").insert({ sender_id: user.id, recipient_id: activeGroup.userId, body: emoji, story_id: activeStory?.id ?? null, kind: "story_quick_reaction" });
-    if (error) Alert.alert("No se pudo enviar", "Ejecuta la migración 0020 en Supabase y vuelve a intentarlo.");
+    if (error) Alert.alert("No se pudo enviar la reacción", friendlyChatError(error));
   };
 
   const sendStoryReply = async () => {
@@ -765,7 +766,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     if (!user || !activeGroup || activeGroup.isSelf || !body) return;
     const { error } = await supabase.from("direct_messages").insert({ sender_id: user.id, recipient_id: activeGroup.userId, body, story_id: activeStory?.id ?? null, kind: "story_reply" });
     if (error) {
-      Alert.alert("No se pudo enviar", "Ejecuta la migración 0020 en Supabase y vuelve a intentarlo.");
+      Alert.alert("No se pudo enviar la respuesta", friendlyChatError(error));
       return;
     }
     setStoryReply("");
@@ -803,7 +804,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       .eq("story_id", storyId)
       .order("viewed_at", { ascending: false });
     if (error) {
-      Alert.alert("Vistas no disponibles", "Ejecuta la migración 0011 en Supabase para ver quién abrió este Estado.");
+      Alert.alert("Vistas no disponibles", friendlyChatError(error));
       return;
     }
     const rows = (data ?? []) as { viewer_id: string; viewed_at: string }[];
