@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Platform, Pressable, Share, Text, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Alert, Animated, Modal, PanResponder, Platform, Pressable, Share, Text, View, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { MaterialIcons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
+import { shouldDismissSwipe } from "@/lib/interaction-gestures";
 
 type Props = {
   visible: boolean;
@@ -83,6 +84,24 @@ function ViewerVideo({ uri, trimStartMs, trimEndMs, muted }: Pick<Props, "uri" |
 export function ChatMediaViewer({ visible, uri, kind, onClose, trimStartMs, trimEndMs, muted, overlayText }: Props) {
   const { width, height } = useWindowDimensions();
   const [saving, setSaving] = useState(false);
+  const translateY = useState(() => new Animated.Value(0))[0];
+
+  useEffect(() => {
+    if (visible) translateY.setValue(0);
+  }, [translateY, uri, visible]);
+
+  const dismissPanResponder = PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 12 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+    onPanResponderMove: (_, gesture) => translateY.setValue(Math.max(0, gesture.dy)),
+    onPanResponderRelease: (_, gesture) => {
+      if (shouldDismissSwipe(Math.max(0, gesture.dy), gesture.vy)) {
+        Animated.timing(translateY, { toValue: height, duration: 180, useNativeDriver: true }).start(onClose);
+      } else {
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, speed: 20, bounciness: 5 }).start();
+      }
+    },
+    onPanResponderTerminate: () => Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start(),
+  });
 
   const saveToDevice = async () => {
     if (!uri || saving) return;
@@ -110,7 +129,10 @@ export function ChatMediaViewer({ visible, uri, kind, onClose, trimStartMs, trim
   if (!visible || !uri || !kind) return null;
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.94)", justifyContent: "center", alignItems: "center" }}>
+      <Animated.View
+        {...dismissPanResponder.panHandlers}
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.94)", justifyContent: "center", alignItems: "center", transform: [{ translateY }], opacity: translateY.interpolate({ inputRange: [0, height], outputRange: [1, 0.35] }) }}
+      >
         <View style={{ position: "absolute", top: 48, right: 12, zIndex: 2, flexDirection: "row", gap: 8 }}>
           <Pressable
             onPress={() => void saveToDevice()}
@@ -143,7 +165,7 @@ export function ChatMediaViewer({ visible, uri, kind, onClose, trimStartMs, trim
           {overlayText ? <Text style={{ position: "absolute", left: 24, right: 24, top: "42%", color: "#FFF", fontSize: 24, fontWeight: "800", textAlign: "center", textShadowColor: "#000", textShadowRadius: 6 }}>{overlayText}</Text> : null}
         </View>
       )}
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

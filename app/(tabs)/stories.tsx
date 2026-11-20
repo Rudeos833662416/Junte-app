@@ -19,6 +19,8 @@ import { StoryVideoEditor, type StoryVideoEditorResult } from "@/components/stor
 import { setActiveStoryUserId } from "@/lib/push-notifications";
 import { resolveCachedVideoUri } from "@/lib/video-cache";
 import { getCachedStoryGroups, setCachedStoryGroups, subscribeStoryGroups, type GroupedStoryUser, type StoryItem } from "@/lib/stories-store";
+import { isDoubleTap } from "@/lib/interaction-gestures";
+import * as Haptics from "expo-haptics";
 import Svg, { Circle } from "react-native-svg";
 
 type SelectedMedia = {
@@ -232,6 +234,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
   const [progressTimer, setProgressTimer] = useState(0);
   const [isChromeHidden, setIsChromeHidden] = useState(false);
   const touchStartRef = useRef<{ x: number; y: number; at: number } | null>(null);
+  const lastTapAtRef = useRef<number | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileTransition = useRef(new Animated.Value(0)).current;
   const viewerSheetTouchStartY = useRef<number | null>(null);
@@ -940,6 +943,17 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     if (activeGroup?.isSelf && activeStory) void loadViewers(activeStory.id);
   };
 
+  const handleStoryTap = () => {
+    const now = Date.now();
+    const doubleTap = isDoubleTap(lastTapAtRef.current, now);
+    lastTapAtRef.current = doubleTap ? null : now;
+    if (!doubleTap || !activeStory || activeGroup?.isSelf) return false;
+    animateQuickReaction("❤️");
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    void toggleReaction(activeStory.id, "❤️");
+    return true;
+  };
+
   useEffect(() => {
     return () => {
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
@@ -1162,6 +1176,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
                   if (dy < -80) { onSwipeUp(); return; }
                   const isShortTap = Date.now() - start.at < 300 && Math.abs(dx) < 24 && Math.abs(dy) < 24;
                   if ((dx > 60 && Math.abs(dx) > Math.abs(dy)) || isShortTap) {
+                    if (isShortTap && handleStoryTap()) return;
                     if (activeStoryIndex > 0) { setActiveStoryIndex((index) => index - 1); setProgressTimer(0); }
                     else if (activeGroupIndex !== null && activeGroupIndex > 0) { setActiveGroupIndex((index) => (index !== null ? index - 1 : null)); setActiveStoryIndex(0); setProgressTimer(0); }
                   }
@@ -1180,6 +1195,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
                   if (dy < -80) { onSwipeUp(); return; }
                   const isShortTap = Date.now() - start.at < 300 && Math.abs(dx) < 24 && Math.abs(dy) < 24;
                   if ((dx < -60 && Math.abs(dx) > Math.abs(dy)) || isShortTap) {
+                    if (isShortTap && handleStoryTap()) return;
                     if (activeStoryIndex < activeGroup.stories.length - 1) { setActiveStoryIndex((index) => index + 1); setProgressTimer(0); }
                     else if (activeGroupIndex !== null && activeGroupIndex < groupedStories.length - 1) { setActiveGroupIndex((index) => (index !== null ? index + 1 : null)); setActiveStoryIndex(0); setProgressTimer(0); }
                     else closeStoryViewer();
