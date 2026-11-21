@@ -132,6 +132,8 @@ export default function ChatScreen() {
   const [voiceSending, setVoiceSending] = useState(false);
   const [voiceLocked, setVoiceLocked] = useState(false);
   const [playingAudioPath, setPlayingAudioPath] = useState<string | null>(null);
+  const [voicePlaybackSpeed, setVoicePlaybackSpeed] = useState<1 | 1.5 | 2>(1);
+  const [voiceBarWidths, setVoiceBarWidths] = useState<Record<string, number>>({});
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [actionsMessage, setActionsMessage] = useState<Message | null>(null);
   const [quickCameraVisible, setQuickCameraVisible] = useState(false);
@@ -459,6 +461,28 @@ export default function ChatScreen() {
     ]).start();
   }, [replyPreviewOpacity, replyPreviewTranslateY, replyTarget]);
 
+  const cycleVoicePlaybackSpeed = () => {
+    const next: 1 | 1.5 | 2 = voicePlaybackSpeed === 1 ? 1.5 : voicePlaybackSpeed === 1.5 ? 2 : 1;
+    setVoicePlaybackSpeed(next);
+    try {
+      audioPlayer.setPlaybackRate(next);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const seekVoiceMessage = (message: Message, locationX: number, barWidth: number) => {
+    const key = message.audio_path ?? message.id;
+    if (playingAudioPath !== key || barWidth <= 0) return;
+    const totalSec = Number(audioPlayerStatus.duration ?? 0) || Math.max(1, (message.duration_ms ?? 1000) / 1000);
+    const ratio = Math.max(0, Math.min(1, locationX / barWidth));
+    try {
+      audioPlayer.seekTo(ratio * totalSec);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const playVoiceMessage = async (message: Message) => {
     try {
       if (playingAudioPath === message.audio_path && audioPlayerStatus.playing) {
@@ -479,6 +503,7 @@ export default function ChatScreen() {
       }
       setPlayingAudioPath(message.audio_path ?? message.id);
       audioPlayer.replace(uri);
+      try { audioPlayer.setPlaybackRate(voicePlaybackSpeed); } catch {}
       audioPlayer.play();
     } catch {
       /* SharedObject de expo-audio ya liberado o no listo */
@@ -887,12 +912,59 @@ export default function ChatScreen() {
                         <Pressable onPress={() => { const lat = item.location_payload?.lat; const lng = item.location_payload?.lng; if (typeof lat === "number" && typeof lng === "number") router.push({ pathname: "/(tabs)/map", params: { focusLat: String(lat), focusLng: String(lng), focusName: item.location_payload?.name ?? "Ubicación compartida", ...(item.location_payload?.venue_id ? { focusVenueId: String(item.location_payload.venue_id) } : {}) } }); }} accessibilityRole="button" accessibilityLabel="Abrir ubicación compartida" style={{ minWidth: 210, paddingVertical: 4 }}>
                           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><MaterialIcons name="location-on" size={30} color={mine ? colors.background : colors.primary} /><View style={{ flex: 1 }}><Text style={{ color: mine ? colors.background : colors.foreground, fontWeight: "800" }}>{item.location_payload.name || "Ubicación compartida"}</Text><Text style={{ color: mine ? `${colors.background}CC` : colors.muted, fontSize: 11, marginTop: 2 }}>Toca para abrir en el mapa</Text></View></View>
                         </Pressable>
-                      ) : item.kind === "voice_note" && !item.deleted_at ? (
-                        <Pressable onPress={() => playVoiceMessage(item)} accessibilityRole="button" accessibilityLabel="Reproducir nota de voz" style={{ minHeight: 40, minWidth: 150, flexDirection: "row", alignItems: "center", gap: 8 }}>
-                          <MaterialIcons name={audioPlayerStatus.playing && playingAudioPath === (item.audio_path ?? item.id) ? "pause" : "play-arrow"} size={22} color={mine ? colors.background : colors.foreground} />
-                          <Text style={{ color: mine ? colors.background : colors.foreground }}>Nota de voz · {Math.max(1, Math.round((item.duration_ms ?? 0) / 1000))}s</Text>
-                        </Pressable>
-                      ) : (
+                      ) : item.kind === "voice_note" && !item.deleted_at ? (() => {
+                        const voiceKey = item.audio_path ?? item.id;
+                        const isThisAudio = playingAudioPath === voiceKey;
+                        const isThisPlaying = isThisAudio && Boolean(audioPlayerStatus.playing);
+                        const totalSec = isThisAudio && Number(audioPlayerStatus.duration ?? 0) > 0
+                          ? Number(audioPlayerStatus.duration)
+                          : Math.max(1, (item.duration_ms ?? 1000) / 1000);
+                        const currentSec = isThisAudio ? Math.max(0, Number(audioPlayerStatus.currentTime ?? 0)) : 0;
+                        const progress = totalSec > 0 ? Math.max(0, Math.min(1, currentSec / totalSec)) : 0;
+                        const fg = mine ? colors.background : colors.foreground;
+                        const trackBg = mine ? `${colors.background}38` : `${colors.primary}28`;
+                        const fillBg = mine ? colors.background : colors.primary;
+                        return (
+                          <View style={{ minHeight: 44, minWidth: 215, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                            <Pressable
+                              onPress={() => void playVoiceMessage(item)}
+                              accessibilityRole="button"
+                              accessibilityLabel={isThisPlaying ? "Pausar nota de voz" : "Reproducir nota de voz"}
+                              style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: mine ? `${colors.background}24` : `${colors.primary}20`, alignItems: "center", justifyContent: "center" }}
+                            >
+                              <MaterialIcons name={isThisPlaying ? "pause" : "play-arrow"} size={22} color={fg} />
+                            </Pressable>
+                            <View style={{ flex: 1, gap: 4 }}>
+                              <Pressable
+                                onLayout={(e) => {
+                                  const w = e.nativeEvent.layout.width;
+                                  setVoiceBarWidths((prev) => (prev[voiceKey] === w ? prev : { ...prev, [voiceKey]: w }));
+                                }}
+                                onPress={(e) => seekVoiceMessage(item, e.nativeEvent.locationX, voiceBarWidths[voiceKey] ?? 120)}
+                                style={{ height: 22, justifyContent: "center" }}
+                                accessibilityLabel="Buscar en la nota de voz"
+                              >
+                                <View style={{ height: 4, borderRadius: 2, backgroundColor: trackBg }}>
+                                  <View style={{ width: `${progress * 100}%`, height: 4, borderRadius: 2, backgroundColor: fillBg }} />
+                                </View>
+                              </Pressable>
+                              <Text style={{ fontSize: 11, fontWeight: "700", color: fg, opacity: 0.85, fontVariant: ["tabular-nums"] }}>
+                                {formatVoiceTimer((isThisAudio && currentSec > 0 ? currentSec : totalSec) * 1000)}
+                              </Text>
+                            </View>
+                            {isThisAudio ? (
+                              <Pressable
+                                onPress={cycleVoicePlaybackSpeed}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Velocidad ${voicePlaybackSpeed}x`}
+                                style={{ paddingHorizontal: 7, paddingVertical: 4, borderRadius: 10, backgroundColor: mine ? `${colors.background}28` : `${colors.primary}22` }}
+                              >
+                                <Text style={{ color: fg, fontSize: 11, fontWeight: "800" }}>{voicePlaybackSpeed}x</Text>
+                              </Pressable>
+                            ) : null}
+                          </View>
+                        );
+                      })() : (
                         <Text selectable style={{ color: item.deleted_at ? colors.muted : mine ? colors.background : colors.foreground, fontStyle: item.deleted_at ? "italic" : "normal", flexShrink: 1, maxWidth: "100%" }}>{item.deleted_at ? "Mensaje eliminado" : item.body}</Text>
                       )}
                       {Object.keys(countMessageReactions(item.reactions)).length > 0 ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 }}>{Object.entries(countMessageReactions(item.reactions)).map(([emoji, count]) => <Text key={emoji} style={{ color: mine ? colors.background : colors.foreground, fontSize: 12, backgroundColor: mine ? `${colors.background}33` : `${colors.primary}18`, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 }}>{emoji} {count}</Text>)}</View> : null}
