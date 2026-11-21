@@ -63,11 +63,11 @@ export function JuntaVideoPlayer({
   const player = useVideoPlayer(sourceUri, (videoPlayer) => {
     videoPlayer.loop = loop;
     videoPlayer.muted = initialMuted;
-    videoPlayer.timeUpdateEventInterval = 0.2;
+    videoPlayer.timeUpdateEventInterval = 0.1;
   });
 
   const [isPlaying, setIsPlaying] = useState(shouldPlay);
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(() => uri.startsWith("file://"));
   const [controlsVisible, setControlsVisible] = useState(variant === "viewer");
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -102,7 +102,7 @@ export function JuntaVideoPlayer({
 
   useEffect(() => {
     let cancelled = false;
-    setReady(false);
+    setReady(uri.startsWith("file://"));
     void resolveCachedVideoUri(uri)
       .then((resolved) => {
         if (!cancelled) setSourceUri(resolved);
