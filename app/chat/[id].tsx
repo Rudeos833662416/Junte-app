@@ -485,6 +485,94 @@ export default function ChatScreen() {
     }
   };
 
+  const MAX_VOICE_DURATION_MS = 15 * 60 * 1000;
+
+  const formatVoiceTimer = (ms: number) => {
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const stopAndSendVoiceRecording = async () => {
+    if (!user || !otherId || voiceSending) return;
+    if (!recorderState.isRecording && !isRecordingRef.current) return;
+    const durationMs = recorderState.durationMillis;
+    setVoiceSending(true);
+    setVoiceLocked(false);
+    isRecordingRef.current = false;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    try {
+      try {
+        await recorder.stop();
+      } catch {
+        setVoiceSending(false);
+        return;
+      }
+      if (durationMs < 600) {
+        setVoiceSending(false);
+        return;
+      }
+      const uri = recorder.uri;
+      if (!uri) throw new Error("La grabación no produjo un archivo de audio.");
+      const clientMessageId = newClientMessageId();
+      const audioPath = `${user.id}/${otherId}/${clientMessageId}.m4a`;
+      await uploadUriToStorage("chat-audio", audioPath, uri, "audio/mp4");
+      const { data: signedData, error: signedError } = await supabase.storage.from("chat-audio").createSignedUrl(audioPath, 60 * 60 * 24);
+      if (signedError) throw signedError;
+      const { data, error } = await supabase
+        .from("direct_messages")
+        .insert({
+          sender_id: user.id,
+          recipient_id: otherId,
+          body: "Nota de voz",
+          client_message_id: clientMessageId,
+          kind: "voice_note",
+          audio_path: audioPath,
+          duration_ms: Math.max(0, Math.round(durationMs)),
+        })
+        .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id, edited_at, deleted_at, reactions, location_payload, trim_start_ms, trim_end_ms, is_muted, overlay_text")
+        .single();
+      if (error) throw error;
+      if (data) {
+        setMessages((current) => {
+          const next = mergeCachedMessage(current, { ...(data as Message), audio_url: signedData?.signedUrl ?? null, pending: false });
+          setCachedConversation(otherId, next);
+          return next as Message[];
+        });
+      }
+    } catch (error) {
+      Alert.alert("No se pudo enviar el audio", friendlyChatError(error as { code?: string; message?: string }));
+    } finally {
+      setVoiceSending(false);
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    if (!user || !otherId || voiceSending || isStartingRecordingRef.current) return;
+    if (recorderState.isRecording || isRecordingRef.current) return;
+    const permission = await requestRecordingPermissionsAsync();
+    if (!permission.granted) { Alert.alert("Permiso de micrófono", "Activa el micrófono en los ajustes para grabar notas de voz."); return; }
+    isStartingRecordingRef.current = true;
+    try {
+      try { await recorder.stop(); } catch {}
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setVoiceLocked(false);
+      isRecordingRef.current = true;
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    } catch {
+      isRecordingRef.current = false;
+      Alert.alert("No se pudo grabar", "El micrófono no está disponible. Inténtalo de nuevo.");
+    } finally { isStartingRecordingRef.current = false; }
+  };
+
+  useEffect(() => {
+    if (recorderState.isRecording && recorderState.durationMillis >= MAX_VOICE_DURATION_MS && !voiceSending) {
+      void stopAndSendVoiceRecording();
+    }
+  }, [recorderState.isRecording, recorderState.durationMillis, voiceSending]);
+
   const toggleVoiceRecording = async () => {
     if (!user || !otherId || voiceSending) return;
     if (recorderState.isRecording || isRecordingRef.current) {
@@ -848,7 +936,22 @@ export default function ChatScreen() {
             </Pressable>
           ) : null}
           {recorderState.isRecording ? (
-            <View className="mb-2 flex-row items-center gap-2"><Text className="flex-1 text-xs font-bold" style={{ color: colors.error }}>{voiceLocked ? "Grabación bloqueada" : "Grabando nota de voz · desliza ↑ para bloquear"} · {Math.max(1, Math.round(recorderState.durationMillis / 1000))}s</Text><Pressable onPress={() => void cancelVoiceRecording()} accessibilityRole="button" accessibilityLabel="Cancelar nota de voz" style={{ minHeight: 36, paddingHorizontal: 10, justifyContent: "center" }}><Text style={{ color: colors.muted, fontWeight: "800" }}>Cancelar</Text></Pressable></View>
+            <View className="mb-2 flex-row items-center gap-2.5 rounded-2xl px-3 py-2" style={{ backgroundColor: colors.surface }}>
+              <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: colors.error }} />
+              <Text className="text-xs font-extrabold" style={{ color: colors.foreground, fontVariant: ["tabular-nums"] }}>
+                {formatVoiceTimer(recorderState.durationMillis)}
+              </Text>
+              <Text className="flex-1 text-xs font-semibold" style={{ color: recorderState.durationMillis >= MAX_VOICE_DURATION_MS - 30000 ? colors.primary : colors.muted }} numberOfLines={1}>
+                {recorderState.durationMillis >= MAX_VOICE_DURATION_MS - 30000
+                  ? `Quedan ${Math.max(1, Math.ceil((MAX_VOICE_DURATION_MS - recorderState.durationMillis) / 1000))}s…`
+                  : voiceLocked
+                    ? "Manos libres activo · envía o descarta"
+                    : "← Desliza para cancelar · ↑ para bloquear"}
+              </Text>
+              <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined); void cancelVoiceRecording(); }} accessibilityRole="button" accessibilityLabel="Cancelar nota de voz" style={{ minHeight: 34, paddingHorizontal: 10, justifyContent: "center" }}>
+                <Text style={{ color: colors.error, fontWeight: "800", fontSize: 12 }}>Eliminar</Text>
+              </Pressable>
+            </View>
           ) : null}
           {chatMedia.pending ? (
             <Modal visible animationType="slide" onRequestClose={chatMedia.clearPending}>
@@ -893,15 +996,19 @@ export default function ChatScreen() {
               style={{ flex: 1, minHeight: 44, maxHeight: 120, borderWidth: 1, borderRadius: 18, borderColor: colors.border, color: colors.foreground, backgroundColor: colors.surface, paddingHorizontal: 14, paddingVertical: 12 }}
             />
             <VoiceRecordGestureButton
-              recording={recorderState.isRecording}
-              onTap={() => (draft.trim() ? void sendMessage() : void toggleVoiceRecording())}
-              onCancel={() => void cancelVoiceRecording()}
-              onLock={() => setVoiceLocked(true)}
+              recording={Boolean(recorderState.isRecording)}
+              locked={voiceLocked}
+              hasText={Boolean(draft.trim())}
+              onPressSendText={() => void sendMessage()}
+              onStartHold={() => void startVoiceRecording()}
+              onReleaseSend={() => void stopAndSendVoiceRecording()}
+              onCancel={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined); void cancelVoiceRecording(); }}
+              onLock={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined); setVoiceLocked(true); }}
               disabled={sending || voiceSending}
-              accessibilityLabel={draft.trim() ? "Enviar mensaje" : recorderState.isRecording ? "Detener y enviar nota de voz; desliza a la izquierda para cancelar o arriba para bloquear" : "Grabar nota de voz"}
+              accessibilityLabel={draft.trim() ? "Enviar mensaje" : recorderState.isRecording ? "Soltar para enviar nota de voz; desliza a la izquierda para cancelar o arriba para bloquear" : "Mantén presionado para grabar nota de voz"}
               style={({ pressed }) => ({ borderRadius: 18, backgroundColor: colors.primary, width: 48, height: 48, alignItems: "center", justifyContent: "center", opacity: pressed || sending || voiceSending ? 0.55 : 1 })}
             >
-              <MaterialIcons name={draft.trim() ? "send" : recorderState.isRecording ? (voiceLocked ? "lock" : "stop") : "mic"} size={21} color={colors.background} />
+              <MaterialIcons name={draft.trim() || voiceLocked ? "send" : recorderState.isRecording ? "mic" : "mic"} size={21} color={colors.background} />
             </VoiceRecordGestureButton>
           </View>
         </View>
