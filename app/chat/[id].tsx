@@ -135,10 +135,10 @@ export default function ChatScreen() {
   const [voicePlaybackSpeed, setVoicePlaybackSpeed] = useState<1 | 1.5 | 2>(1);
   const [voiceBarWidths, setVoiceBarWidths] = useState<Record<string, number>>({});
   const [voiceUiActive, setVoiceUiActive] = useState(false);
-  const [voiceDragOffset, setVoiceDragOffset] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
   const micPermissionGrantedRef = useRef(false);
   const holdCancelledEarlyRef = useRef(false);
   const isStoppingVoiceRef = useRef(false);
+  const voiceRecordStartedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     void requestRecordingPermissionsAsync()
@@ -539,9 +539,9 @@ export default function ChatScreen() {
       return;
     }
     isStoppingVoiceRef.current = true;
-    const durationMs = recorderState.durationMillis;
+    const durationMs = Math.max(recorderState.durationMillis || 0, voiceRecordStartedAtRef.current ? Date.now() - voiceRecordStartedAtRef.current : 0);
     setVoiceUiActive(false);
-    setVoiceDragOffset({ dx: 0, dy: 0 });
+    
     setVoiceLocked(false);
     isRecordingRef.current = false;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
@@ -562,7 +562,8 @@ export default function ChatScreen() {
         isStoppingVoiceRef.current = false;
         return;
       }
-      if (durationMs < 550) {
+      voiceRecordStartedAtRef.current = null;
+      if (durationMs < 350) {
         setVoiceSending(false);
         isStoppingVoiceRef.current = false;
         return;
@@ -629,7 +630,7 @@ export default function ChatScreen() {
     holdCancelledEarlyRef.current = false;
     setVoiceUiActive(true);
     setVoiceLocked(false);
-    setVoiceDragOffset({ dx: 0, dy: 0 });
+    
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
 
     if (!micPermissionGrantedRef.current) {
@@ -657,6 +658,7 @@ export default function ChatScreen() {
         return;
       }
       recorder.record();
+      voiceRecordStartedAtRef.current = Date.now();
       isRecordingRef.current = true;
     } catch {
       isRecordingRef.current = false;
@@ -1144,17 +1146,16 @@ export default function ChatScreen() {
             />
             <VoiceRecordGestureButton
               recording={Boolean(recorderState.isRecording || voiceUiActive)}
-              onDragOffset={(dx, dy) => setVoiceDragOffset({ dx, dy })}
               locked={voiceLocked}
               hasText={Boolean(draft.trim())}
               onPressSendText={() => void sendMessage()}
               onStartHold={() => void startVoiceRecording()}
               onReleaseSend={() => void stopAndSendVoiceRecording()}
-              onCancel={() => { setVoiceUiActive(false); setVoiceDragOffset({ dx: 0, dy: 0 }); void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined); void cancelVoiceRecording(); }}
+              onCancel={() => { setVoiceUiActive(false);  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined); void cancelVoiceRecording(); }}
               onLock={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined); setVoiceLocked(true); }}
               disabled={sending || voiceSending}
               accessibilityLabel={draft.trim() ? "Enviar mensaje" : recorderState.isRecording ? "Soltar para enviar nota de voz; desliza a la izquierda para cancelar o arriba para bloquear" : "Mantén presionado para grabar nota de voz"}
-              style={({ pressed }) => ({ borderRadius: 18, backgroundColor: colors.primary, width: (recorderState.isRecording || voiceUiActive) && !voiceLocked ? 54 : 48, height: (recorderState.isRecording || voiceUiActive) && !voiceLocked ? 54 : 48, transform: [{ translateX: Math.max(-44, Math.min(0, voiceDragOffset.dx * 0.45)) }, { translateY: Math.max(-36, Math.min(0, voiceDragOffset.dy * 0.45)) }], alignItems: "center", justifyContent: "center", opacity: pressed || sending || voiceSending ? 0.72 : 1 })}
+              style={({ pressed }) => ({ borderRadius: 18, backgroundColor: colors.primary, width: (recorderState.isRecording || voiceUiActive) && !voiceLocked ? 54 : 48, height: (recorderState.isRecording || voiceUiActive) && !voiceLocked ? 54 : 48, alignItems: "center", justifyContent: "center", opacity: pressed || sending || voiceSending ? 0.72 : 1 })}
             >
               <MaterialIcons name={draft.trim() || voiceLocked ? "send" : recorderState.isRecording ? "mic" : "mic"} size={21} color={colors.background} />
             </VoiceRecordGestureButton>

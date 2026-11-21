@@ -1,5 +1,13 @@
-import { useRef, type ReactNode } from "react";
-import { PanResponder, Pressable, type PressableStateCallbackType, type StyleProp, type ViewStyle } from "react-native";
+import { useEffect, useRef, type ReactNode } from "react";
+import {
+  Animated,
+  PanResponder,
+  Pressable,
+  View,
+  type PressableStateCallbackType,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 
 type Props = {
   children: ReactNode;
@@ -12,10 +20,12 @@ type Props = {
   onReleaseSend: () => void;
   onCancel: () => void;
   onLock: () => void;
-  onDragOffset?: (dx: number, dy: number) => void;
   style?: StyleProp<ViewStyle> | ((state: PressableStateCallbackType) => StyleProp<ViewStyle>);
   accessibilityLabel: string;
 };
+
+const CANCEL_THRESHOLD_X = -54;
+const LOCK_THRESHOLD_Y = -48;
 
 export function VoiceRecordGestureButton({
   children,
@@ -28,100 +38,174 @@ export function VoiceRecordGestureButton({
   onReleaseSend,
   onCancel,
   onLock,
-  onDragOffset,
   style,
   accessibilityLabel,
 }: Props) {
   const gestureConsumedRef = useRef(false);
-  const activeHoldRef = useRef(false);
+  const holdStartedRef = useRef(false);
+  const recordingRef = useRef(recording);
+  const lockedRef = useRef(locked);
+  const hasTextRef = useRef(hasText);
 
-  const responder = useRef(
+  const callbacksRef = useRef({
+    onPressSendText,
+    onStartHold,
+    onReleaseSend,
+    onCancel,
+    onLock,
+  });
+
+  useEffect(() => {
+    callbacksRef.current = {
+      onPressSendText,
+      onStartHold,
+      onReleaseSend,
+      onCancel,
+      onLock,
+    };
+  }, [onPressSendText, onStartHold, onReleaseSend, onCancel, onLock]);
+
+  useEffect(() => {
+    recordingRef.current = recording;
+    if (!recording) {
+      holdStartedRef.current = false;
+    }
+  }, [recording]);
+
+  useEffect(() => {
+    lockedRef.current = locked;
+  }, [locked]);
+
+  useEffect(() => {
+    hasTextRef.current = hasText;
+  }, [hasText]);
+
+  const dragOffset = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+
+  const resetDrag = () => {
+    Animated.spring(dragOffset, {
+      toValue: { x: 0, y: 0 },
+      useNativeDriver: true,
+      speed: 28,
+      bounciness: 4,
+    }).start();
+  };
+
+  useEffect(() => {
+    if (!recording || locked) {
+      dragOffset.setValue({ x: 0, y: 0 });
+    }
+  }, [recording, locked, dragOffset]);
+
+  const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_event, gesture) =>
-        (recording || activeHoldRef.current) && !locked && (Math.abs(gesture.dx) > 8 || Math.abs(gesture.dy) > 8),
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_event, gesture) => {
+        if (hasTextRef.current || lockedRef.current) return false;
+        if (!recordingRef.current && !holdStartedRef.current) return false;
+        return Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10;
+      },
+      onPanResponderGrant: () => {
+        gestureConsumedRef.current = false;
+      },
       onPanResponderMove: (_event, gesture) => {
-        if ((!recording && !activeHoldRef.current) || locked || gestureConsumedRef.current) return;
-        onDragOffset?.(gesture.dx, gesture.dy);
-        if (gesture.dx < -54) {
+        if (hasTextRef.current || lockedRef.current || gestureConsumedRef.current) return;
+        if (!recordingRef.current && !holdStartedRef.current) return;
+
+        const clampedX = Math.max(-68, Math.min(0, gesture.dx * 0.65));
+        const clampedY = Math.max(-60, Math.min(0, gesture.dy * 0.65));
+        dragOffset.setValue({ x: clampedX, y: clampedY });
+
+        if (gesture.dx <= CANCEL_THRESHOLD_X) {
           gestureConsumedRef.current = true;
-          activeHoldRef.current = false;
-          onDragOffset?.(0, 0);
-          onCancel();
-        } else if (gesture.dy < -48) {
+          holdStartedRef.current = false;
+          resetDrag();
+          callbacksRef.current.onCancel();
+        } else if (gesture.dy <= LOCK_THRESHOLD_Y) {
           gestureConsumedRef.current = true;
-          activeHoldRef.current = false;
-          onDragOffset?.(0, 0);
-          onLock();
+          holdStartedRef.current = false;
+          resetDrag();
+          callbacksRef.current.onLock();
         }
       },
       onPanResponderRelease: (_event, gesture) => {
-        onDragOffset?.(0, 0);
-        if ((!recording && !activeHoldRef.current) || locked || gestureConsumedRef.current) {
+        resetDrag();
+        if (hasTextRef.current || lockedRef.current) return;
+        if (gestureConsumedRef.current) {
           gestureConsumedRef.current = false;
-          activeHoldRef.current = false;
           return;
         }
-        gestureConsumedRef.current = true;
-        activeHoldRef.current = false;
-        if (gesture.dx < -54) {
-          onCancel();
-        } else if (gesture.dy < -48) {
-          onLock();
-        } else {
-          onReleaseSend();
+        if (recordingRef.current || holdStartedRef.current) {
+          holdStartedRef.current = false;
+          if (gesture.dx <= CANCEL_THRESHOLD_X) {
+            callbacksRef.current.onCancel();
+          } else if (gesture.dy <= LOCK_THRESHOLD_Y) {
+            callbacksRef.current.onLock();
+          } else {
+            callbacksRef.current.onReleaseSend();
+          }
         }
       },
       onPanResponderTerminate: () => {
-        onDragOffset?.(0, 0);
-        if ((recording || activeHoldRef.current) && !locked && !gestureConsumedRef.current) {
-          gestureConsumedRef.current = true;
-          activeHoldRef.current = false;
-          onReleaseSend();
+        resetDrag();
+        if (hasTextRef.current || lockedRef.current) return;
+        if (gestureConsumedRef.current) {
+          gestureConsumedRef.current = false;
+          return;
+        }
+        if (recordingRef.current || holdStartedRef.current) {
+          holdStartedRef.current = false;
+          callbacksRef.current.onReleaseSend();
         }
       },
     }),
   ).current;
 
+  const animatedStyle = {
+    transform: [
+      { translateX: dragOffset.x },
+      { translateY: dragOffset.y },
+    ],
+  };
+
   return (
-    <Pressable
-      {...responder.panHandlers}
-      onPress={() => {
-        if (hasText) {
-          onPressSendText();
-        } else if (locked) {
-          // Solo cuando está en modo manos libres bloqueado se envía al tocar el botón Send
-          onReleaseSend();
-        }
-      }}
-      onPressIn={() => {
-        if (hasText || recording || locked) return;
-        gestureConsumedRef.current = false;
-        activeHoldRef.current = true;
-        onStartHold();
-      }}
-      onPressOut={() => {
-        onDragOffset?.(0, 0);
-        if (hasText || locked) {
-          activeHoldRef.current = false;
-          return;
-        }
-        if (gestureConsumedRef.current) {
-          gestureConsumedRef.current = false;
-          activeHoldRef.current = false;
-          return;
-        }
-        if (recording || activeHoldRef.current) {
-          gestureConsumedRef.current = true;
-          activeHoldRef.current = false;
-          onReleaseSend();
-        }
-      }}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      style={style}
-    >
-      {children}
-    </Pressable>
+    <View {...panResponder.panHandlers}>
+      <Animated.View style={animatedStyle}>
+        <Pressable
+          onPress={() => {
+            if (hasTextRef.current) {
+              callbacksRef.current.onPressSendText();
+            } else if (lockedRef.current) {
+              callbacksRef.current.onReleaseSend();
+            }
+          }}
+          onPressIn={() => {
+            if (hasTextRef.current || lockedRef.current || recordingRef.current) return;
+            gestureConsumedRef.current = false;
+            holdStartedRef.current = true;
+            callbacksRef.current.onStartHold();
+          }}
+          onPressOut={() => {
+            if (hasTextRef.current || lockedRef.current) return;
+            if (gestureConsumedRef.current) {
+              gestureConsumedRef.current = false;
+              return;
+            }
+            if (holdStartedRef.current || recordingRef.current) {
+              holdStartedRef.current = false;
+              gestureConsumedRef.current = true;
+              resetDrag();
+              callbacksRef.current.onReleaseSend();
+            }
+          }}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel}
+          style={style}
+        >
+          {children}
+        </Pressable>
+      </Animated.View>
+    </View>
   );
 }
