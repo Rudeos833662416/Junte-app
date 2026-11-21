@@ -139,6 +139,40 @@ export default function ChatScreen() {
   const holdCancelledEarlyRef = useRef(false);
   const isStoppingVoiceRef = useRef(false);
   const voiceRecordStartedAtRef = useRef<number | null>(null);
+  const voiceUiActiveRef = useRef(false);
+  const recorderPreparedRef = useRef(false);
+  const hapticPromiseRef = useRef<Promise<void> | null>(null);
+
+  const triggerHaptic = (style: Haptics.ImpactFeedbackStyle) => {
+    if (hapticPromiseRef.current) return;
+    hapticPromiseRef.current = Haptics.impactAsync(style)
+      .catch(() => undefined)
+      .finally(() => {
+        hapticPromiseRef.current = null;
+      });
+  };
+
+  const warmupRecorder = async () => {
+    try {
+      if (!micPermissionGrantedRef.current) {
+        const perm = await requestRecordingPermissionsAsync();
+        micPermissionGrantedRef.current = Boolean(perm?.granted);
+        if (!perm?.granted) return false;
+      }
+      if (!recorderPreparedRef.current && !isRecordingRef.current && !isStoppingVoiceRef.current) {
+        await recorder.prepareToRecordAsync();
+        recorderPreparedRef.current = true;
+      }
+      return true;
+    } catch {
+      recorderPreparedRef.current = false;
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    void warmupRecorder();
+  }, []);
 
   useEffect(() => {
     void requestRecordingPermissionsAsync()
@@ -329,8 +363,10 @@ export default function ChatScreen() {
 
   const cancelVoiceRecording = async () => {
     holdCancelledEarlyRef.current = true;
+    voiceUiActiveRef.current = false;
     isRecordingRef.current = false;
     voiceRecordStartedAtRef.current = null;
+    recorderPreparedRef.current = false;
     setVoiceUiActive(false);
     setVoiceLocked(false);
     try { await recorder.stop(); } catch { /* already stopped or released */ }
@@ -465,7 +501,7 @@ export default function ChatScreen() {
   };
 
   const openMessageActions = (message: Message) => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     setActionsMessage(message);
   };
 
@@ -536,17 +572,19 @@ export default function ChatScreen() {
 
   const stopAndSendVoiceRecording = async () => {
     if (!user || !otherId || voiceSending || isStoppingVoiceRef.current) return;
-    if (!recorderState.isRecording && !isRecordingRef.current && !voiceUiActive) {
+    if (!recorderState.isRecording && !isRecordingRef.current && !voiceUiActiveRef.current && !voiceUiActive) {
       holdCancelledEarlyRef.current = true;
       return;
     }
     isStoppingVoiceRef.current = true;
-    const durationMs = Math.max(recorderState.durationMillis || 0, voiceRecordStartedAtRef.current ? Date.now() - voiceRecordStartedAtRef.current : 0);
-    setVoiceUiActive(false);
-    
-    setVoiceLocked(false);
+    const durationMs = voiceRecordStartedAtRef.current ? Math.max(0, Date.now() - voiceRecordStartedAtRef.current) : 0;
+    voiceRecordStartedAtRef.current = null;
+    voiceUiActiveRef.current = false;
     isRecordingRef.current = false;
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    recorderPreparedRef.current = false;
+    setVoiceUiActive(false);
+    setVoiceLocked(false);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
 
     if (isStartingRecordingRef.current) {
       holdCancelledEarlyRef.current = true;
@@ -564,10 +602,10 @@ export default function ChatScreen() {
         isStoppingVoiceRef.current = false;
         return;
       }
-      voiceRecordStartedAtRef.current = null;
       if (durationMs < 350) {
         setVoiceSending(false);
         isStoppingVoiceRef.current = false;
+        void warmupRecorder();
         return;
       }
       const uri = recorder.uri;
@@ -585,7 +623,7 @@ export default function ChatScreen() {
         kind: "voice_note",
         audio_path: null,
         audio_url: uri,
-        duration_ms: Math.max(600, Math.round(durationMs)),
+        duration_ms: Math.max(350, Math.round(durationMs)),
         pending: true,
       };
       setMessages((current) => [optimisticMsg, ...current]);
@@ -603,7 +641,7 @@ export default function ChatScreen() {
           client_message_id: clientMessageId,
           kind: "voice_note",
           audio_path: audioPath,
-          duration_ms: Math.max(600, Math.round(durationMs)),
+          duration_ms: Math.max(350, Math.round(durationMs)),
         })
         .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id, edited_at, deleted_at, reactions, location_payload, trim_start_ms, trim_end_ms, is_muted, overlay_text")
         .single();
@@ -616,6 +654,7 @@ export default function ChatScreen() {
           return next as Message[];
         });
       }
+      void warmupRecorder();
     } catch (error) {
       setMessages((current) => current.filter((m) => !m.id.startsWith("opt_voice_")));
       Alert.alert("No se pudo enviar el audio", friendlyChatError(error as { code?: string; message?: string }));
@@ -627,43 +666,51 @@ export default function ChatScreen() {
 
   const startVoiceRecording = async () => {
     if (!user || !otherId || voiceSending || isStartingRecordingRef.current || isStoppingVoiceRef.current) return;
-    if (recorderState.isRecording || isRecordingRef.current) return;
+    if (recorderState.isRecording || isRecordingRef.current || voiceUiActiveRef.current) return;
 
     holdCancelledEarlyRef.current = false;
-    setVoiceUiActive(true);
-    setVoiceLocked(false);
-    
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    voiceUiActiveRef.current = true;
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
     if (!micPermissionGrantedRef.current) {
       const permission = await requestRecordingPermissionsAsync();
       micPermissionGrantedRef.current = Boolean(permission.granted);
       if (!permission.granted) {
+        voiceUiActiveRef.current = false;
         setVoiceUiActive(false);
         Alert.alert("Permiso de micrófono", "Activa el micrófono en los ajustes para grabar notas de voz.");
         return;
       }
     }
 
-    if (holdCancelledEarlyRef.current) {
+    if (holdCancelledEarlyRef.current || !voiceUiActiveRef.current) {
+      voiceUiActiveRef.current = false;
       setVoiceUiActive(false);
       return;
     }
 
     isStartingRecordingRef.current = true;
     try {
-      try { await recorder.stop(); } catch {}
-      await recorder.prepareToRecordAsync();
-      if (holdCancelledEarlyRef.current) {
+      if (!recorderPreparedRef.current) {
         try { await recorder.stop(); } catch {}
+        await recorder.prepareToRecordAsync();
+      }
+      recorderPreparedRef.current = false;
+      if (holdCancelledEarlyRef.current || !voiceUiActiveRef.current) {
+        try { await recorder.stop(); } catch {}
+        voiceUiActiveRef.current = false;
         setVoiceUiActive(false);
         return;
       }
       recorder.record();
       voiceRecordStartedAtRef.current = Date.now();
       isRecordingRef.current = true;
+      setVoiceLocked(false);
+      setVoiceUiActive(true);
     } catch {
       isRecordingRef.current = false;
+      voiceUiActiveRef.current = false;
+      recorderPreparedRef.current = false;
       setVoiceUiActive(false);
       Alert.alert("No se pudo grabar", "El micrófono no está disponible. Inténtalo de nuevo.");
     } finally {
@@ -672,7 +719,13 @@ export default function ChatScreen() {
   };
 
   useEffect(() => {
-    if (recorderState.isRecording && recorderState.durationMillis >= MAX_VOICE_DURATION_MS && !voiceSending && !isStoppingVoiceRef.current) {
+    if (
+      recorderState.isRecording &&
+      voiceRecordStartedAtRef.current &&
+      Date.now() - voiceRecordStartedAtRef.current >= MAX_VOICE_DURATION_MS &&
+      !voiceSending &&
+      !isStoppingVoiceRef.current
+    ) {
       void stopAndSendVoiceRecording();
     }
   }, [recorderState.isRecording, recorderState.durationMillis, voiceSending]);
@@ -1099,7 +1152,7 @@ export default function ChatScreen() {
                     ? "Manos libres activo · envía o descarta"
                     : "← Desliza para cancelar · ↑ para bloquear"}
               </Text>
-              <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined); void cancelVoiceRecording(); }} accessibilityRole="button" accessibilityLabel="Cancelar nota de voz" style={{ minHeight: 34, paddingHorizontal: 10, justifyContent: "center" }}>
+              <Pressable onPress={() => { triggerHaptic(Haptics.ImpactFeedbackStyle.Light); void cancelVoiceRecording(); }} accessibilityRole="button" accessibilityLabel="Cancelar nota de voz" style={{ minHeight: 34, paddingHorizontal: 10, justifyContent: "center" }}>
                 <Text style={{ color: colors.error, fontWeight: "800", fontSize: 12 }}>Eliminar</Text>
               </Pressable>
             </View>
@@ -1153,8 +1206,8 @@ export default function ChatScreen() {
               onPressSendText={() => void sendMessage()}
               onStartHold={() => void startVoiceRecording()}
               onReleaseSend={() => void stopAndSendVoiceRecording()}
-              onCancel={() => { setVoiceUiActive(false);  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined); void cancelVoiceRecording(); }}
-              onLock={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined); setVoiceLocked(true); }}
+              onCancel={() => { setVoiceUiActive(false);  triggerHaptic(Haptics.ImpactFeedbackStyle.Light); void cancelVoiceRecording(); }}
+              onLock={() => { triggerHaptic(Haptics.ImpactFeedbackStyle.Medium); setVoiceLocked(true); }}
               disabled={sending || voiceSending}
               accessibilityLabel={draft.trim() ? "Enviar mensaje" : recorderState.isRecording ? "Soltar para enviar nota de voz; desliza a la izquierda para cancelar o arriba para bloquear" : "Mantén presionado para grabar nota de voz"}
               style={({ pressed }) => ({ borderRadius: 18, backgroundColor: colors.primary, width: (recorderState.isRecording || voiceUiActive) && !voiceLocked ? 54 : 48, height: (recorderState.isRecording || voiceUiActive) && !voiceLocked ? 54 : 48, alignItems: "center", justifyContent: "center", opacity: pressed || sending || voiceSending ? 0.72 : 1 })}
