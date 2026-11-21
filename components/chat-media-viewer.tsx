@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Animated, Modal, PanResponder, Platform, Pres
 import { Image } from "expo-image";
 import { MaterialIcons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { shouldDismissSwipe } from "@/lib/interaction-gestures";
 import { JuntaVideoPlayer } from "@/components/junta-video-player";
 
@@ -24,18 +25,18 @@ function ViewerVideo({ uri, trimStartMs, trimEndMs, muted }: Pick<Props, "uri" |
   const nextSpeed: 1 | 1.5 | 2 = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
 
   return (
-    <View style={{ width: "100%", height: "72%", justifyContent: "center" }}>
+    <View style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#000000" }}>
       <JuntaVideoPlayer
         uri={uri}
         variant="viewer"
         loop={true}
-        muted={muted}
+        muted={muted ? true : undefined}
         trimStartSec={startSeconds}
         trimEndSec={endSeconds}
         playbackRate={speed}
         showSpeedButton={true}
         onCycleSpeed={() => setSpeed(nextSpeed)}
-        style={{ width: "100%", height: "100%" }}
+        style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#000000" }}
       />
     </View>
   );
@@ -43,6 +44,7 @@ function ViewerVideo({ uri, trimStartMs, trimEndMs, muted }: Pick<Props, "uri" |
 
 export function ChatMediaViewer({ visible, uri, kind, onClose, trimStartMs, trimEndMs, muted, overlayText }: Props) {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
   const translateY = useState(() => new Animated.Value(0))[0];
 
@@ -51,7 +53,7 @@ export function ChatMediaViewer({ visible, uri, kind, onClose, trimStartMs, trim
   }, [translateY, uri, visible]);
 
   const dismissPanResponder = PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 12 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+    onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 14 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
     onPanResponderMove: (_, gesture) => translateY.setValue(Math.max(0, gesture.dy)),
     onPanResponderRelease: (_, gesture) => {
       if (shouldDismissSwipe(Math.max(0, gesture.dy), gesture.vy)) {
@@ -88,43 +90,57 @@ export function ChatMediaViewer({ visible, uri, kind, onClose, trimStartMs, trim
 
   if (!visible || !uri || !kind) return null;
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent={false} statusBarTranslucent animationType="fade" onRequestClose={onClose}>
       <Animated.View
         {...dismissPanResponder.panHandlers}
-        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.94)", justifyContent: "center", alignItems: "center", transform: [{ translateY }], opacity: translateY.interpolate({ inputRange: [0, height], outputRange: [1, 0.35] }) }}
+        style={{
+          flex: 1,
+          backgroundColor: "#000000",
+          paddingTop: insets.top,
+          paddingBottom: Math.max(insets.bottom, 10),
+          justifyContent: "center",
+          alignItems: "center",
+          transform: [{ translateY }],
+          opacity: translateY.interpolate({ inputRange: [0, height], outputRange: [1, 0.35] }),
+        }}
       >
-        <View style={{ position: "absolute", top: 48, right: 12, zIndex: 2, flexDirection: "row", gap: 8 }}>
+        <View style={{ position: "absolute", top: insets.top + 10, right: 14, zIndex: 20, flexDirection: "row", gap: 10 }}>
           <Pressable
             onPress={() => void saveToDevice()}
             accessibilityRole="button"
             accessibilityLabel="Guardar o compartir"
-            style={{ padding: 8, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 20 }}
+            style={{ width: 42, height: 42, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.65)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)", borderRadius: 21 }}
             disabled={saving}
           >
-            {saving ? <ActivityIndicator color="#FFF" /> : <MaterialIcons name="download" size={26} color="#FFFFFF" />}
+            {saving ? <ActivityIndicator color="#FFF" /> : <MaterialIcons name="download" size={24} color="#FFFFFF" />}
           </Pressable>
           <Pressable
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Cerrar"
-            style={{ padding: 8, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 20 }}
+            style={{ width: 42, height: 42, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.65)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)", borderRadius: 21 }}
           >
-            <MaterialIcons name="close" size={26} color="#FFFFFF" />
+            <MaterialIcons name="close" size={24} color="#FFFFFF" />
           </Pressable>
         </View>
-      {kind === "image" ? (
+
+        {kind === "image" ? (
           <Image
             source={{ uri }}
-            style={{ width: width, height: height * 0.8 }}
+            style={{ width, height: "100%" }}
             contentFit="contain"
             cachePolicy="disk"
           />
-      ) : (
-        <View style={{ width: "100%", height: "70%" }}>
-          <ViewerVideo uri={uri} trimStartMs={trimStartMs} trimEndMs={trimEndMs} muted={muted} />
-          {overlayText ? <Text style={{ position: "absolute", left: 24, right: 24, top: "42%", color: "#FFF", fontSize: 24, fontWeight: "800", textAlign: "center", textShadowColor: "#000", textShadowRadius: 6 }}>{overlayText}</Text> : null}
-        </View>
-      )}
+        ) : (
+          <View style={{ flex: 1, width: "100%", height: "100%" }}>
+            <ViewerVideo uri={uri} trimStartMs={trimStartMs} trimEndMs={trimEndMs} muted={muted} />
+            {overlayText ? (
+              <Text pointerEvents="none" style={{ position: "absolute", left: 24, right: 24, top: "42%", color: "#FFF", fontSize: 24, fontWeight: "800", textAlign: "center", textShadowColor: "#000", textShadowRadius: 6 }}>
+                {overlayText}
+              </Text>
+            ) : null}
+          </View>
+        )}
       </Animated.View>
     </Modal>
   );

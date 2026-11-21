@@ -37,6 +37,7 @@ import {
 import { resolveCachedChatAudio, resolveCachedChatMedia, uploadUriToStorage } from "@/lib/media-upload";
 import { useChatMedia } from "@/hooks/use-chat-media";
 import { ChatMediaViewer } from "@/components/chat-media-viewer";
+import { JuntaVideoPlayer } from "@/components/junta-video-player";
 import { ChatMessageActions } from "@/components/chat-message-actions";
 import { ChatQuickCamera, type QuickCameraAsset } from "@/components/chat-quick-camera";
 import { StoryVideoEditor, type StoryVideoEditorResult } from "@/components/story-video-editor";
@@ -771,7 +772,13 @@ export default function ChatScreen() {
                           accessibilityLabel={item.kind === "video" ? "Ver vídeo" : "Ver foto"}
                         >
                           <View style={{ position: "relative" }}>
-                            <Image source={{ uri: item.media_url ?? undefined }} style={{ width: 240, maxHeight: 300, minHeight: 160, borderRadius: 14, backgroundColor: "#00000022" }} contentFit="contain" cachePolicy="disk" />
+                            {item.kind === "video" && item.media_url ? (
+                              <View pointerEvents="none" style={{ width: 240, height: 260, borderRadius: 14, overflow: "hidden", backgroundColor: "#05070C" }}>
+                                <JuntaVideoPlayer uri={item.media_url} variant="story" muted={true} loop={true} trimStartSec={Math.max(0, (item.trim_start_ms ?? 0) / 1000)} trimEndSec={item.trim_end_ms != null ? item.trim_end_ms / 1000 : null} style={{ width: "100%", height: "100%" }} />
+                              </View>
+                            ) : (
+                              <Image source={{ uri: item.media_url ?? undefined }} style={{ width: 240, maxHeight: 300, minHeight: 160, borderRadius: 14, backgroundColor: "#00000022" }} contentFit="contain" cachePolicy="disk" />
+                            )}
                             {item.pending ? <View pointerEvents="none" style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}><ActivityIndicator color="#FFFFFF" /></View> : null}
                             {item.kind === "video" ? (
                               <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}>
@@ -851,7 +858,7 @@ export default function ChatScreen() {
                   <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 15 }}>{chatMedia.pending.kind === "video" ? "Enviar vídeo" : "Enviar foto"}</Text>
                   <Pressable onPress={() => void sendPendingMedia()} disabled={chatMedia.uploading} style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.primary, opacity: chatMedia.uploading ? 0.6 : 1 }}><Text style={{ color: colors.background, fontWeight: "800", fontSize: 14 }}>{chatMedia.uploading ? "Enviando…" : "Enviar"}</Text></Pressable>
                 </View>
-                <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}><Image source={{ uri: chatMedia.pending.uri }} style={{ width: "100%", height: "85%" }} contentFit="contain" cachePolicy="disk" /></View>
+                <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>{chatMedia.pending.kind === "video" ? <JuntaVideoPlayer uri={chatMedia.pending.uri} variant="viewer" loop={true} style={{ width: "100%", height: "100%" }} /> : <Image source={{ uri: chatMedia.pending.uri }} style={{ width: "100%", height: "85%" }} contentFit="contain" cachePolicy="disk" />}</View>
                 <TextInput value={chatMedia.caption} onChangeText={chatMedia.setCaption} placeholder="Añade un comentario…" placeholderTextColor="#9CA3AF" style={{ margin: 16, color: "#FFFFFF", backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12, fontSize: 15 }} />
               </View>
             </Modal>
