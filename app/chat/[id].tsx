@@ -328,8 +328,10 @@ export default function ChatScreen() {
   };
 
   const cancelVoiceRecording = async () => {
-    if (!recorderState.isRecording && !isRecordingRef.current) return;
+    holdCancelledEarlyRef.current = true;
     isRecordingRef.current = false;
+    voiceRecordStartedAtRef.current = null;
+    setVoiceUiActive(false);
     setVoiceLocked(false);
     try { await recorder.stop(); } catch { /* already stopped or released */ }
   };
