@@ -202,13 +202,23 @@ export function VoiceRecordGestureButton({
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         style={[
+          {
+            width: 48,
+            height: 48,
+            borderRadius: 18,
+            alignItems: "center",
+            justifyContent: "center",
+          },
           style,
           {
+            opacity: disabled ? 0.55 : 1,
             transform: [{ translateX: dragOffset.x }, { translateY: dragOffset.y }],
           },
         ]}
       >
-        <View pointerEvents="none">{children}</View>
+        <View style={{ alignItems: "center", justifyContent: "center" }} pointerEvents="none">
+          {children}
+        </View>
       </Animated.View>
     </GestureDetector>
   );
