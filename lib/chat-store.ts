@@ -1,3 +1,5 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 export type ChatMessageKind = "text" | "story_reaction" | "story_reply" | "story_quick_reaction";
 
 export type CachedChatMessage = {
@@ -28,9 +30,41 @@ export type CachedConversation = {
   unread: number;
 };
 
+type PersistedChatStore = { inbox: CachedConversation[]; conversations: Record<string, CachedChatMessage[]>; drafts: Record<string, string> };
+const STORAGE_PREFIX = "junta2:chat-store:v1:";
+let activeScope: string | null = null;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let inboxCache: CachedConversation[] = [];
 const conversationCache = new Map<string, CachedChatMessage[]>();
 const draftsByPeerId = new Map<string, string>();
+
+function schedulePersist() {
+  if (!activeScope) return;
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    const conversations: Record<string, CachedChatMessage[]> = {};
+    for (const [peerId, messages] of conversationCache) conversations[peerId] = messages.slice(0, 100);
+    const drafts: Record<string, string> = {};
+    for (const [peerId, draft] of draftsByPeerId) drafts[peerId] = draft;
+    void AsyncStorage.setItem(`${STORAGE_PREFIX}${activeScope}`, JSON.stringify({ inbox: inboxCache.slice(0, 300), conversations, drafts })).catch(() => undefined);
+  }, 50);
+}
+
+export async function hydrateChatStore(scope: string) {
+  activeScope = scope;
+  try {
+    const raw = await AsyncStorage.getItem(`${STORAGE_PREFIX}${scope}`);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Partial<PersistedChatStore>;
+    inboxCache = Array.isArray(parsed.inbox) ? parsed.inbox : [];
+    conversationCache.clear();
+    for (const [peerId, messages] of Object.entries(parsed.conversations ?? {})) if (Array.isArray(messages)) conversationCache.set(peerId, messages);
+    draftsByPeerId.clear();
+    for (const [peerId, draft] of Object.entries(parsed.drafts ?? {})) if (draft) draftsByPeerId.set(peerId, draft);
+  } catch {
+    // Un snapshot corrupto no debe bloquear el arranque offline.
+  }
+}
 
 export function getCachedInbox() {
   return inboxCache;
@@ -38,10 +72,12 @@ export function getCachedInbox() {
 
 export function setCachedInbox(items: CachedConversation[]) {
   inboxCache = items;
+  schedulePersist();
 }
 
 export function markInboxConversationRead(otherId: string) {
   inboxCache = inboxCache.map((item) => item.otherId === otherId ? { ...item, unread: 0 } : item);
+  schedulePersist();
 }
 
 export function getCachedConversation(otherId: string) {
@@ -49,7 +85,8 @@ export function getCachedConversation(otherId: string) {
 }
 
 export function setCachedConversation(otherId: string, messages: CachedChatMessage[]) {
-  conversationCache.set(otherId, messages);
+  conversationCache.set(otherId, messages.slice(0, 100));
+  schedulePersist();
 }
 
 export function getDraft(otherId: string) {
@@ -59,10 +96,12 @@ export function getDraft(otherId: string) {
 export function setDraft(otherId: string, draft: string) {
   if (draft) draftsByPeerId.set(otherId, draft);
   else draftsByPeerId.delete(otherId);
+  schedulePersist();
 }
 
 export function clearDraft(otherId: string) {
   draftsByPeerId.delete(otherId);
+  schedulePersist();
 }
 
 export function mergeCachedMessage(messages: CachedChatMessage[], message: CachedChatMessage) {
@@ -80,7 +119,7 @@ export function mergeCachedMessage(messages: CachedChatMessage[], message: Cache
     next[byClientId] = { ...message, pending: false };
     return next;
   }
-  return [message, ...messages].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  return [message, ...messages].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 100);
 }
 
 export function replaceCachedMessage(messages: CachedChatMessage[], message: CachedChatMessage) {
@@ -105,4 +144,6 @@ export function clearChatStore() {
   inboxCache = [];
   conversationCache.clear();
   draftsByPeerId.clear();
+  activeScope = null;
+  if (persistTimer) clearTimeout(persistTimer);
 }

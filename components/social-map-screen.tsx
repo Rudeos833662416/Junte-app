@@ -53,6 +53,7 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   const didCenterInitiallyRef = useRef(false);
   const dismissedFocusVenueIdRef = useRef<string | null>(null);
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
+  const [visibleRegion, setVisibleRegion] = useState<Region | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [friendMarkers, setFriendMarkers] = useState<FriendCheckinMarker[]>([]);
   const [hotZoneCount, setHotZoneCount] = useState(0);
@@ -74,12 +75,19 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
 
   const mapVenueFromRow = useCallback((venue: any): MapVenue | null => normalizeMapVenue(venue), []);
   const loadVenues = useCallback(async () => {
-    const { data, error } = await supabase.from("venues").select("id, name, category, latitude, longitude, address, city, admin_photo_url, rating, opening_hours, venue_status, active_promotion").neq("source", "device").not("latitude", "is", null).not("longitude", "is", null).limit(300);
+    const region = visibleRegion ?? (coordinates ? mapRegionFor(coordinates) : null);
+    let query = supabase.from("venues").select("id, name, category, latitude, longitude, address, city, admin_photo_url, rating, opening_hours, venue_status, active_promotion").neq("source", "device").not("latitude", "is", null).not("longitude", "is", null);
+    if (region) {
+      const latRadius = Math.max(region.latitudeDelta / 2, 0.01);
+      const lngRadius = Math.max(region.longitudeDelta / 2, 0.01);
+      query = query.gte("latitude", region.latitude - latRadius).lte("latitude", region.latitude + latRadius).gte("longitude", region.longitude - lngRadius).lte("longitude", region.longitude + lngRadius);
+    }
+    const { data, error } = await query.limit(200);
     if (error) { console.warn("Venue pins unavailable:", error.message); setVenuesError("La conexión no permitió cargar los locales."); return false; }
     setVenuesError(null);
     setVenues((data ?? []).map(mapVenueFromRow).filter((venue): venue is MapVenue => Boolean(venue)));
     return true;
-  }, [mapVenueFromRow]);
+  }, [coordinates, mapVenueFromRow, visibleRegion]);
   const visibleVenues = useMemo(() => filterMapVenues(venues, category), [category, venues]);
 
   useEffect(() => {
@@ -127,7 +135,17 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
       .on("postgres_changes", { event: "*", schema: "public", table: "checkins" }, () => { void loadFriendMarkers(); void loadActiveState(); })
       .subscribe((status) => { if (status === "SUBSCRIBED") void refreshMap(); });
     return () => { if (venueReconcileTimerRef.current) clearTimeout(venueReconcileTimerRef.current); void supabase.removeChannel(channel); };
-  }, [loadActiveState, loadFriendMarkers, loadTopVenues, loadVenues, mapVenueFromRow, refreshMap, revision, user?.id]);
+  }, [loadActiveState, loadFriendMarkers, loadTopVenues, loadVenues, mapVenueFromRow, refreshMap, user?.id]);
+
+  useEffect(() => {
+    if (revision > 0) void refreshMap();
+  }, [refreshMap, revision]);
+
+  useEffect(() => {
+    if (!visibleRegion) return;
+    const timer = setTimeout(() => void loadVenues(), 350);
+    return () => clearTimeout(timer);
+  }, [loadVenues, visibleRegion]);
 
   const applyLocation = useCallback((location: Location.LocationObject) => { const next = { latitude: location.coords.latitude, longitude: location.coords.longitude }; setCoordinates(next); if (canSyncLocationRef.current && user) void syncProfileLocation(user.id, next.latitude, next.longitude); setErrorMessage(null); }, [user]);
   const startTracking = useCallback(async (allowPrompt = false) => {
@@ -185,7 +203,7 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   return (
     <View style={[styles.root, { backgroundColor: colors.abyss }]}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
-      <MapView ref={mapRef} style={StyleSheet.absoluteFill} provider={useGoogleProvider ? PROVIDER_GOOGLE : undefined} initialRegion={coordinates ? mapRegionFor(coordinates) : undefined} initialCamera={coordinates ? cameraFor(coordinates, is3D) : undefined} mapType={isRealistic ? "satellite" : "standard"} customMapStyle={isRealistic ? undefined : CLEAN_MAP_STYLE} pitchEnabled rotateEnabled showsBuildings={false} showsPointsOfInterest={false} showsCompass={false} showsUserLocation={false} showsMyLocationButton={false} loadingEnabled={false} onMapReady={() => setMapReady(true)}>
+      <MapView ref={mapRef} style={StyleSheet.absoluteFill} provider={useGoogleProvider ? PROVIDER_GOOGLE : undefined} initialRegion={coordinates ? mapRegionFor(coordinates) : undefined} initialCamera={coordinates ? cameraFor(coordinates, is3D) : undefined} mapType={isRealistic ? "satellite" : "standard"} customMapStyle={isRealistic ? undefined : CLEAN_MAP_STYLE} pitchEnabled rotateEnabled showsBuildings={false} showsPointsOfInterest={false} showsCompass={false} showsUserLocation={false} showsMyLocationButton={false} loadingEnabled={false} onMapReady={() => setMapReady(true)} onRegionChangeComplete={setVisibleRegion}>
         {visibleVenues.map((venue) => <Marker key={`venue-${venue.id}`} coordinate={{ latitude: venue.latitude, longitude: venue.longitude }} onPress={() => handleVenuePress(venue)} onSelect={() => handleVenuePress(venue)} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={trackVenueViews} zIndex={10} accessibilityLabel={`Local ${venue.name}, ${VENUE_CATEGORY_LABELS[venue.category]}`}><View style={styles.pinHitbox}><View style={styles.pinWrap}><View style={[styles.venuePin, { backgroundColor: venueColor(venue.category) }]}><MaterialIcons name={venueCategoryIcon(venue.category)} size={18} color="#FFFFFF" /></View><View style={[styles.pinTail, { borderTopColor: venueColor(venue.category) }]} /></View></View></Marker>)}
         {isActive && coordinates ? <Marker key="my-active-checkin" coordinate={coordinates} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges><View style={styles.beerMarker}><BebeConmigoCan width={44} height={68} /></View></Marker> : null}
         {topVenues.filter((venue) => !venues.some((item) => item.id === venue.id)).map((venue) => <Marker key={`top-venue-${venue.id}`} coordinate={{ latitude: venue.latitude, longitude: venue.longitude }} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}><View style={styles.starMarker}><MaterialIcons name="star" size={34} color="#F4C542" /><Text style={styles.starMarkerRank}>{venue.admin_rank}</Text></View></Marker>)}

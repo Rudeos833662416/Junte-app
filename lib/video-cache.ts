@@ -1,5 +1,7 @@
 import * as LegacyFileSystem from "expo-file-system/legacy";
 
+const inFlightDownloads = new Map<string, Promise<string>>();
+
 function safeFileName(remoteUrl: string) {
   let hash = 0;
   for (let i = 0; i < remoteUrl.length; i += 1) {
@@ -34,9 +36,14 @@ export async function resolveCachedVideoUri(remoteUrl: string): Promise<string> 
     // seguir con remoto
   }
 
-  void LegacyFileSystem.downloadAsync(remoteUrl, local).catch(() => {
-    // silencioso: sin red o disco lleno
-  });
+  const pending = inFlightDownloads.get(remoteUrl);
+  if (!pending) {
+    const download = LegacyFileSystem.downloadAsync(remoteUrl, local)
+      .then((result) => (result.status >= 200 && result.status < 300 ? result.uri : remoteUrl))
+      .catch(() => remoteUrl)
+      .finally(() => inFlightDownloads.delete(remoteUrl));
+    inFlightDownloads.set(remoteUrl, download);
+  }
 
   return remoteUrl;
 }

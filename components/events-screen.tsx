@@ -42,6 +42,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -242,6 +243,8 @@ export function EventsScreen() {
       const silent = Boolean(opts?.silent);
       if (!silent) setLoading(true);
       if (!silent) setLoadError(null);
+      const cacheKey = `junta2:events-feed:v1:${user.id}`;
+      const cachedPromise = AsyncStorage.getItem(cacheKey);
       try {
         const [postsResult, adminResult] = await Promise.all([
           supabase
@@ -303,8 +306,7 @@ export function EventsScreen() {
             .eq("user_id", user.id);
           likedSet = new Set(((ownLikes ?? []) as { post_id: string }[]).map((row) => row.post_id));
         }
-        setPosts(
-          rawPosts.map((post) => {
+        const nextPosts = rawPosts.map((post) => {
             const author = authorMap.get(post.created_by);
             const counts = countsByPost.get(post.id);
             return {
@@ -315,8 +317,8 @@ export function EventsScreen() {
               authorName: author?.name?.trim() || author?.username?.trim() || "Usuario",
               authorAvatarUrl: author?.avatar_url ?? null,
             };
-          }),
-        );
+          });
+        setPosts(nextPosts);
         setIsAdmin(Boolean(adminRow?.is_admin));
         const { data: venueRows, error: venuesError } = await supabase
           .from("venues")
@@ -337,8 +339,17 @@ export function EventsScreen() {
           if (requestedVenueError) throw requestedVenueError;
           if (requestedVenue) setVenueProfile(requestedVenue as FeaturedVenue);
         }
+        void AsyncStorage.setItem(cacheKey, JSON.stringify({ posts: nextPosts, featuredVenues: venueRows ?? [] })).catch(() => undefined);
       } catch (err) {
         reportError(err, { screen: "events", action: "loadData" });
+        try {
+          const raw = await cachedPromise;
+          if (raw) {
+            const cached = JSON.parse(raw) as { posts?: OfficialPost[]; featuredVenues?: FeaturedVenue[] };
+            if (Array.isArray(cached.posts)) setPosts(cached.posts);
+            if (Array.isArray(cached.featuredVenues)) setFeaturedVenues(cached.featuredVenues);
+          }
+        } catch { /* El snapshot corrupto no debe bloquear Eventos. */ }
         if (!silent) setLoadError("No se pudo actualizar Eventos. Conservamos el contenido anterior; inténtalo de nuevo.");
       } finally {
         if (!silent) setLoading(false);

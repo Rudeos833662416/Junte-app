@@ -31,6 +31,7 @@ import {
   invokeNotificationAction,
 } from "@/lib/push-notifications";
 import { PermissionsOnboarding } from "@/components/permissions-onboarding";
+import { OfflineBanner } from "@/components/offline-banner";
 import { StoryUploadQueueProvider } from "@/lib/story-upload-queue";
 import { notificationResponseKey, routeForNotification } from "@/lib/notification-routing";
 import { setCachedConversation, type CachedChatMessage } from "@/lib/chat-store";
@@ -305,6 +306,7 @@ function AuthGate() {
           />
         </Stack>
         {user ? <PermissionsOnboarding /> : null}
+        <OfflineBanner />
       </>
     </StoryUploadQueueProvider>
   );

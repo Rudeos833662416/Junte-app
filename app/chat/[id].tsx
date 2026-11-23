@@ -47,6 +47,7 @@ import {
   formatChatDateLabel,
   getCachedConversation,
   getDraft,
+  hydrateChatStore,
   isSameMessageGroup,
   markInboxConversationRead,
   mergeCachedMessage,
@@ -261,7 +262,8 @@ export default function ChatScreen() {
         .from("direct_messages")
         .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id, edited_at, deleted_at, reactions, location_payload, trim_start_ms, trim_end_ms, is_muted, overlay_text")
         .or(`and(sender_id.eq.${user.id},recipient_id.eq.${otherId}),and(sender_id.eq.${otherId},recipient_id.eq.${user.id})`)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(100);
       if (error) throw error;
       const confirmed = await Promise.all((data ?? []).map(async (row) => withSignedMediaUrl(await withSignedAudioUrl(row as Message))));
       const withReplies = confirmed.map((msg) => {
@@ -287,6 +289,10 @@ export default function ChatScreen() {
       setLoading(false);
     }
   }, [initialAvatar, initialName, markAsRead, otherId, user]);
+
+  useEffect(() => {
+    if (user?.id) void hydrateChatStore(user.id);
+  }, [user?.id]);
 
   useFocusEffect(
     useCallback(() => {

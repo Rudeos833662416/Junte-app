@@ -115,12 +115,25 @@ export function HomeCollage() {
   }, []);
 
   const load = useCallback(async () => {
+    const cacheKey = `junta2:home-collage:v1:${selectedTheme}:${readMode ? "published" : "preview"}`;
+    const cachedPromise = AsyncStorage.getItem(cacheKey);
     const [{ data: imageData, error: imageError }, { data: settingsData, error: settingsError }] = await Promise.all([
       imagesTable().select("id, image_url, alt_text, sort_order, theme, is_published").eq("theme", selectedTheme).eq("is_published", readMode).eq("is_active", true).order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       settingsTable().select("image_opacity, brightness, contrast, overlay_color, overlay_opacity, fade_duration_ms, hold_duration_ms, transition_type, shuffle_enabled, autoplay_enabled").eq("theme", selectedTheme).eq("is_published", readMode).maybeSingle(),
     ]);
+    try {
+      const raw = await cachedPromise;
+      if (raw && imageError) {
+        const cached = JSON.parse(raw) as { images?: CollageImage[]; settings?: HomeCollageSettings };
+        if (Array.isArray(cached.images)) setImages(cached.images);
+        if (cached.settings) setSettings(normalizeHomeCollageSettings(cached.settings));
+      }
+    } catch { /* El snapshot local es opcional. */ }
     if (!imageError) setImages((imageData ?? []) as CollageImage[]);
     if (!settingsError && settingsData) setSettings(normalizeHomeCollageSettings(settingsData));
+    if (!imageError || !settingsError) {
+      void AsyncStorage.setItem(cacheKey, JSON.stringify({ images: imageData ?? [], settings: settingsData ? normalizeHomeCollageSettings(settingsData) : DEFAULT_HOME_COLLAGE_SETTINGS })).catch(() => undefined);
+    }
     setLoading(false);
   }, [readMode, selectedTheme]);
 

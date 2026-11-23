@@ -123,7 +123,8 @@ export default function FriendsScreen() {
       .select("id, user_id, friend_id, status, request_message")
       .eq("friend_id", user.id)
       .eq("status", "pending")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(100);
     if (error) {
       setRequestsError("No se pudieron cargar las solicitudes. Inténtalo de nuevo.");
       return;
@@ -190,7 +191,8 @@ export default function FriendsScreen() {
         .from("friendships")
         .select("id, user_id, friend_id, status, request_message")
         .eq("status", "accepted")
-        .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
+        .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`)
+        .limit(300);
       if (friendshipsError) throw friendshipsError;
 
       const friendIds = ((friendships ?? []) as FriendshipRow[]).map((row) =>
@@ -209,14 +211,16 @@ export default function FriendsScreen() {
             .select("user_id, created_at, venues(name)")
             .in("user_id", friendIds)
             .eq("status", "active")
-            .order("created_at", { ascending: false }),
+            .order("created_at", { ascending: false })
+            .limit(300),
           supabase
             .from("stories")
             .select("id, user_id, media_url, media_type, audio_url, audio_name, music_title, caption, visibility, privacy, created_at, expires_at, text_content, text_background_color, text_font_family, trim_start_sec, trim_end_sec")
             .in("user_id", friendIds)
             .gt("expires_at", new Date().toISOString())
-            .order("created_at", { ascending: false }),
-          supabase.from("story_views").select("story_id").eq("viewer_id", user.id),
+            .order("created_at", { ascending: false })
+            .limit(300),
+          supabase.from("story_views").select("story_id").eq("viewer_id", user.id).limit(500),
         ]);
       if (profilesError) throw profilesError;
       if (checkinsError) throw checkinsError;

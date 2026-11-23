@@ -1,3 +1,5 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 export type StoryItem = {
   id: number;
   user_id: string;
@@ -35,6 +37,28 @@ type StoryGroupsListener = (groups: GroupedStoryUser[]) => void;
 
 let cachedGroups: GroupedStoryUser[] = [];
 const listeners = new Set<StoryGroupsListener>();
+let activeScope: string | null = null;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+function schedulePersist() {
+  if (!activeScope) return;
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    void AsyncStorage.setItem(`junta2:stories-store:v1:${activeScope}`, JSON.stringify(cachedGroups)).catch(() => undefined);
+  }, 50);
+}
+
+export async function hydrateStoryStore(scope: string) {
+  activeScope = scope;
+  try {
+    const raw = await AsyncStorage.getItem(`junta2:stories-store:v1:${scope}`);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as GroupedStoryUser[];
+    if (Array.isArray(parsed)) setCachedStoryGroups(parsed);
+  } catch {
+    // Un snapshot corrupto no debe bloquear la pantalla.
+  }
+}
 
 export function getCachedStoryGroups() {
   return cachedGroups;
@@ -42,6 +66,7 @@ export function getCachedStoryGroups() {
 
 export function setCachedStoryGroups(groups: GroupedStoryUser[]) {
   cachedGroups = groups;
+  schedulePersist();
   listeners.forEach((listener) => listener(cachedGroups));
 }
 

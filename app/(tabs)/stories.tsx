@@ -18,7 +18,7 @@ import { useStoryUploadQueue } from "@/lib/story-upload-queue";
 import { StoryVideoEditor, type StoryVideoEditorResult } from "@/components/story-video-editor";
 import { setActiveStoryUserId } from "@/lib/push-notifications";
 import { resolveCachedVideoUri } from "@/lib/video-cache";
-import { getCachedStoryGroups, setCachedStoryGroups, subscribeStoryGroups, type GroupedStoryUser, type StoryItem } from "@/lib/stories-store";
+import { getCachedStoryGroups, hydrateStoryStore, setCachedStoryGroups, subscribeStoryGroups, type GroupedStoryUser, type StoryItem } from "@/lib/stories-store";
 import { friendlyChatError } from "@/lib/chat-errors";
 import { isDoubleTap } from "@/lib/interaction-gestures";
 import * as Haptics from "expo-haptics";
@@ -258,6 +258,10 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
   }, [activeGroupIndex, groupedStories]);
 
   useEffect(() => subscribeStoryGroups((groups) => setGroupedStories(groups)), []);
+
+  useEffect(() => {
+    if (user?.id) void hydrateStoryStore(user.id);
+  }, [user?.id]);
 
   useEffect(() => {
     const requestKey = `${requestedUserId ?? ""}:${requestedStoryId ?? ""}`;

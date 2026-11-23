@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Dimensions, Modal, PanResponder, Platform, Pressable, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
@@ -20,29 +20,29 @@ function UnreadBadge() {
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
+  const checkUnread = useCallback(async (userId: string, disposedRef: { current: boolean }) => {
+    const { count } = await supabase
+      .from("activities")
+      .select("id", { count: "exact", head: true })
+      .eq("recipient_id", userId)
+      .is("read_at", null);
+    if (!disposedRef.current) setHasUnread((count ?? 0) > 0);
+  }, []);
+
   useEffect(() => {
     const userId = user?.id;
     if (!userId) return;
 
-    let disposed = false;
-    const checkUnread = async () => {
-      const { count } = await supabase
-        .from("activities")
-        .select("*", { count: "exact", head: true })
-        .eq("recipient_id", userId)
-        .is("read_at", null);
-      if (!disposed) setHasUnread((count ?? 0) > 0);
-    };
+    const disposed = { current: false };
 
-    void checkUnread();
+    void checkUnread(userId, disposed);
 
-    const channelName = `badge-${userId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const channel = supabase.channel(channelName);
+    const channel = supabase.channel(`badge-${userId}`);
     channelRef.current = channel;
     channel.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "activities", filter: `recipient_id=eq.${userId}` },
-      () => void checkUnread(),
+      () => void checkUnread(userId, disposed),
     );
     void channel.subscribe((status) => {
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
@@ -51,11 +51,15 @@ function UnreadBadge() {
     });
 
     return () => {
-      disposed = true;
+      disposed.current = true;
       if (channelRef.current === channel) channelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [revision, user?.id]);
+  }, [checkUnread, user?.id]);
+
+  useEffect(() => {
+    if (user?.id) void checkUnread(user.id, { current: false });
+  }, [checkUnread, revision, user?.id]);
 
   if (!hasUnread) return null;
   return (

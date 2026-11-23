@@ -6,7 +6,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
-import { getCachedInbox, getDraft, setCachedInbox, type CachedConversation } from "@/lib/chat-store";
+import { getCachedInbox, getDraft, hydrateChatStore, setCachedInbox, type CachedConversation } from "@/lib/chat-store";
 
 type MessageRow = {
   id: string;
@@ -90,9 +90,16 @@ export default function MessagesInboxScreen({ embedded = false }: { embedded?: b
 
   useFocusEffect(
     useCallback(() => {
-      void load();
-      return undefined;
-    }, [load]),
+      let cancelled = false;
+      void (async () => {
+        if (user?.id) await hydrateChatStore(user.id);
+        if (!cancelled) {
+          setItems(getCachedInbox());
+          await load();
+        }
+      })();
+      return () => { cancelled = true; };
+    }, [load, user?.id]),
   );
 
   const empty = useMemo(
