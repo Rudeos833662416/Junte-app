@@ -198,7 +198,7 @@ export default function ChatScreen() {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 250);
   const audioPlayer = useAudioPlayer();
-  const audioPlayerStatus = useAudioPlayerStatus(audioPlayer, 100);
+  const audioPlayerStatus = useAudioPlayerStatus(audioPlayer);
 
   useEffect(() => {
     isRecordingRef.current = Boolean(recorderState.isRecording);
@@ -729,72 +729,6 @@ export default function ChatScreen() {
       void stopAndSendVoiceRecording();
     }
   }, [recorderState.isRecording, recorderState.durationMillis, voiceSending]);
-
-  const toggleVoiceRecording = async () => {
-    if (!user || !otherId || voiceSending) return;
-    if (recorderState.isRecording || isRecordingRef.current) {
-      const durationMs = recorderState.durationMillis;
-      setVoiceSending(true);
-      setVoiceLocked(false);
-      isRecordingRef.current = false;
-      try {
-        try {
-          await recorder.stop();
-        } catch {
-          /* SharedObject ya liberado al salir de la pantalla */
-          setVoiceSending(false);
-          return;
-        }
-        const uri = recorder.uri;
-        if (!uri) throw new Error("La grabación no produjo un archivo de audio.");
-        const clientMessageId = newClientMessageId();
-        const audioPath = `${user.id}/${otherId}/${clientMessageId}.m4a`;
-        await uploadUriToStorage("chat-audio", audioPath, uri, "audio/mp4");
-        const { data: signedData, error: signedError } = await supabase.storage.from("chat-audio").createSignedUrl(audioPath, 60 * 60 * 24);
-        if (signedError) throw signedError;
-        const { data, error } = await supabase
-          .from("direct_messages")
-          .insert({
-            sender_id: user.id,
-            recipient_id: otherId,
-            body: "Nota de voz",
-            client_message_id: clientMessageId,
-            kind: "voice_note",
-            audio_path: audioPath,
-            duration_ms: Math.max(0, Math.round(durationMs)),
-          })
-          .select("id, sender_id, recipient_id, body, created_at, read_at, client_message_id, story_id, kind, audio_path, media_path, media_type, duration_ms, reply_to_message_id, edited_at, deleted_at, reactions, location_payload, trim_start_ms, trim_end_ms, is_muted, overlay_text")
-          .single();
-        if (error) throw error;
-        if (data) {
-          setMessages((current) => {
-            const next = mergeCachedMessage(current, { ...(data as Message), audio_url: signedData?.signedUrl ?? null, pending: false });
-            setCachedConversation(otherId, next);
-            return next as Message[];
-          });
-        }
-      } catch (error) {
-        Alert.alert("No se pudo enviar el audio", friendlyChatError(error as { code?: string; message?: string }));
-      } finally {
-        setVoiceSending(false);
-      }
-      return;
-    }
-    if (isStartingRecordingRef.current) return;
-    const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) { Alert.alert("Permiso de micrófono", "Activa el micrófono en los ajustes para grabar notas de voz."); return; }
-    isStartingRecordingRef.current = true;
-    try {
-      try { await recorder.stop(); } catch {}
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setVoiceLocked(false);
-      isRecordingRef.current = true;
-    } catch {
-      isRecordingRef.current = false;
-      Alert.alert("No se pudo grabar", "El micrófono no está disponible. Inténtalo de nuevo.");
-    } finally { isStartingRecordingRef.current = false; }
-  };
 
   useEffect(() => {
     return () => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { Animated, Pressable, View, type StyleProp, type ViewStyle } from "react-native";
+import { Animated, Pressable, View, type PressableStateCallbackType, type StyleProp, type ViewStyle } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 
@@ -14,7 +14,7 @@ type Props = {
   onReleaseSend: () => void;
   onCancel: () => void;
   onLock: () => void;
-  style?: StyleProp<ViewStyle>;
+  style?: StyleProp<ViewStyle> | ((state: PressableStateCallbackType) => StyleProp<ViewStyle>);
   accessibilityLabel: string;
 };
 
@@ -75,6 +75,7 @@ export function VoiceRecordGestureButton({
   }, [hasText]);
 
   const dragOffset = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const animatedStyle = typeof style === "function" ? style({ pressed: false, hovered: false }) : style;
 
   const resetDrag = () => {
     Animated.spring(dragOffset, {
@@ -209,7 +210,7 @@ export function VoiceRecordGestureButton({
             alignItems: "center",
             justifyContent: "center",
           },
-          style,
+          animatedStyle,
           {
             opacity: disabled ? 0.55 : 1,
             transform: [{ translateX: dragOffset.x }, { translateY: dragOffset.y }],
