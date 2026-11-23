@@ -11,6 +11,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
 import { Image as ExpoImage } from "expo-image";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Linking, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import MapView, { Circle, Marker, PROVIDER_GOOGLE, type Region } from "react-native-maps";
@@ -75,6 +76,8 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
 
   const mapVenueFromRow = useCallback((venue: any): MapVenue | null => normalizeMapVenue(venue), []);
   const loadVenues = useCallback(async () => {
+    const cacheKey = "junta2:map-venues:v1";
+    const cachedPromise = AsyncStorage.getItem(cacheKey);
     const region = visibleRegion ?? (coordinates ? mapRegionFor(coordinates) : null);
     let query = supabase.from("venues").select("id, name, category, latitude, longitude, address, city, admin_photo_url, rating, opening_hours, venue_status, active_promotion").neq("source", "device").not("latitude", "is", null).not("longitude", "is", null);
     if (region) {
@@ -83,9 +86,19 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
       query = query.gte("latitude", region.latitude - latRadius).lte("latitude", region.latitude + latRadius).gte("longitude", region.longitude - lngRadius).lte("longitude", region.longitude + lngRadius);
     }
     const { data, error } = await query.limit(200);
-    if (error) { console.warn("Venue pins unavailable:", error.message); setVenuesError("La conexión no permitió cargar los locales."); return false; }
+    if (error) {
+      try {
+        const raw = await cachedPromise;
+        if (raw) setVenues(JSON.parse(raw) as MapVenue[]);
+      } catch { /* El snapshot corrupto no debe bloquear el mapa. */ }
+      console.warn("Venue pins unavailable:", error.message);
+      setVenuesError("La conexión no permitió cargar los locales.");
+      return false;
+    }
     setVenuesError(null);
-    setVenues((data ?? []).map(mapVenueFromRow).filter((venue): venue is MapVenue => Boolean(venue)));
+    const nextVenues = (data ?? []).map(mapVenueFromRow).filter((venue): venue is MapVenue => Boolean(venue));
+    setVenues(nextVenues);
+    void AsyncStorage.setItem(cacheKey, JSON.stringify(nextVenues)).catch(() => undefined);
     return true;
   }, [coordinates, mapVenueFromRow, visibleRegion]);
   const visibleVenues = useMemo(() => filterMapVenues(venues, category), [category, venues]);
