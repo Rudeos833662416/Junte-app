@@ -33,6 +33,7 @@ export type CachedConversation = {
 type PersistedChatStore = { inbox: CachedConversation[]; conversations: Record<string, CachedChatMessage[]>; drafts: Record<string, string> };
 const STORAGE_PREFIX = "junta2:chat-store:v1:";
 let activeScope: string | null = null;
+let hydrationGeneration = 0;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let inboxCache: CachedConversation[] = [];
 const conversationCache = new Map<string, CachedChatMessage[]>();
@@ -51,16 +52,21 @@ function schedulePersist() {
 }
 
 export async function hydrateChatStore(scope: string) {
+  const generation = ++hydrationGeneration;
   activeScope = scope;
+  inboxCache = [];
+  conversationCache.clear();
+  draftsByPeerId.clear();
   try {
     const raw = await AsyncStorage.getItem(`${STORAGE_PREFIX}${scope}`);
+    if (generation !== hydrationGeneration || activeScope !== scope) return;
     if (!raw) return;
     const parsed = JSON.parse(raw) as Partial<PersistedChatStore>;
     inboxCache = Array.isArray(parsed.inbox) ? parsed.inbox : [];
-    conversationCache.clear();
-    for (const [peerId, messages] of Object.entries(parsed.conversations ?? {})) if (Array.isArray(messages)) conversationCache.set(peerId, messages);
-    draftsByPeerId.clear();
-    for (const [peerId, draft] of Object.entries(parsed.drafts ?? {})) if (draft) draftsByPeerId.set(peerId, draft);
+    const conversations = parsed.conversations && typeof parsed.conversations === "object" && !Array.isArray(parsed.conversations) ? parsed.conversations : {};
+    const drafts = parsed.drafts && typeof parsed.drafts === "object" && !Array.isArray(parsed.drafts) ? parsed.drafts : {};
+    for (const [peerId, messages] of Object.entries(conversations)) if (Array.isArray(messages)) conversationCache.set(peerId, messages);
+    for (const [peerId, draft] of Object.entries(drafts)) if (typeof draft === "string" && draft) draftsByPeerId.set(peerId, draft);
   } catch {
     // Un snapshot corrupto no debe bloquear el arranque offline.
   }
@@ -145,5 +151,6 @@ export function clearChatStore() {
   conversationCache.clear();
   draftsByPeerId.clear();
   activeScope = null;
+  hydrationGeneration += 1;
   if (persistTimer) clearTimeout(persistTimer);
 }

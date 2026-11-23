@@ -38,6 +38,7 @@ type StoryGroupsListener = (groups: GroupedStoryUser[]) => void;
 let cachedGroups: GroupedStoryUser[] = [];
 const listeners = new Set<StoryGroupsListener>();
 let activeScope: string | null = null;
+let hydrationGeneration = 0;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function schedulePersist() {
@@ -49,9 +50,13 @@ function schedulePersist() {
 }
 
 export async function hydrateStoryStore(scope: string) {
+  const generation = ++hydrationGeneration;
   activeScope = scope;
+  cachedGroups = [];
+  listeners.forEach((listener) => listener(cachedGroups));
   try {
     const raw = await AsyncStorage.getItem(`junta2:stories-store:v1:${scope}`);
+    if (generation !== hydrationGeneration || activeScope !== scope) return;
     if (!raw) return;
     const parsed = JSON.parse(raw) as GroupedStoryUser[];
     if (Array.isArray(parsed)) setCachedStoryGroups(parsed);

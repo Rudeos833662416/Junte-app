@@ -56,6 +56,8 @@ import {
   clearDraft,
 } from "@/lib/chat-store";
 
+const MAX_VOICE_DURATION_MS = 15 * 60 * 1000;
+
 type Message = {
   id: string;
   sender_id: string;
@@ -143,6 +145,7 @@ export default function ChatScreen() {
   const voiceUiActiveRef = useRef(false);
   const recorderPreparedRef = useRef(false);
   const hapticPromiseRef = useRef<Promise<void> | null>(null);
+  const stopAndSendVoiceRecordingRef = useRef<() => Promise<void>>(async () => undefined);
 
   const triggerHaptic = (style: Haptics.ImpactFeedbackStyle) => {
     if (hapticPromiseRef.current) return;
@@ -152,28 +155,6 @@ export default function ChatScreen() {
         hapticPromiseRef.current = null;
       });
   };
-
-  const warmupRecorder = async () => {
-    try {
-      if (!micPermissionGrantedRef.current) {
-        const perm = await requestRecordingPermissionsAsync();
-        micPermissionGrantedRef.current = Boolean(perm?.granted);
-        if (!perm?.granted) return false;
-      }
-      if (!recorderPreparedRef.current && !isRecordingRef.current && !isStoppingVoiceRef.current) {
-        await recorder.prepareToRecordAsync();
-        recorderPreparedRef.current = true;
-      }
-      return true;
-    } catch {
-      recorderPreparedRef.current = false;
-      return false;
-    }
-  };
-
-  useEffect(() => {
-    void warmupRecorder();
-  }, []);
 
   useEffect(() => {
     void requestRecordingPermissionsAsync()
@@ -200,6 +181,28 @@ export default function ChatScreen() {
   const recorderState = useAudioRecorderState(recorder, 250);
   const audioPlayer = useAudioPlayer();
   const audioPlayerStatus = useAudioPlayerStatus(audioPlayer);
+
+  const warmupRecorder = useCallback(async () => {
+    try {
+      if (!micPermissionGrantedRef.current) {
+        const perm = await requestRecordingPermissionsAsync();
+        micPermissionGrantedRef.current = Boolean(perm?.granted);
+        if (!perm?.granted) return false;
+      }
+      if (!recorderPreparedRef.current && !isRecordingRef.current && !isStoppingVoiceRef.current) {
+        await recorder.prepareToRecordAsync();
+        recorderPreparedRef.current = true;
+      }
+      return true;
+    } catch {
+      recorderPreparedRef.current = false;
+      return false;
+    }
+  }, [recorder]);
+
+  useEffect(() => {
+    void warmupRecorder();
+  }, [warmupRecorder]);
 
   useEffect(() => {
     isRecordingRef.current = Boolean(recorderState.isRecording);
@@ -567,8 +570,6 @@ export default function ChatScreen() {
     }
   };
 
-  const MAX_VOICE_DURATION_MS = 15 * 60 * 1000;
-
   const formatVoiceTimer = (ms: number) => {
     const totalSec = Math.max(0, Math.floor(ms / 1000));
     const mins = Math.floor(totalSec / 60);
@@ -594,7 +595,7 @@ export default function ChatScreen() {
 
     if (isStartingRecordingRef.current) {
       holdCancelledEarlyRef.current = true;
-      try { await recorder.stop(); } catch {}
+      await recorder.stop().catch(() => undefined);
       isStoppingVoiceRef.current = false;
       return;
     }
@@ -670,6 +671,8 @@ export default function ChatScreen() {
     }
   };
 
+  stopAndSendVoiceRecordingRef.current = stopAndSendVoiceRecording;
+
   const startVoiceRecording = async () => {
     if (!user || !otherId || voiceSending || isStartingRecordingRef.current || isStoppingVoiceRef.current) return;
     if (recorderState.isRecording || isRecordingRef.current || voiceUiActiveRef.current) return;
@@ -698,12 +701,12 @@ export default function ChatScreen() {
     isStartingRecordingRef.current = true;
     try {
       if (!recorderPreparedRef.current) {
-        try { await recorder.stop(); } catch {}
+        await recorder.stop().catch(() => undefined);
         await recorder.prepareToRecordAsync();
       }
       recorderPreparedRef.current = false;
       if (holdCancelledEarlyRef.current || !voiceUiActiveRef.current) {
-        try { await recorder.stop(); } catch {}
+        await recorder.stop().catch(() => undefined);
         voiceUiActiveRef.current = false;
         setVoiceUiActive(false);
         return;
@@ -732,7 +735,7 @@ export default function ChatScreen() {
       !voiceSending &&
       !isStoppingVoiceRef.current
     ) {
-      void stopAndSendVoiceRecording();
+      void stopAndSendVoiceRecordingRef.current();
     }
   }, [recorderState.isRecording, recorderState.durationMillis, voiceSending]);
 
@@ -742,12 +745,16 @@ export default function ChatScreen() {
       // al desmontar la pantalla (crash: "Cannot use shared object that was already released").
       if (isRecordingRef.current) {
         try {
-          recorder.stop();
+          void recorder.stop().catch(() => undefined);
         } catch {
           /* already released */
         }
         isRecordingRef.current = false;
       }
+      voiceRecordStartedAtRef.current = null;
+      voiceUiActiveRef.current = false;
+      recorderPreparedRef.current = false;
+      isStoppingVoiceRef.current = false;
       try {
         audioPlayer.pause();
       } catch {

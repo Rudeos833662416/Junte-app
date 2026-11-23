@@ -73,6 +73,12 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
   const [trackVenueViews, setTrackVenueViews] = useState(true);
   const [is3D, setIs3D] = useState(false);
   const [isRealistic, setIsRealistic] = useState(false);
+  const loadVenuesRef = useRef<() => Promise<boolean>>(async () => false);
+  const loadTopVenuesRef = useRef<() => Promise<void>>(async () => undefined);
+  const loadFriendMarkersRef = useRef<() => Promise<void>>(async () => undefined);
+  const loadActiveStateRef = useRef<() => Promise<void>>(async () => undefined);
+  const refreshMapRef = useRef<() => Promise<void>>(async () => undefined);
+  const mapVenueFromRowRef = useRef<(venue: any) => MapVenue | null>(() => null);
 
   const mapVenueFromRow = useCallback((venue: any): MapVenue | null => normalizeMapVenue(venue), []);
   const loadVenues = useCallback(async () => {
@@ -89,7 +95,8 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
     if (error) {
       try {
         const raw = await cachedPromise;
-        if (raw) setVenues(JSON.parse(raw) as MapVenue[]);
+        const parsed = raw ? JSON.parse(raw) as unknown : [];
+        if (Array.isArray(parsed)) setVenues(parsed as MapVenue[]);
       } catch { /* El snapshot corrupto no debe bloquear el mapa. */ }
       console.warn("Venue pins unavailable:", error.message);
       setVenuesError("La conexión no permitió cargar los locales.");
@@ -97,8 +104,17 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
     }
     setVenuesError(null);
     const nextVenues = (data ?? []).map(mapVenueFromRow).filter((venue): venue is MapVenue => Boolean(venue));
-    setVenues(nextVenues);
-    void AsyncStorage.setItem(cacheKey, JSON.stringify(nextVenues)).catch(() => undefined);
+    const cachedRaw = await cachedPromise.catch(() => null);
+    let cachedVenues: MapVenue[] = [];
+    try {
+      const parsed = cachedRaw ? JSON.parse(cachedRaw) as unknown : [];
+      if (Array.isArray(parsed)) cachedVenues = parsed as MapVenue[];
+    } catch { /* El snapshot corrupto se descarta. */ }
+    const mergedById = new Map(cachedVenues.map((venue) => [venue.id, venue]));
+    nextVenues.forEach((venue) => mergedById.set(venue.id, venue));
+    const mergedVenues = [...mergedById.values()].slice(-500);
+    setVenues(mergedVenues);
+    void AsyncStorage.setItem(cacheKey, JSON.stringify(mergedVenues)).catch(() => undefined);
     return true;
   }, [coordinates, mapVenueFromRow, visibleRegion]);
   const visibleVenues = useMemo(() => filterMapVenues(venues, category), [category, venues]);
@@ -134,21 +150,28 @@ export function SocialMapScreen({ useGoogleProvider = false }: SocialMapScreenPr
     }
   }, [loadActiveState, loadFriendMarkers, loadTopVenues, loadVenues]);
 
+  loadVenuesRef.current = loadVenues;
+  loadTopVenuesRef.current = loadTopVenues;
+  loadFriendMarkersRef.current = loadFriendMarkers;
+  loadActiveStateRef.current = loadActiveState;
+  refreshMapRef.current = refreshMap;
+  mapVenueFromRowRef.current = mapVenueFromRow;
+
   useEffect(() => {
-    void refreshMap();
+    void refreshMapRef.current();
     const channel = supabase.channel(`junta2-map-${user?.id ?? "public"}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "venues" }, (payload) => {
         const row = payload.eventType === "DELETE" ? payload.old : payload.new;
         if (payload.eventType !== "DELETE" && row.source === "device") return;
         if (payload.eventType === "DELETE") setVenues((current) => current.filter((venue) => venue.id !== row.id));
-        else setVenues((current) => { const next = mapVenueFromRow(row); return next ? [...current.filter((venue) => venue.id !== next.id), next] : current; });
+        else setVenues((current) => { const next = mapVenueFromRowRef.current(row); return next ? [...current.filter((venue) => venue.id !== next.id), next] : current; });
         if (venueReconcileTimerRef.current) clearTimeout(venueReconcileTimerRef.current);
-        venueReconcileTimerRef.current = setTimeout(() => { void loadVenues(); void loadTopVenues(); }, 350);
+        venueReconcileTimerRef.current = setTimeout(() => { void loadVenuesRef.current(); void loadTopVenuesRef.current(); }, 350);
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "checkins" }, () => { void loadFriendMarkers(); void loadActiveState(); })
-      .subscribe((status) => { if (status === "SUBSCRIBED") void refreshMap(); });
+      .on("postgres_changes", { event: "*", schema: "public", table: "checkins" }, () => { void loadFriendMarkersRef.current(); void loadActiveStateRef.current(); })
+      .subscribe((status) => { if (status === "SUBSCRIBED") void refreshMapRef.current(); });
     return () => { if (venueReconcileTimerRef.current) clearTimeout(venueReconcileTimerRef.current); void supabase.removeChannel(channel); };
-  }, [loadActiveState, loadFriendMarkers, loadTopVenues, loadVenues, mapVenueFromRow, refreshMap, user?.id]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (revision > 0) void refreshMap();

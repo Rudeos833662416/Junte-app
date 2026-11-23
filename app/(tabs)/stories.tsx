@@ -228,6 +228,8 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
   const [viewerCountByStory, setViewerCountByStory] = useState<Record<number, number>>({});
   const [showViewers, setShowViewers] = useState(false);
   const [flyingEmojis, setFlyingEmojis] = useState<{ id: number; emoji: string; translateY: Animated.Value; opacity: Animated.Value }[]>([]);
+  const fetchStoriesRef = useRef<() => Promise<void>>(async () => undefined);
+  const scheduleStoriesRefreshRef = useRef<() => void>(() => undefined);
 
   const [activeGroupIndex, setActiveGroupIndex] = useState<number | null>(null);
   const [activeStoryIndex, setActiveStoryIndex] = useState(0);
@@ -296,7 +298,7 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     let cancelled = false;
     void Promise.all([
       AsyncStorage.getItem(key),
-      supabase.from("story_views").select("story_id").eq("viewer_id", user.id),
+      supabase.from("story_views").select("story_id").eq("viewer_id", user.id).limit(1000),
     ]).then(([stored, result]) => {
       if (cancelled) return;
       const localIds = stored ? JSON.parse(stored) as number[] : [];
@@ -370,7 +372,8 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
         .from("stories")
         .select("id, user_id, media_url, media_type, audio_url, audio_name, music_title, caption, visibility, privacy, created_at, expires_at, text_content, text_background_color, text_font_family, trim_start_sec, trim_end_sec, is_muted")
         .gt("expires_at", new Date().toISOString())
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(300);
 
       if (error) throw error;
       const rows = (data ?? []) as StoryItem[];
@@ -475,8 +478,10 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       }
     } catch (err) {
       console.error("Error fetching stories:", err);
-      setGroupedStories([]);
-      setLoadError(err instanceof Error ? err.message : "No se pudieron cargar los estados.");
+      const cachedGroups = getCachedStoryGroups();
+      if (cachedGroups.length > 0) setGroupedStories(cachedGroups);
+      else setGroupedStories([]);
+      setLoadError(cachedGroups.length > 0 ? "Sin conexión. Mostrando historias guardadas." : (err instanceof Error ? err.message : "No se pudieron cargar los estados."));
     } finally {
       hasLoadedStoriesOnce.current = true;
       setIsLoading(false);
@@ -494,19 +499,27 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
     }, 350);
   }, [fetchStories]);
 
+  fetchStoriesRef.current = fetchStories;
+  scheduleStoriesRefreshRef.current = scheduleStoriesRefresh;
+  const storyUserId = user?.id;
+
   useEffect(() => {
-    void fetchStories();
-    if (!user) return;
+    void fetchStoriesRef.current();
+    if (!storyUserId) return;
     const channel = supabase
-      .channel(`tragos-sociales-stories-${user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "stories" }, scheduleStoriesRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "story_reactions" }, scheduleStoriesRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleStoriesRefresh)
+      .channel(`tragos-sociales-stories-${storyUserId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "stories" }, () => scheduleStoriesRefreshRef.current())
+      .on("postgres_changes", { event: "*", schema: "public", table: "story_reactions" }, () => scheduleStoriesRefreshRef.current())
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => scheduleStoriesRefreshRef.current())
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [fetchStories, revision, scheduleStoriesRefresh, user]);
+  }, [storyUserId]);
+
+  useEffect(() => {
+    if (revision > 0) void fetchStoriesRef.current();
+  }, [revision]);
 
   useEffect(() => () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);

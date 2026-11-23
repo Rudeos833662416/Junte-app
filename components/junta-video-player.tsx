@@ -72,6 +72,15 @@ export function JuntaVideoPlayer({
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [trackWidth, setTrackWidth] = useState(0);
+  const durationRef = useRef(0);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
+  useEffect(() => {
+    onTimeUpdateRef.current = onTimeUpdate;
+  }, [onTimeUpdate]);
 
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<number | null>(null);
@@ -171,11 +180,11 @@ export function JuntaVideoPlayer({
     });
 
     const timeSub = player.addListener("timeUpdate", ({ currentTime }) => {
-      const total = Number(player.duration ?? duration);
+      const total = Number(player.duration ?? durationRef.current);
       if (Number.isFinite(currentTime)) {
         setPosition(currentTime);
         if (total > 0) setDuration(total);
-        onTimeUpdate?.(currentTime, total > 0 ? total : 0);
+        onTimeUpdateRef.current?.(currentTime, total > 0 ? total : 0);
       }
       if (trimEndSec != null && total > 0 && currentTime >= Math.min(trimEndSec, total)) {
         const start = Math.min(trimStartSec, Math.max(0, total - 0.05));
@@ -192,7 +201,7 @@ export function JuntaVideoPlayer({
       loadSub.remove();
       timeSub.remove();
     };
-  }, [player, trimStartSec, trimEndSec, shouldPlay, duration, onTimeUpdate]);
+  }, [player, trimStartSec, trimEndSec, shouldPlay]);
 
   useEffect(() => {
     return () => {

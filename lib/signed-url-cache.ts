@@ -14,6 +14,7 @@ type PersistedCache = Record<string, SignedUrlEntry>;
 const memoryCache = new Map<string, SignedUrlEntry>();
 const inFlight = new Map<string, Promise<string | null>>();
 let storageLoaded: Promise<void> | null = null;
+let cacheGeneration = 0;
 
 async function getSupabaseClient() {
   const module = await import("@/lib/supabase");
@@ -62,17 +63,21 @@ async function persistStorage() {
 }
 
 export async function getCachedSignedUrl(bucket: string, path: string, expiresInSeconds: number) {
+  const loadGeneration = cacheGeneration;
   await loadStorage();
+  if (loadGeneration !== cacheGeneration) return getCachedSignedUrl(bucket, path, expiresInSeconds);
   const key = getSignedUrlCacheKey(bucket, path);
   const existing = memoryCache.get(key);
   if (existing && isSignedUrlReusable(existing)) return existing.signedUrl;
   memoryCache.delete(key);
   const request = inFlight.get(key);
   if (request) return request;
+  const requestGeneration = cacheGeneration;
   const promise = (async () => {
     const supabase = await getSupabaseClient();
     const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresInSeconds);
     if (error || !data?.signedUrl) return null;
+    if (requestGeneration !== cacheGeneration) return data.signedUrl;
     const now = Date.now();
     memoryCache.set(key, {
       signedUrl: data.signedUrl,
@@ -89,6 +94,7 @@ export async function getCachedSignedUrl(bucket: string, path: string, expiresIn
 }
 
 export async function clearSignedUrlCache() {
+  cacheGeneration += 1;
   memoryCache.clear();
   inFlight.clear();
   storageLoaded = null;
