@@ -2,7 +2,7 @@ import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
 import { COLLAGE_PRESETS, DEFAULT_HOME_COLLAGE_SETTINGS, HomeCollageSettings, normalizeHomeCollageSettings } from "@/lib/home-collage-settings";
 import { supabase } from "@/lib/supabase";
-import { uploadUriToStorage } from "@/lib/media-upload";
+import { compressImageForUpload, uploadUriToStorage } from "@/lib/media-upload";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
@@ -49,7 +49,7 @@ export function HomeCollageAdmin({ visible, onClose }: { visible: boolean; onClo
     setItems((data ?? []) as CollageImage[]);
     setSettings(normalizeHomeCollageSettings(settingData));
     setLoading(false);
-  }, [theme, user?.id]);
+  }, [selectedTheme, user]);
 
   useEffect(() => { if (visible) void load(); }, [load, visible]);
   useEffect(() => { setSelectedIds([]); }, [theme]);
@@ -62,9 +62,9 @@ export function HomeCollageAdmin({ visible, onClose }: { visible: boolean; onClo
     let completed = 0;
     try {
       for (const asset of result.assets) {
-        const extension = asset.mimeType?.split("/")[1] || "jpg";
-        const path = `home-collage/${user.id}/${theme}/${Date.now()}-${completed}.${extension}`;
-        await uploadUriToStorage("home-collage", path, asset.uri, asset.mimeType || "image/jpeg");
+        const prepared = await compressImageForUpload(asset.uri, "collage");
+        const path = `home-collage/${user.id}/${theme}/${Date.now()}-${completed}.jpg`;
+        await uploadUriToStorage("home-collage", path, prepared.uri, prepared.mimeType);
         const { data: publicData } = supabase.storage.from("home-collage").getPublicUrl(path);
         const { error } = await imagesTable().insert({ storage_path: path, image_url: publicData.publicUrl, alt_text: "Imagen decorativa de Junta2", sort_order: items.length + completed, is_active: true, created_by: user.id, theme, is_published: false });
         if (error) throw error;

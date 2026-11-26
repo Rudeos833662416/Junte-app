@@ -8,6 +8,9 @@ const storyProcessor = readFileSync(resolve(root, "lib/story-upload-processor.ts
 const friends = readFileSync(resolve(root, "app/(tabs)/friends.tsx"), "utf8");
 const profile = readFileSync(resolve(root, "app/profile/[id].tsx"), "utf8");
 const drinkCircle = readFileSync(resolve(root, "components/drink-circle.tsx"), "utf8");
+const videoCache = readFileSync(resolve(root, "lib/video-cache.ts"), "utf8");
+const collageAdmin = readFileSync(resolve(root, "components/home-collage-admin.tsx"), "utf8");
+const eventsAdmin = readFileSync(resolve(root, "lib/events-admin.ts"), "utf8");
 
 describe("mejoras confirmadas en la grabación", () => {
   it("permite estados de video de hasta cinco minutos con validación visible", () => {
@@ -104,9 +107,24 @@ describe("mejoras confirmadas en la grabación", () => {
 			expect(stories).toContain('.select("avatar_url")');
 			expect(stories).toContain("Math.max(insets.top + 8, 20)");
 			expect(stories).toContain("resolvedVideoCache.has(activeStory.media_url)");
-		});
+			});
 
-  it("cierra el visor al perder foco y consume el deep link una sola vez", () => {
+			it("espera la descarga de vídeo y reproduce desde el archivo local cuando está listo", () => {
+				expect(videoCache).toContain("return pending");
+				expect(videoCache).toContain("return remoteUrl;");
+			});
+
+			it("comprime imágenes administrativas antes de subirlas a Storage", () => {
+				expect(collageAdmin).toContain("compressImageForUpload");
+				expect(eventsAdmin).toContain("compressImageForUpload");
+			});
+
+			it("limita la precarga de Estados para no descargar grupos completos", () => {
+				expect(stories).toContain("MAX_PREFETCH_IMAGES = 12");
+				expect(stories).toContain("MAX_PREFETCH_VIDEOS = 2");
+			});
+
+		it("cierra el visor al perder foco y consume el deep link una sola vez", () => {
     expect(stories).toContain("useFocusEffect");
     expect(stories).toContain("setActiveGroupIndex(null);");
     expect(stories).toContain("requestedUserConsumedRef");

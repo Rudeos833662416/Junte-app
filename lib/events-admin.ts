@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { uploadUriToStorage } from "@/lib/media-upload";
+import { compressImageForUpload, uploadUriToStorage } from "@/lib/media-upload";
 
 /** Nombre real del bucket en Supabase Storage. */
 export const OFFICIAL_FEED_BUCKET = "official-feed";
@@ -14,8 +14,8 @@ export async function publishOfficialPost(params: {
   height?: number | null;
 }) {
   const path = `official/${params.userId}/${Date.now()}.${params.mediaType === "video" ? "mp4" : "jpg"}`;
-  const mime = params.mediaType === "video" ? "video/mp4" : "image/jpeg";
-  await uploadUriToStorage(OFFICIAL_FEED_BUCKET, path, params.uri, mime);
+  const prepared = params.mediaType === "image" ? await compressImageForUpload(params.uri, "feed") : { uri: params.uri, mimeType: "video/mp4" as const };
+  await uploadUriToStorage(OFFICIAL_FEED_BUCKET, path, prepared.uri, prepared.mimeType);
   const { data } = supabase.storage.from(OFFICIAL_FEED_BUCKET).getPublicUrl(path);
   const publicUrl = data.publicUrl;
   if (!publicUrl) throw new Error("No se obtuvo URL pública");

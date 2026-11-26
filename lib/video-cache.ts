@@ -36,14 +36,14 @@ export async function resolveCachedVideoUri(remoteUrl: string): Promise<string> 
     // seguir con remoto
   }
 
-  const pending = inFlightDownloads.get(remoteUrl);
-  if (!pending) {
+  const pending = inFlightDownloads.get(remoteUrl) ?? (() => {
     const download = LegacyFileSystem.downloadAsync(remoteUrl, local)
       .then((result) => (result.status >= 200 && result.status < 300 ? result.uri : remoteUrl))
       .catch(() => remoteUrl)
       .finally(() => inFlightDownloads.delete(remoteUrl));
     inFlightDownloads.set(remoteUrl, download);
-  }
+    return download;
+  })();
 
-  return remoteUrl;
+  return pending;
 }

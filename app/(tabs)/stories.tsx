@@ -33,6 +33,8 @@ type SelectedMedia = {
 
 const MAX_STORY_VIDEO_BYTES = 45_000_000;
 const MAX_STORY_DURATION_SECONDS = 90;
+const MAX_PREFETCH_IMAGES = 12;
+const MAX_PREFETCH_VIDEOS = 2;
 const TEXT_STORY_BACKGROUNDS = ["#FF6B00", "#1E88E5", "#8E24AA", "#00897B", "#D81B60", "#212121"];
 const TEXT_STORY_FONTS = ["System", "serif", "monospace"];
 const resolvedVideoCache = new Map<string, string>();
@@ -454,9 +456,9 @@ export default function StoriesScreen({ embedded = false, requestedUserId: embed
       setOptimisticStories((previous) => previous.length === pendingOptimistic.length && previous.every((item, index) => item.id === pendingOptimistic[index]?.id) ? previous : pendingOptimistic);
       setCachedStoryGroups(groups);
       setGroupedStories(groups);
-      const urlsToPrefetch = [...new Set(groups.flatMap((group) => group.stories.map((story) => story.media_url).filter((url): url is string => Boolean(url))))].slice(0, 30);
+      const urlsToPrefetch = [...new Set(groups.flatMap((group) => group.stories.map((story) => story.media_url).filter((url): url is string => Boolean(url))))].slice(0, MAX_PREFETCH_IMAGES);
       void Promise.all(urlsToPrefetch.map((url) => RNImage.prefetch(url).catch(() => false)));
-      const videosToWarm = [...new Set(groups.flatMap((group) => group.stories.filter((story) => story.media_type === "video").map((story) => story.media_url).filter((url): url is string => Boolean(url))))].slice(0, 6);
+      const videosToWarm = [...new Set(groups.flatMap((group) => group.stories.filter((story) => story.media_type === "video").map((story) => story.media_url).filter((url): url is string => Boolean(url))))].slice(0, MAX_PREFETCH_VIDEOS);
       void Promise.all(videosToWarm.map(async (url) => {
         const resolved = await resolveCachedVideoUri(url).catch(() => url);
         resolvedVideoCache.set(url, resolved);
